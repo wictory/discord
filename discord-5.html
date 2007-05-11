@@ -1,0 +1,101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+ <META NAME="GENERATOR" CONTENT="LinuxDoc-Tools 0.9.21">
+ <TITLE>discord: CONFIGURATION</TITLE>
+ <LINK HREF="discord-6.html" REL=next>
+ <LINK HREF="discord-4.html" REL=previous>
+ <LINK HREF="discord.html#toc5" REL=contents>
+</HEAD>
+<BODY>
+<A HREF="discord-6.html">Next</A>
+<A HREF="discord-4.html">Previous</A>
+<A HREF="discord.html#toc5">Contents</A>
+<HR>
+<H2><A NAME="s5">5.</A> <A HREF="discord.html#toc5">CONFIGURATION</A></H2>
+
+<P>Any text after a # is disregarded, whether at the start of a line or after meaningful text.</P>
+<P>Options may be set in a configuration file, in fact it is easier to do so, but they must be before any time
+sequences in that file.</P>
+<P>A time sequence may span multiple lines, but a voice (binaural, bell, noise, etc.)
+cannot be split across lines.</P>
+<P>Time Sequences</P>
+<P>A time sequence always starts with a duration in the format hh:mm:ss.  This may be followed with a fade indicator of &lt;for fade in or &gt; for fade out. e.g. 00:02:03&lt; means to fade in for 2 minutes and 3 seconds.  The duration is followed
+by the voices that will play during that time period.</P>
+<P>Separators allowed are | , ; ' =, multiples are allowed mixed with singles, any combination
+of separators even within a voice.
+However, every voice must be joined by separators.  No white space is allowed.
+The &lt; or &gt; after the duration/time is a fade in &lt;, or fade out &gt; for that time sequence.
+The &gt; after a binaural or chronaural voice is a slide, and will adjust to be the next binaural or chronaural at the
+end of the time period.
+All amplitudes are in percentages, 0 is none, 100 is max.
+All splits are expressed as fraction for Left channel.  e.g. .3 means .3 left channel, .7 right channel
+All durations in voices are expressed as seconds.  e.g. .3 = .3 second, 20 = 20 seconds, 1200 = 20 minutes
+For any fields with a minimum and maximum range, setting them the same makes it a constant value.  Any time 
+they are different, a random selection in the range will be made.</P>
+<P>Fields for binaural are name, carrier frequency, beat frequency, and amplitude.
+Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
+Optional fields must be at the end, before the slide indicator if they are present.
+The + or - on the beat frequency indicates whether the left ear is higher + or lower -.
+The beat is centered on the carrier frequency, so 200  +4 results in L 202 and R 198.</P>
+<P>Fields for chronaural are name, carrier, amplitude, amplitude beat, amplitude fraction, amplitude behave,
+beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
+Amplitude beat is the frequency through time of the carrier tone.
+Amplitude fraction is the value the sin function has to have before the tone is played.
+Behavior for amp beat is below.
+1 sin wave  tone is adjusted by sin value
+2 square wave  tone is either on or off
+3 dirac delta approximation, power of sin
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
+Split beat is the frequency through time of the oscillation of the left and right split.
+Slide must be > or no slide will occur.</P>
+<P>Fields for bell are name, frequency, minimum start amplitude, maximum start amplitude, beginning split, ending split,
+lowest split allowed, highest split allowed, minimum time allowed to ring, maximum time allowed to ring,
+minimum time till next ring, maximum time till next ring, and decay pattern for the ring, 1 through 5.
+1 decrease linearly to 0
+2 decrease linearly to .5, 
+3 constant,
+4 increase linearly to 1.1
+5 decrease quadratically to 0  (this is the most natural sounding)
+The minimum and maximum time till next play are relative to the beginning of the last play. i.e. unlike noise,
+bell will interrupt itself.  The bell can start ringing again before the current ring has finished.  
+It displaces the currently ringing bell.
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.</P>
+<P>Fields for noise are name, minimum start frequency, maximum start frequency, minimum start amplitude, 
+maximum start amplitude, beginning split, ending split,
+lowest split allowed, highest split allowed, minimum time allowed to play, maximum time allowed to play,
+minimum time till next play, maximum time till next play, minimum decay pattern for the play, 1 through 5.
+maximum decay pattern for the play, 1 through 5, and the number of repeats.
+1 decrease linearly to 0
+2 decrease linearly to .5, 
+3 constant,
+4 increase linearly to 1.1
+5 decrease linearly  to 1.25
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
+Minimum decay has to be less than maximum decay or unpredicable behavior results.
+The minimum and maximum time till next play are relative to the end of the last play. i.e. unlike bell,
+noise will never interrupt itself.  The next voice in a slot will never start playing until after the 
+current voice has finished.
+If there is no repeat on the end, 1 is the default.</P>
+<P>Fields for stoch are name, file name, minimum amplitude, maximum amplitude, beginning split, ending split,
+lowest split allowed, highest split allowed, minimum time till next play, maximum time till next play.
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.</P>
+<P>Fields for sample are name, file name, minimum amplitude, maximum amplitude, beginning split, ending split,
+lowest split allowed, highest split allowed, and length of the sample (constant in seconds).
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.</P>
+<P>Fields for repeat are name, file name, minimum amplitude, maximum amplitude, beginning split, ending split,
+lowest split allowed, highest split allowed.
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.</P>
+<P>Fields for once are name, file name, minimum amplitude, maximum amplitude, beginning split, ending split,
+lowest split allowed, highest split allowed, when to play.
+If beginning split or ending split are -1, they are set randomly between lowest split and highest split.</P>
+<P>There are test configuration files called binaural_test.discord, chronaural_test.discord, bell_test.discord, 
+noise_test.discord, stoch_test.discord, sample_test.discord, repeat_test.discord, once_test.discord, and
+frequency_loudness_test.discord.</P>
+
+<HR>
+<A HREF="discord-6.html">Next</A>
+<A HREF="discord-4.html">Previous</A>
+<A HREF="discord.html#toc5">Contents</A>
+</BODY>
+</HTML>

@@ -1,0 +1,50 @@
+* insects:
+
+- Crickets and katydids
+- A small collection of insect sounds, recorded from life by genuine
+entomologists.
+
+(All are looped)
+
+complex_trilling_trig.aiff       seashore_meadow_katydid.aiff
+everglades_conehead.aiff         slightly_musical_conehead.aiff
+fastcalling_tree_cricket.aiff    southern_ground_cricket.aiff
+house_cricket.aiff               syncopated_scaly_cricket.aiff
+jamaican_field_cricket.aiff      texas_meadow_katydid.aiff
+japanese_burrowing_cricket.aiff  tinking_trig.aiff
+melodious_ground_cricket.aiff    tinkling_ground_cricket.aiff
+pine_tree_cricket.aiff           tropical_house_cricket.aiff
+robust_shieldback.aiff           vocal_field_cricket.aiff
+sand_field_cricket.aiff
+
+* source:
+
+- Crickets and katydids
+
+Singing Insects of North America
+<http://buzz.ifas.ufl.edu/index.htm>
+Recordings copyrighted by T. J. Walker, except for vocal field cricket
+(D. B. Weissman)
+-- copyright information: <http://buzz.ifas.ufl.edu/i00cr.htm>
+-- "noncommercial, not-for-profit uses are permitted"
+
+These are from the sound collection of Boodler.
+
+Boodler: a programmable soundscape tool
+   Version 1.5.3
+
+Designed by Andrew Plotkin <erkyrath@eblong.com>
+   <http://www.eblong.com/zarf/boodler/>
+
+Copyright 2002 by Andrew Plotkin
+   This program is distributed under the LGPL.
+   See the LGPL document, or the above URL, for details.
+
+-----------------------------------------------
+
+* WHAT IT IS
+
+Boodler is a tool for creating soundscapes -- continuous, infinitely
+varying streams of sound. Boodler is designed to run in the background
+on a computer, maintaining whatever sound environment you desire.
+

@@ -1,0 +1,79 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+ <META NAME="GENERATOR" CONTENT="LinuxDoc-Tools 0.9.21">
+ <TITLE>discord: OPTIONS</TITLE>
+ <LINK HREF="discord-5.html" REL=next>
+ <LINK HREF="discord-3.html" REL=previous>
+ <LINK HREF="discord.html#toc4" REL=contents>
+</HEAD>
+<BODY>
+<A HREF="discord-5.html">Next</A>
+<A HREF="discord-3.html">Previous</A>
+<A HREF="discord.html#toc4">Contents</A>
+<HR>
+<H2><A NAME="s4">4.</A> <A HREF="discord.html#toc4">OPTIONS</A></H2>
+
+
+
+<H2><A NAME="ss4.1">4.1</A> <A HREF="discord.html#toc4.1">--bit_accuracy=16i   -b 24i </A>
+</H2>
+
+<P>bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and float.  Only applies if you are sending to a file.</P>
+
+<H2><A NAME="ss4.2">4.2</A> <A HREF="discord.html#toc4.2">--compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0   -c 5=12'''2530=1''',13128=3.5,,,,20000=12.0</A>
+</H2>
+
+<P>compensate for human hearing, low and high freqs need to be louder, max 32 If this is correct, a sound at the compensated
+frequency sounds the same loudness as any other sound at its compensated frequency.  i.e. It linearizes the range.  This is
+individual, depends on your hearing, so the above is only a starting point for you to play with and tweak.  There is some
+ambiguity about whether sounds outside the range of hearing have any effect.  If you use compensation, set all amplitudes to
+a constant value for binaural, chronaural, bell, and noise.  Or whatever ratio between the loudness you want them to have, as
+if linear.  The stoch, sample, repeat, and once voices are not compensated so should be set at the amplitude you want.</P>
+
+<H2><A NAME="ss4.3">4.3</A> <A HREF="discord.html#toc4.3">--display_only   -d</A>
+</H2>
+
+<P>display only, don't actually play any sequences</P>
+
+<H2><A NAME="ss4.4">4.4</A> <A HREF="discord.html#toc4.4">--every=10   -e 5</A>
+</H2>
+
+<P>display status every x seconds</P>
+
+<H2><A NAME="ss4.5">4.5</A> <A HREF="discord.html#toc4.5">--fast=60   -f 10</A>
+</H2>
+
+<P>fast, move through at multiple of time, 60 ==> 1min becomes 1 sec so a 1 hour play sequence will play in 1 minute</P>
+
+<H2><A NAME="ss4.6">4.6</A> <A HREF="discord.html#toc4.6">--help   -h</A>
+</H2>
+
+<P>help</P>
+
+<H2><A NAME="ss4.7">4.7</A> <A HREF="discord.html#toc4.7">--out_format=w   -o w</A>
+</H2>
+
+<P>output file format, w:wav, f:flac, r:raw</P>
+
+<H2><A NAME="ss4.8">4.8</A> <A HREF="discord.html#toc4.8">--quiet   -q</A>
+</H2>
+
+<P>quiet, don't display status while running</P>
+
+<H2><A NAME="ss4.9">4.9</A> <A HREF="discord.html#toc4.9">--rate=44100   -r 96000</A>
+</H2>
+
+<P>frame rate per second, whatever your card can do, 44100 is CD quality Higher rates are beneficial on binaurals at high
+frequencies, say 15000 Hz and above.  For low frequencies, 44100 just fine.</P>
+
+<H2><A NAME="ss4.10">4.10</A> <A HREF="discord.html#toc4.10">--write=/home/xkdi/mindblowing.flac   -w  /home/xkdi/mindblowing.wav</A>
+</H2>
+
+<P>write to this file instead of the default, playing via the sound card</P>
+<HR>
+<A HREF="discord-5.html">Next</A>
+<A HREF="discord-3.html">Previous</A>
+<A HREF="discord.html#toc4">Contents</A>
+</BODY>
+</HTML>

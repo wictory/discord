@@ -1,0 +1,344 @@
+  discord
+  Stan Lysiak <stanlk@discord.sourceforge.net>
+  v1.0, May 9, 2007
+
+  This describes the use of the discord binaural and chronaural beat
+  generator program.
+  ______________________________________________________________________
+
+  Table of Contents
+
+
+  1. NAME
+  2. SYNOPSIS
+  3. DESCRIPTION
+     3.1 Voice type description
+        3.1.1 binaural
+        3.1.2 chronaural
+        3.1.3 bell
+        3.1.4 noise
+        3.1.5 stoch
+        3.1.6 sample
+        3.1.7 repeat
+        3.1.8 once
+
+  4. OPTIONS
+     4.1 --bit_accuracy=16i   -b 24i
+     4.2 --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0   -c 5=12'''2530=1''',13128=3.5,,,,20000=12.0
+     4.3 --display_only   -d
+     4.4 --every=10   -e 5
+     4.5 --fast=60   -f 10
+     4.6 --help   -h
+     4.7 --out_format=w   -o w
+     4.8 --quiet   -q
+     4.9 --rate=44100   -r 96000
+     4.10 --write=/home/xkdi/mindblowing.flac   -w  /home/xkdi/mindblowing.wav
+
+  5. CONFIGURATION
+  6. BUGS
+
+
+  ______________________________________________________________________
+
+  NAME
+
+  discord - Generate binaural and chronaural tones to direct play or
+  file.
+
+  SYNOPSIS
+
+  discord [flags] filename
+
+  DESCRIPTION
+
+  discord is a command line program used to generate binaural and
+  chronaural beats mixed with tones, noise, or sound files of the users
+  choice.  The default is to play the files via the computer's sound
+  card, but they can be written to output files instead.  Only file
+  formats available in libsndfile can be used.  Those formats do not
+  include mp3 or ogg at this time, though the creator of libsndfile is
+  thinking about adding ogg.  He is not adding mp3 because of patent
+  issues.  For practical purposes, this means wav, flac, or raw files on
+  a PC, though au and aiff formats are also available.  If an input
+  sound file has a different sample rate than that selected for the
+  output, it will automatically resampled to the requested rate, and a
+  copy will be written in the same directory as it was found with the
+  new rate appended to the filename.
+  While all of the options below can be used on the command line, the
+  sequences to play must be defined in a configuration file.
+  Configuration files are named with a .discord extension by convention.
+  You can, however, use whatever name you want for your configuration
+  files.
+
+  There are eight voice types in discord.  These are binaural,
+  chronaural, bell, noise, stoch (stands for stochastic), sample,
+  repeat, and once.
+
+  Voice type description
+
+
+
+  binaural
+
+  Generate a pair of tones separated by a beat frequency at a specific
+  carrier frequency and amplitude.  Optionally vary the amplitude of the
+  left and right channels at a specified frequency and by a specified
+  percent.  Binaural tones are allowed to slide into the next binaural
+  on carrier, beat, amplitude, amplitude beat, and amplitude amount.
+
+
+  chronaural
+
+  Generate a periodic tone at a specified frequency and amplitude.  The
+  period is the beat in this case.  In addition, the split or pan of the
+  tone can be specified to vary between set values at a rate specified.
+  Chronaural tones are allowed to slide into the next chronaural on
+  carrier, beat, amplitude, and split beat.
+
+
+  bell
+
+  Generate a tone at a specified frequency and amplitude.  The tone may
+  be fixed periodic or occur at randomly generated times between
+  selected upper and lower limits.  Decay or enhance for the tone can
+  also be set.  Bells can interrupt each other before they are finished
+  playing.  No slide is available for bell.
+
+
+  noise
+
+  Generate a group of tones within a specified frequency and amplitude
+  range.  The tones may be fixed periodic or occur at randomly generated
+  times between selected upper and lower limits.  Decay or enhance for
+  the tone can also be set.  Noise tones don't interrupt each other
+  before they are finished playing.  No slide is available for noise.
+
+
+  stoch
+
+  Play a user supplied sound file at either fixed intervals or random
+  intervals within specified times.  Pan and amplitude can vary for each
+  play, or remain fixed depending on options specified.
+
+
+  sample
+
+  Play a randomly selected fixed time slices of a user supplied sound
+  file continuously.  Pan and amplitude can vary with each sample or
+  remain fixed, depending on the options specified.
+
+
+
+  repeat
+
+  Play a user supplied sound file continuously.  Pan and amplitude can
+  vary with each repeat or remain fixed, depending on the options
+  specified.
+
+
+  once
+
+  Play a user supplied sound file once at a specified time.  Pan and
+  amplitude can be randomly chosen or be fixed, depending on the options
+  specified.
+
+  All internal processing is done in double format so the tones are very
+  precise. The user specified sound files are stored in memory, so you
+  should have lots of memory or use small sound files.
+
+  OPTIONS
+
+
+
+  --bit_accuracy=16i   -b 24i
+
+  bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and
+  float.  Only applies if you are sending to a file.
+
+
+  --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0   -c 5=12'''2530=1''',13128=3.5,,,,20000=12.0
+
+  compensate for human hearing, low and high freqs need to be louder,
+  max 32 If this is correct, a sound at the compensated frequency sounds
+  the same loudness as any other sound at its compensated frequency.
+  i.e. It linearizes the range.  This is individual, depends on your
+  hearing, so the above is only a starting point for you to play with
+  and tweak.  There is some ambiguity about whether sounds outside the
+  range of hearing have any effect.  If you use compensation, set all
+  amplitudes to a constant value for binaural, chronaural, bell, and
+  noise.  Or whatever ratio between the loudness you want them to have,
+  as if linear.  The stoch, sample, repeat, and once voices are not
+  compensated so should be set at the amplitude you want.
+
+
+  --display_only   -d
+
+  display only, don't actually play any sequences
+
+
+  --every=10   -e 5
+
+  display status every x seconds
+
+
+  --fast=60   -f 10
+
+  fast, move through at multiple of time, 60 ==> 1min becomes 1 sec so a
+  1 hour play sequence will play in 1 minute
+
+
+  --help   -h
+
+  help
+
+
+
+  --out_format=w   -o w
+
+  output file format, w:wav, f:flac, r:raw
+
+
+  --quiet   -q
+
+  quiet, don't display status while running
+
+
+  --rate=44100   -r 96000
+
+  frame rate per second, whatever your card can do, 44100 is CD quality
+  Higher rates are beneficial on binaurals at high frequencies, say
+  15000 Hz and above.  For low frequencies, 44100 just fine.
+
+
+  --write=/home/xkdi/mindblowing.flac   -w  /home/xkdi/mindblowing.wav
+
+  write to this file instead of the default, playing via the sound card
+
+  CONFIGURATION
+
+  Any text after a # is disregarded, whether at the start of a line or
+  after meaningful text.
+
+  Options may be set in a configuration file, in fact it is easier to do
+  so, but they must be before any time sequences in that file.
+
+  A time sequence may span multiple lines, but a voice (binaural, bell,
+  noise, etc.)  cannot be split across lines.
+
+  Time Sequences
+
+  A time sequence always starts with a duration in the format hh:mm:ss.
+  This may be followed with a fade indicator of <for fade in or > for
+  fade out. e.g. 00:02:03< means to fade in for 2 minutes and 3 seconds.
+  The duration is followed by the voices that will play during that time
+  period.
+
+  Separators allowed are | , ; ' =, multiples are allowed mixed with
+  singles, any combination of separators even within a voice.  However,
+  every voice must be joined by separators.  No white space is allowed.
+  The < or > after the duration/time is a fade in <, or fade out > for
+  that time sequence.  The > after a binaural or chronaural voice is a
+  slide, and will adjust to be the next binaural or chronaural at the
+  end of the time period.  All amplitudes are in percentages, 0 is none,
+  100 is max.  All splits are expressed as fraction for Left channel.
+  e.g. .3 means .3 left channel, .7 right channel All durations in
+  voices are expressed as seconds.  e.g. .3 = .3 second, 20 = 20
+  seconds, 1200 = 20 minutes For any fields with a minimum and maximum
+  range, setting them the same makes it a constant value.  Any time they
+  are different, a random selection in the range will be made.
+
+  Fields for binaural are name, carrier frequency, beat frequency, and
+  amplitude.  Optional fields are a left and right amplitude frequency
+  variation and a left and right percentage to vary.  Optional fields
+  must be at the end, before the slide indicator if they are present.
+  The + or - on the beat frequency indicates whether the left ear is
+  higher + or lower -.  The beat is centered on the carrier frequency,
+  so 200  +4 results in L 202 and R 198.
+
+  Fields for chronaural are name, carrier, amplitude, amplitude beat,
+  amplitude fraction, amplitude behave, beginning split, ending split,
+  lowest split allowed, highest split allowed, split beat, and slide.
+  Amplitude beat is the frequency through time of the carrier tone.
+  Amplitude fraction is the value the sin function has to have before
+  the tone is played.  Behavior for amp beat is below.  1 sin wave  tone
+  is adjusted by sin value 2 square wave  tone is either on or off 3
+  dirac delta approximation, power of sin If beginning split or ending
+  split are -1, they are set randomly between lowest split and highest
+  split.  Split beat is the frequency through time of the oscillation of
+  the left and right split.  Slide must be > or no slide will occur.
+
+  Fields for bell are name, frequency, minimum start amplitude, maximum
+  start amplitude, beginning split, ending split, lowest split allowed,
+  highest split allowed, minimum time allowed to ring, maximum time
+  allowed to ring, minimum time till next ring, maximum time till next
+  ring, and decay pattern for the ring, 1 through 5.  1 decrease
+  linearly to 0 2 decrease linearly to .5, 3 constant, 4 increase
+  linearly to 1.1 5 decrease quadratically to 0  (this is the most
+  natural sounding) The minimum and maximum time till next play are
+  relative to the beginning of the last play. i.e. unlike noise, bell
+  will interrupt itself.  The bell can start ringing again before the
+  current ring has finished.  It displaces the currently ringing bell.
+  If beginning split or ending split are -1, they are set randomly
+  between lowest split and highest split.
+
+  Fields for noise are name, minimum start frequency, maximum start
+  frequency, minimum start amplitude, maximum start amplitude, beginning
+  split, ending split, lowest split allowed, highest split allowed,
+  minimum time allowed to play, maximum time allowed to play, minimum
+  time till next play, maximum time till next play, minimum decay
+  pattern for the play, 1 through 5.  maximum decay pattern for the
+  play, 1 through 5, and the number of repeats.  1 decrease linearly to
+  0 2 decrease linearly to .5, 3 constant, 4 increase linearly to 1.1 5
+  decrease linearly  to 1.25 If beginning split or ending split are -1,
+  they are set randomly between lowest split and highest split.  Minimum
+  decay has to be less than maximum decay or unpredicable behavior
+  results.  The minimum and maximum time till next play are relative to
+  the end of the last play. i.e. unlike bell, noise will never interrupt
+  itself.  The next voice in a slot will never start playing until after
+  the current voice has finished.  If there is no repeat on the end, 1
+  is the default.
+
+  Fields for stoch are name, file name, minimum amplitude, maximum
+  amplitude, beginning split, ending split, lowest split allowed,
+  highest split allowed, minimum time till next play, maximum time till
+  next play.  If beginning split or ending split are -1, they are set
+  randomly between lowest split and highest split.
+
+  Fields for sample are name, file name, minimum amplitude, maximum
+  amplitude, beginning split, ending split, lowest split allowed,
+  highest split allowed, and length of the sample (constant in seconds).
+  If beginning split or ending split are -1, they are set randomly
+  between lowest split and highest split.
+
+  Fields for repeat are name, file name, minimum amplitude, maximum
+  amplitude, beginning split, ending split, lowest split allowed,
+  highest split allowed.  If beginning split or ending split are -1,
+  they are set randomly between lowest split and highest split.
+
+  Fields for once are name, file name, minimum amplitude, maximum
+  amplitude, beginning split, ending split, lowest split allowed,
+  highest split allowed, when to play.  If beginning split or ending
+  split are -1, they are set randomly between lowest split and highest
+  split.
+
+  There are test configuration files called binaural_test.discord,
+  chronaural_test.discord, bell_test.discord, noise_test.discord,
+  stoch_test.discord, sample_test.discord, repeat_test.discord,
+  once_test.discord, and frequency_loudness_test.discord.
+
+
+  BUGS
+
+  There is a slight crackle when a slide joins the next voice.  I think
+  this is because of rounding error as I have not been able to find any
+  other reason.
+
+  Error checking is not robust on the input parameters in the
+  configuration file.
+  
+  Doesn't follow standard ./configure, make, make install format.
+
+  Documentation is incomplete.
+
+
+

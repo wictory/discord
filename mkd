@@ -1,0 +1,6 @@
+#!/bin/bash
+
+OPT='-Wall -W -O2 -s '
+LIBS=' -lm -lpthread -lasound -lncurses -lsndfile -lm -lsamplerate '
+
+gcc $OPT discord.c $LIBS -o discord || exit 1
