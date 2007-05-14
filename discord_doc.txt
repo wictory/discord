@@ -1,6 +1,6 @@
   discord
   Stan Lysiak <stanlk@users.sourceforge.net>
-  v1.0.1, May 12, 2007
+  v1.0.5, May 14, 2007
 
   This describes the use of the discord binaural and chronaural beat
   generator program.
@@ -23,16 +23,16 @@
         3.1.8 once
 
   4. OPTIONS
-     4.1 --bit_accuracy=16i   -b 24i
-     4.2 --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0   -c 5=12'''2530=1''',13128=3.5,,,,20000=12.0
+     4.1 --bit_accuracy   -b
+     4.2 --compensate   -c
      4.3 --display_only   -d
-     4.4 --every=10   -e 5
-     4.5 --fast=60   -f 10
+     4.4 --every   -e
+     4.5 --fast   -f
      4.6 --help   -h
-     4.7 --out_format=w   -o w
+     4.7 --out_format   -o
      4.8 --quiet   -q
-     4.9 --rate=44100   -r 96000
-     4.10 --write=/home/xkdi/mindblowing.flac   -w  /home/xkdi/mindblowing.wav
+     4.9 --rate   -r
+     4.10 --write   -w
 
   5. CONFIGURATION
   6. BUGS
@@ -68,7 +68,8 @@
   formats.
 
   While all of the options below can be used on the command line, the
-  sequences to play must be defined in a configuration file.
+  sequences to play must be defined in a configuration file.  Options
+  on the command line override options in a configuration file.
   Configuration files are named with a .discord extension by
   convention.  You can, however, use whatever name you want for your
   configuration files.
@@ -145,8 +146,8 @@
 
   --bit_accuracy   -b
 
-    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and
-    float.  Only applies if you are sending to a file.
+    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
+    f=float.  Only applies if you are sending to a file.
     
     Examples
       --bit_accuracy=16i
@@ -155,19 +156,23 @@
   --compensate   -c
 
     compensate for human hearing, low and high freqs need to be
-    louder, max 32 If this is correct, a sound at the compensated
-    frequency sounds the same loudness as any other sound at its
-    compensated frequency.  i.e. It linearizes the range.  This is
-    individual, depends on your hearing, so the above is only a
-    starting point for you to play with and tweak.  There is some
-    ambiguity about whether sounds outside the range of hearing have
-    any effect.  If you use compensation, set all amplitudes to a
-    constant value for binaural, chronaural, bell, and noise.  Or
-    whatever ratio between the loudness you want them to have, as if
-    linear.  The stoch, sample, repeat, and once voices are not
-    compensated so should be set at the amplitude you want.
+    louder, max 32 adjustment points are allowed.  If this is correct,
+    a sound at the compensated frequency sounds the same loudness as
+    any other sound at its compensated frequency.  i.e. It linearizes
+    the range.  This is individual, depends on your hearing, so the
+    above is only a starting point for you to play with and tweak.
+    For most people, sounds from about 800 Hz to 4000 Hz are the
+    loudest and about equivalent.  Hearing falls off at either end so
+    that the amplitude has to be higher in order for the sound to have
+    the same loudness to the ear.  There is dispute about whether
+    sounds outside the range of hearing have any effect.  If you use
+    compensation, set all amplitudes to a constant value for binaural,
+    chronaural, bell, and noise.  Or whatever ratio between the
+    loudness you want them to have, as if linear.  The stoch, sample,
+    repeat, and once voices are not compensated so should be set at
+    the amplitude you want.
 
-    Examples
+    Examples  (see also the test script files)
       --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0
       -c 5=10'''2530=1''',13128=3.5,,,,20000=10.0
 
@@ -175,7 +180,7 @@
 
     display only, don't actually play any sequences
 
-  --every=10   -e 5
+  --every   -e
 
     display status every x seconds
 
@@ -183,10 +188,12 @@
       --every=10   
       -e 5
 
-  --fast=60   -f 10
+  --fast   -f
 
     fast, move through at multiple of time, 60 ==> 1min becomes 1 sec
-    so a 1 hour play sequence will play in 1 minute
+    so a 1 hour play sequence will play in 1 minute.  Good for
+    testing a new sequence for correctness, though obviously the
+    effect won't be the same.
 
     Examples
       --fast=60
@@ -208,12 +215,12 @@
 
     quiet, don't display status while running
 
-  --rate=44100   -r 96000
+  --rate   -r
 
     frame rate per second, whatever your card can do, 44100 is CD
-    quality Higher rates are beneficial on binaurals at high
-    frequencies, say 15000 Hz and above.  For low frequencies, 44100
-    just fine.  
+    quality.  Higher rates are beneficial on binaurals at high
+    frequencies, say 15000 Hz and above, or very low beats, < 0.1.
+    For normal frequencies, 44100 will be just fine.  
     
     Examples 
       --rate=44100 
@@ -255,7 +262,11 @@
   
   The > after a binaural or chronaural voice is a slide, and will
   adjust to be the next binaural or chronaural at the end of the time
-  period.  
+  period.  For slides to work, the binaural or chronaural voices must
+  be in the same relative position in the time sequences.  There is no
+  other way to know that there is a link between the voices.  So the
+  first voice in the sequence will always look to the first
+  voice in the next sequence to slide to, etc.
 
   All amplitudes are in percentages, 0 is none, 100 is max.  
 
@@ -292,12 +303,14 @@
   lowest split allowed, highest split allowed, split beat, and slide.
   Amplitude beat is the frequency through time of the carrier tone.
   Amplitude fraction is the value the sin function has to have before
-  the tone is played.  Behavior for amp beat is below.  1 sin wave  tone
-  is adjusted by sin value 2 square wave  tone is either on or off 3
-  dirac delta approximation, power of sin If beginning split or ending
-  split are -1, they are set randomly between lowest split and highest
-  split.  Split beat is the frequency through time of the oscillation of
-  the left and right split.  Slide must be > or no slide will occur.
+  the tone is played.  Behavior for amp beat is as follows:
+  1 sin wave  tone is adjusted by sin value 
+  2 square wave  tone is either on or off 
+  3 dirac delta approximation  power of sin 
+  If beginning split or ending split are -1, they are set randomly
+  between lowest split and highest split.  Split beat is the frequency
+  through time of the oscillation of the left and right split.  Slide
+  must be > or no slide will occur.
   Example
              carrier                begin split
                |                       |   
@@ -310,14 +323,17 @@
   start amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, minimum time allowed to ring, maximum time
   allowed to ring, minimum time till next ring, maximum time till next
-  ring, and decay pattern for the ring, 1 through 5.  1 decrease
-  linearly to 0 2 decrease linearly to .5, 3 constant, 4 increase
-  linearly to 1.1 5 decrease quadratically to 0  (this is the most
-  natural sounding) The minimum and maximum time till next play are
-  relative to the beginning of the last play. i.e. unlike noise, bell
-  will interrupt itself.  The bell can start ringing again before the
-  current ring has finished.  It displaces the currently ringing bell.
-  If beginning split or ending split are -1, they are set randomly
+  ring, and decay pattern for the ring, 1 through 5.  
+  1 decrease linearly to 0 
+  2 decrease linearly to .5, 
+  3 constant, 
+  4 increase linearly to 1.1 
+  5 decrease quadratically to 0  (this is the most natural sounding) 
+  The minimum and maximum time till next play are relative to the
+  beginning of the last play. i.e. unlike noise, bell will interrupt
+  itself.  The bell can start ringing again before the current ring
+  has finished.  It displaces the currently ringing bell.  If
+  beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.
   Example
       frequency        begin split   high split  max time        decay
@@ -333,40 +349,84 @@
   minimum time allowed to play, maximum time allowed to play, minimum
   time till next play, maximum time till next play, minimum decay
   pattern for the play, 1 through 5.  maximum decay pattern for the
-  play, 1 through 5, and the number of repeats.  1 decrease linearly to
-  0 2 decrease linearly to .5, 3 constant, 4 increase linearly to 1.1 5
-  decrease linearly  to 1.25 If beginning split or ending split are -1,
-  they are set randomly between lowest split and highest split.  Minimum
-  decay has to be less than maximum decay or unpredicable behavior
-  results.  The minimum and maximum time till next play are relative to
-  the end of the last play. i.e. unlike bell, noise will never interrupt
-  itself.  The next voice in a slot will never start playing until after
-  the current voice has finished.  If there is no repeat on the end, 1
-  is the default.
-  noise'360.0'420.0'0.50'0.80'-1.0'-1.0'.050'.950'2.3000'5.7000'.10000'.20000'2'4'5
+  play, 1 through 5, and the number of repeats.  
+  1 decrease linearly to 0 
+  2 decrease linearly to .5, 
+  3 constant, 
+  4 increase linearly to 1.1 
+  5 decrease linearly  to 1.25 
+  If beginning split or ending split are -1, they are set randomly
+  between lowest split and highest split.  Minimum decay has to be
+  less than maximum decay or unpredicable behavior results.  The
+  minimum and maximum time till next play are relative to the end of
+  the last play. i.e. unlike bell, noise will never interrupt itself.
+  The next voice in a slot will never start playing until after the
+  current voice has finished.  If there is no repeat on the end, 1 is
+  the default.
+  Example - line split for expository reasons, has to be single in script
+  separators  max frequency  max amplitude    end split
+        |             |                |              | 
+  noise''''360.0''''420.0''''0.50''''0.80''''-1.0''''-1.0''''.050''
+    |       |                  |               |               |
+  name  min frequency  min amplitude  begin split  min allowed split
+
+  max allowed split  max time to play  max time to next play
+      |                  |                  |
+  ''.950''''2.3000''''5.7000''''.10000''''.20000''''2''''4''''5
+              |                    |                |    |    |
+    min time to play  min time to next play  min decay   | repeats
+                                                   max decay   
 
   Fields for stoch are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, minimum time till next play, maximum time till
   next play.  If beginning split or ending split are -1, they are set
   randomly between lowest split and highest split.
+  Example
+                                                max time to next play
+      file to play  max amplitude  end split  max allowed split   |
+               |              |           |             |         |
+  stoch'''trig.aiff'''2.20'''3.303'''-1'''-1'''.050'''.950'''.5'''3.9
+   |                  |              |           |            |
+  name     min amplitude    begin split  min allowed split    |
+                                                min time to next play
 
   Fields for sample are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, and length of the sample (constant in seconds).
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.
+  Example
+      file to play  max amplitude  end split  max allowed split
+               |              |           |             |
+  sample'''trig.aiff'''1.20'''2.30'''-1'''-1'''.050'''.950'''1.0
+   |                  |              |           |            |
+  name     min amplitude    begin split  min allowed split    |
+                                                length of sample
 
   Fields for repeat are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed.  If beginning split or ending split are -1,
   they are set randomly between lowest split and highest split.
+  Example
+      file to play  max amplitude  end split  max allowed split
+               |              |           |             |
+  repeat'''trig.aiff'''1.20'''3.30'''-1'''-1'''.050'''.950
+   |                  |              |           |
+  name     min amplitude    begin split  min allowed split
 
   Fields for once are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, when to play.  If beginning split or ending
   split are -1, they are set randomly between lowest split and highest
   split.
+  Example
+      file to play  max amplitude  end split  max allowed split
+               |              |         |            |
+  once'''trig.aiff'''1.20'''3.30'''-1'''-1'''.050'''.950'''20.8
+   |                  |            |           |            |
+  name     min amplitude    begin split  min allowed split  |
+                                                   when to play
 
   There are test configuration files called binaural_test.discord,
   chronaural_test.discord, bell_test.discord, noise_test.discord,
@@ -376,17 +436,10 @@
 
   BUGS
 
-  There is occasionally a slight crackle when a slide joins the next
-  voice.  Much reduced from initial release as I put a fix in.
-  Observing to see conditions where it occurs, will try to eliminate
-  it.
-
   Error checking is not robust on the input parameters in the
   configuration file.
   
   Doesn't follow standard ./configure, make, make install format.
 
-  Documentation is incomplete.
-
-
+  Documentation is not standard.
 
