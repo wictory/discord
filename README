@@ -1,17 +1,24 @@
-discord is a program that allows you to program binaural and chronaural beats with great flexibility and mixed with sound
-files of your choice.  The flexibility requires some complexibility.  There is a learning curve.  Use the test configuration
-files as templates and experiment with changing the variables to see the effects.  There are help files in text and html
-format.
+discord is a program that allows you to program binaural and
+chronaural beats with great flexibility and mixed with sound files of
+your choice.  The flexibility requires some complexibility.  There is
+a learning curve.  Use the test configuration files as templates and
+experiment with changing the variables to see the effects.  There are
+help files in text and html format.
 
-This was developed on a Fedora Core 6 linux system.  It requires libsndfile and libsamplerate.  If your distro does not
-provide them, go to http://www.mega-nerd.com for the latest versions.
+This was developed on a Fedora Core 6 linux system.  It requires
+libsndfile and libsamplerate.  If your distro does not provide them,
+go to http://www.mega-nerd.com for the latest versions.
 
 To compile:
 ./mkd
 
-Install manually wherever you want it.  Single executable, discord.  Alternatively, just run as ./discord.
+Install manually wherever you want it.  Single executable, discord.
+Alternatively, just run as ./discord.
 
-If you want to port to another architecture, the engine should work just fine.  However the dependencies on the sound system
-alsa will have to be replaced and the pthread calls will have to be changed to the threading model on the new platform.  They
-can optionally be removed as they are only scavenging a few cycles for sound creation, and under light usage will make no
-difference.  libsndfile and libsamplerate are compatible across multiple platforms.
+If you want to port to another architecture, the engine should work
+just fine.  However the dependencies on the sound system alsa will
+have to be replaced and the pthread calls will have to be changed to
+the threading model on the new platform.  They can optionally be
+removed as they are only scavenging a few cycles for sound creation,
+and under light usage will make no difference.  libsndfile and
+libsamplerate are compatible across multiple platforms.

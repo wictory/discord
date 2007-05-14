@@ -78,7 +78,7 @@
 
 
 
-#define VERSION "1.0.0"
+#define VERSION "1.0.4"
 
 
 #include <stdio.h>
@@ -219,6 +219,10 @@ struct binaural
   double carr_adj, beat_adj, amp_adj;   // continuous adjustment if desired
   double amp_beat1_adj, amp_beat2_adj, amp_pct1_adj, amp_pct2_adj;   // continuous adjustment if desired
   int slide;     // 1 if this sequence slides into the next (only binaurals slide)
+    /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
+        starting offset for this voice.  Store a pointer to it during setup.
+    */
+  int *last_off1, *last_off2;   
 } ;
 
 /* structure for playing a bell during the beat */
@@ -395,6 +399,10 @@ struct chronaural
   int inc1, off1;               // for chronaural tones, offset + increment into sine table for carrier
   int inc2, off2;               // for chronaural tones, offset + increment into sine table for amp_beat
   double carr_adj, amp_beat_adj, amp_adj, split_beat_adj, split_adj;   // continuous adjustment if desired
+    /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
+        starting offset for this voice.  Store a pointer to it during setup.
+    */
+  int *last_off1, *last_off2;   
 } ;
 
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
@@ -2778,25 +2786,31 @@ init_binaural ()
   while (snd1 != NULL)
   { 
     while (work1 != NULL)
-    { stub1 = (stub *) work1;
+    { 
+      stub1 = (stub *) work1;
       switch (stub1->type)
       { 
         case 1:  // binaural
-          { binaural *binaural1 = NULL, *binaural2 = NULL;
+          { 
+            binaural *binaural1 = NULL, *binaural2 = NULL;
 
             binaural1 = (binaural *) work1;
             binaural1->off1 = binaural1->inc1 = binaural1->off2 = binaural1->inc2 = 0;
             binaural1->amp_off1 = binaural1->amp_inc1 = binaural1->amp_off2 = binaural1->amp_inc2 = 0;
             if (binaural1->slide == 0)
-            { binaural1->carr_adj = binaural1->beat_adj = binaural1->amp_adj = 0.0;
+            { 
+              binaural1->carr_adj = binaural1->beat_adj = binaural1->amp_adj = 0.0;
               binaural1->amp_beat1_adj = binaural1->amp_beat2_adj = 0.0;
               binaural1->amp_pct1_adj = binaural1->amp_pct2_adj = 0.0;
             } 
             else  // slide to next binaural in stream
-            { if (work2 != NULL)
-              { binaural2 = (binaural *) work2;
+            { 
+              if (work2 != NULL)
+              { 
+                binaural2 = (binaural *) work2;
                 if (binaural2->type == 1)  // also binaural
-                { binaural1->carr_adj = (binaural2->carrier - binaural1->carrier)/ (double) snd1->tot_frames;
+                { 
+                  binaural1->carr_adj = (binaural2->carrier - binaural1->carrier)/ (double) snd1->tot_frames;
                   binaural1->beat_adj = (binaural2->beat - binaural1->beat)/ (double) snd1->tot_frames;
                   binaural1->amp_adj = (binaural2->amp - binaural1->amp)/ (double) snd1->tot_frames;
                   /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
@@ -2817,6 +2831,9 @@ init_binaural ()
                     binaural1->amp_pct2_adj = (binaural2->amp_pct2 - binaural1->amp_pct2)/ (double) snd1->tot_frames;
                   else  // zero amp_pct2 in next binaural
                     binaural1->amp_pct2_adj = - binaural1->amp_pct2 / (double) snd1->tot_frames;
+                  /* Set the pointers to the previous voice's offsets here so it can be used while running */
+                  binaural2->last_off1 = &(binaural1->off1);
+                  binaural2->last_off2 = &(binaural1->off2);
                 } 
                 else
                   error ("Slide called for, voice to slide to is not binaural.  Position matters!\n");
@@ -2852,6 +2869,9 @@ init_binaural ()
                   chronaural1->carr_adj = (chronaural2->carrier - chronaural1->carrier)/ (double) snd1->tot_frames;
                   chronaural1->amp_beat_adj = (chronaural2->amp_beat - chronaural1->amp_beat)/ (double) snd1->tot_frames;
                   chronaural1->amp_adj = (chronaural2->amp - chronaural1->amp)/ (double) snd1->tot_frames;
+                  /* Set the pointers to the previous voice's offsets here so it can be used while running */
+                  chronaural2->last_off1 = &(chronaural1->off1);
+                  chronaural2->last_off2 = &(chronaural1->off2);
                 }
                 else
                   error ("Slide called for, voice to slide to is not chronaural.  Position matters!\n");
@@ -3205,6 +3225,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
 
           binaural1 = (binaural *) this;  // reassign void pointer as binaural struct
 
+          /* if start of the voice, increments are zero, set starting offset to be last offset of previous voice */
+          if (binaural1->inc1 == 0 && binaural1->inc2 == 0)  
+          {
+            if (binaural1->last_off1 != NULL)  // there *is* a previous offset to use
+              binaural1->off1 = *binaural1->last_off1;  // to eliminate crackle from discontinuity in wave
+            if (binaural1->last_off2 != NULL)  // there *is* a previous offset to use
+              binaural1->off2 = *binaural1->last_off2;
+          }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             freq1 = binaural1->carrier + binaural1->beat / 2;
@@ -3760,6 +3788,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
 
           chronaural1 = (chronaural *) this;  // reassign void pointer as chronaural struct
 
+          /* if start of the voice, increments are zero, set starting offset to be last offset of previous voice */
+          if (chronaural1->inc1 == 0 && chronaural1->inc2 == 0)  
+          {
+            if (chronaural1->last_off1 != NULL)  // there *is* a previous offset to use
+              chronaural1->off1 = *chronaural1->last_off1;  // to eliminate crackle from discontinuity in wave
+            if (chronaural1->last_off2 != NULL)  // there *is* a previous offset to use
+              chronaural1->off2 = *chronaural1->last_off2;
+          }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             chronaural1->inc2 = (int) round( chronaural1->amp_beat * 2. * fast_mult);  //inc to next sin value

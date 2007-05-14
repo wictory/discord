@@ -376,9 +376,10 @@
 
   BUGS
 
-  There is a slight crackle when a slide joins the next voice.  I think
-  this is because of rounding error as I have not been able to find any
-  other reason.
+  There is occasionally a slight crackle when a slide joins the next
+  voice.  Much reduced from initial release as I put a fix in.
+  Observing to see conditions where it occurs, will try to eliminate
+  it.
 
   Error checking is not robust on the input parameters in the
   configuration file.
