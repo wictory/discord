@@ -1,5 +1,6 @@
 // discord - binaural and chronaural beat generator
-// (c) 2007 Stan Lysiak <stanl@cox.net>.  All Rights Reserved.
+// (c) 2007 Stan Lysiak <stanlk@users.sourceforge.net>.  
+// All Rights Reserved.
 // For latest version see http://discord.sourceforge.net/.  
 // Released under the GNU GPL version 2.  Use at your own risk.
 //
@@ -1706,13 +1707,15 @@ setup_bell (char *token, void **work)
 
   /* create the time to first play of bell */
   if (bell1->repeat_min == bell1->repeat_max)
-    bell1->next_play = bell1->repeat_min;      // fixed period
+    // fixed period, random start
+    bell1->next_play = (int_64) (drand48() * bell1->repeat_min);      
   else
   {
+      // frames to next play random piece of possible interval
     int_64 delta = (int_64) ( (drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
-    bell1->next_play = bell1->repeat_min + delta;      // frames to next play
+    bell1->next_play = delta;
   }
-  bell1->sofar = 0LL;
+  bell1->sofar = (int_64) (drand48() * bell1->next_play);  // random start
 }
 
 /* Set up a noise sequence */
@@ -1904,14 +1907,16 @@ setup_noise (char *token, void **work)
   else
     multiple = 1.0;
   /* create the time to first play of noise */
-  noise1->sofar = 0LL;
   if (noise1->repeat_min == noise1->repeat_max)
-    noise1->next_play = noise1->repeat_min;      // fixed period
+    // fixed period, random start
+    noise1->next_play = (int_64) (drand48() * noise1->repeat_min);
   else
   {
+      // frames to next play random piece of possible interval
     int_64 delta = (int_64) ( (drand48 ()) * (noise1->repeat_max - noise1->repeat_min));
-    noise1->next_play = noise1->repeat_min + delta;      // frames to next play
+    noise1->next_play = delta;      // frames to next play
   }
+  noise1->sofar = noise1->next_play;  // immediate start
   return abs ((int) multiple);         // convert to int
 }
 
@@ -2096,7 +2101,6 @@ setup_stoch (char *token, void **work)
   }
   stoch1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
   /* set up first play of stoch */
-  stoch1->sofar = 0LL;
   if (stoch1->repeat_min == stoch1->repeat_max)
   {
     int_64 delta = (int_64) ( (drand48 ()) * (stoch1->repeat_min));
@@ -2107,6 +2111,7 @@ setup_stoch (char *token, void **work)
     int_64 delta = (int_64) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
     stoch1->next_play = delta;      // frames to next play
   }
+  stoch1->sofar = (int_64) (drand48() * stoch1->next_play);  // random start
 }
 
 /* Set up a sample file sequence */
