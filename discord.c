@@ -132,6 +132,7 @@ int opt_f;                      // run fast, at integer multiple of time
 int opt_f_arg = 1;              // run fast, at integer multiple of time
 int fast_mult = 1;              // default to normal speed
 int opt_h;                      // display help
+int opt_k = 0;                  // keep resampled files, default delete them
 int opt_o;                      // output format to write
 int outfile_format = SF_FORMAT_FLAC; // default to flac if not specified otherwise, r:raw, f:flac
 int opt_q;                      // quiet run, no display of sequence
@@ -578,7 +579,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "b:c:de:f:ho:qr:w:";
+  const char *ostr = "b:c:de:f:hko:qr:w:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -590,6 +591,7 @@ parse_argv_options (int argc, char **argv)
       {"every", 1, 0, 'e'},
       {"fast", 1, 0, 'f'},
       {"help", 0, 0, 'h'},
+      {"keep", 0, 0, 'k'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
@@ -621,6 +623,7 @@ parse_argv_options (int argc, char **argv)
       case 'e':
       case 'f':
       case 'h':
+      case 'k':
       case 'o':
       case 'q':
       case 'r':
@@ -695,7 +698,7 @@ parse_argv_configs (int argc, char **argv)
 int
 append_options (char *config_options)
 {
-  const char *ostr = "b:c:de:f:ho:qr:w:";
+  const char *ostr = "b:c:de:f:hko:qr:w:";
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -710,6 +713,7 @@ append_options (char *config_options)
       {"every", 1, 0, 'e'},
       {"fast", 1, 0, 'f'},
       {"help", 0, 0, 'h'},
+      {"keep", 0, 0, 'h'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
@@ -894,7 +898,7 @@ read_file (FILE * infile, char **config_options)
   while (*curlin != '\0')
   {
     line_count++;
-    token = strtok (worklin, " \t\n");    // get first token after spaces or tabs
+    token = strtok (worklin, " \t\n");    // get first token separated by spaces, tabs, or newline
     if (token)                  // not an empty line
     {
       cmnt = strchr (curlin, '#');
@@ -1014,6 +1018,7 @@ int
 set_options ()
 {
   char *endptr;
+  char *compvals=NULL;
   int c;
   saved_option *sow;
 
@@ -1043,10 +1048,22 @@ set_options ()
           fprintf (stderr, "Unrecognized format for --bit_accuracy/-b %s.  Setting to 16 bit.\n", sow->option_string);
           bit_accuracy = SF_FORMAT_PCM_16;
         break;
-      case 'c':  // compensate for human hearing, lower freqs need to be louder
+      case 'c':  // compensate for human hearing, edge freqs need to be louder
         opt_c = 1;
-        opt_c_points = setup_opt_c (sow->option_string);
-        fprintf (stderr, "opt_c_points %d\n", opt_c_points);
+        if (compvals == NULL) 
+        {
+          size_t compbytes = strlen(sow->option_string);
+          compvals = (char *) Alloc(compbytes+2);
+          strcpy (compvals, sow->option_string);
+          strcat (compvals, "'");  // ensure following separator
+        }
+        else
+        {
+          size_t needbytes = strlen(compvals) + strlen(sow->option_string) + 2;
+          realloc(compvals, needbytes);
+          strcat (compvals, sow->option_string);
+          strcat (compvals, "'");  // ensure following separator
+        }
         break;
       case 'd':  // display only
         opt_d = 1;
@@ -1088,6 +1105,9 @@ set_options ()
       case 'h':  // help
         help ();
         break;
+      case 'k':                // retain resampled files
+        opt_k = 1;
+        break;
       case 'o':  // output file format
         opt_o = 1;
         if (sow->option_string != NULL)
@@ -1127,6 +1147,8 @@ set_options ()
     }
     sow = sow->prev;
   }
+  opt_c_points = setup_opt_c (compvals);  // all option lines concatenated into compvals
+  fprintf (stderr, "opt_c_points %d\n", opt_c_points);
   return 0;                     // success
 }
 
@@ -1281,6 +1303,7 @@ help ()
           "          -e --every        Show a status line every x seconds while playing"NL
           "          -f --fast         Fast.  Run through quickly (real time x 'mult')"NL
           "                              rather than wait for real time to pass"NL
+          "          -k --keep         Keep the resampled input sound files"NL
           "          -o --outfile      Output raw data to the given file instead of playing"NL
           "          -q --quiet        Don't display running status"NL
           "          -r --rate         Select the output rate (default is 44100 Hz, or from -m)"NL
@@ -2002,6 +2025,13 @@ setup_stoch (char *token, void **work)
     error ("Read incorrect number of frames for stoch file %s, %ld instead of %ld\n", 
             subtoken, num_frames, stoch1->frames);
   sf_close (sndfile);
+  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
+  {  // if resampled and not keep option remove resampled file
+    char command [4096] = {'\0'};
+    strcpy (command, "rm ");
+    strcat (command, filename);
+    system (command);
+  }
 
   /* find the maximum amplitude in the sound file, always short int once read */
   for (k = 0 ; k < stoch1->frames ; k += stoch1->channels)
@@ -2195,6 +2225,13 @@ setup_sample (char *token, void **work)
     error ("Read incorrect number of frames for sample file %s, %ld instead of %ld\n", 
             subtoken, num_frames, sample1->frames);
   sf_close (sndfile);
+  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
+  {  // if resampled and not keep option remove resampled file
+    char command [4096];
+    strcat (command, "rm ");
+    strcat (command, filename);
+    system (command);
+  }
 
   /* find the maximum amplitude in the sound file */
   for (k = 0 ; k < sample1->frames ; k += sample1->channels)
@@ -2373,6 +2410,13 @@ setup_repeat (char *token, void **work)
     error ("Read incorrect number of frames for repeat file %s, %ld instead of %ld\n", 
             subtoken, num_frames, repeat1->frames);
   sf_close (sndfile);
+  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
+  {  // if resampled and not keep option remove resampled file
+    char command [4096];
+    strcat (command, "rm ");
+    strcat (command, filename);
+    system (command);
+  }
 
   /* find the maximum amplitude in the sound file */
   for (k = 0 ; k < repeat1->frames ; k += repeat1->channels)
@@ -2540,6 +2584,13 @@ setup_once (char *token, void **work)
     error ("Read incorrect number of frames for once file %s, %ld instead of %ld\n", 
             subtoken, num_frames, once1->frames);
   sf_close (sndfile);
+  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
+  {  // if resampled and not keep option remove resampled file
+    char command [4096];
+    strcat (command, "rm ");
+    strcat (command, filename);
+    system (command);
+  }
 
   /* find the maximum amplitude in the sound file */
   for (k = 0 ; k < once1->frames ; k += once1->channels)
