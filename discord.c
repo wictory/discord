@@ -174,8 +174,24 @@ struct time_seq
   struct time_seq *next;
   char *sequence;
 } ;
-/* holds a time sequence */
+/* holds a time sequence list */
 time_seq *TS = NULL;
+
+/* node to contain a sound file buffer */
+typedef struct snd_buffer snd_buffer;
+struct snd_buffer
+{
+  struct snd_buffer *prev;
+  struct snd_buffer *next;
+  char *filename;
+  short *sound;
+  int_64 frames;
+  int channels;
+  int mono;
+  double scale;
+} ;
+/* list of buffers from sound files */
+snd_buffer *Sound_Files = NULL;
 
 typedef struct sndstream sndstream;
 // the linked list node for a sound to be played
@@ -460,6 +476,7 @@ void setup_repeat (char *token, void **work);
 void setup_once (char *token, void **work);
 void setup_chronaural (char *token, void **work);
 void init_binaural ();
+snd_buffer * process_sound_file (char *filename);
 void play_loop ();
 void save_loop ();
 int generate_frames (struct sndstream *snd1, double *out_buffer, int at_offset, int frame_count);
@@ -1954,12 +1971,7 @@ setup_stoch (char *token, void **work)
   char *saveptr2;
   char filename [256];
   stoch *stoch1 = NULL;
-  SNDFILE *sndfile;
-  SF_INFO sfinfo;
-  sf_count_t num_frames;
-  int subformat ;
-  short holder, peak=0;
-  int k;
+  snd_buffer *sb1 = NULL;
 
   stoch1 = (stoch *) Alloc (sizeof (stoch) * 1);
   *work = stoch1;
@@ -1972,80 +1984,12 @@ setup_stoch (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for stoch sound */
   strcpy (filename, subtoken);
-  check_samplerate (filename);  // if filename is not same rate as out_rate, resample to new file
-  if (! (sndfile = sf_open (filename, SFM_READ, &sfinfo)))
-    error ("Couldn't open stoch file %s\n", filename);
-  if (sfinfo.channels == 1)
-  {
-    stoch1->channels = sfinfo.channels;  // mono
-    stoch1->mono = 1;  // mono
-  }
-  else if (sfinfo.channels == 2)  // check if mono in stereo format
-  {
-    stoch1->channels = 2;  // stereo channels
-    double peaks[2];
-    int retval = sf_command (sndfile, SFC_CALC_MAX_ALL_CHANNELS, peaks, sizeof (peaks));
-    if (retval == 0)
-      if (peaks [0] < 1e-10)  // a mute channel
-        stoch1->mono = 2;  // right channel has sound
-      else if (peaks [1] < 1e-10)  // a mute channel
-        stoch1->mono = 1;  // left channel has sound
-      else if (peaks[0] / peaks [1] > 100)  // large imbalance
-        stoch1->mono = 1;  // left channel has sound
-      else if (peaks[1] / peaks [0] > 100)  // large imbalance
-        stoch1->mono = 2;  // right channel has sound
-      else
-        stoch1->mono = 0;
-    else
-      stoch1->mono = 0;
-  }
-  else
-    error ("Stoch file %s has incorrect number of channels %d\n", 
-            subtoken, sfinfo.channels);
-  num_frames = sf_seek (sndfile, 0, SEEK_END);
-  stoch1->frames = num_frames;
-  stoch1->sound = (short *) Alloc ((sizeof (short)) * num_frames * sfinfo.channels);
-  sf_seek (sndfile, 0, SEEK_SET);
-  subformat = sfinfo.format & SF_FORMAT_SUBMASK ;
-  if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE)
-  {	double	scale ;
-
-    sf_command (sndfile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
-    if (scale < 1e-10)
-      scale = 1.0 ;
-    else
-      scale = 32700.0 / scale ;
-    sf_command (sndfile, SFC_SET_SCALE_FLOAT_INT_READ, NULL, SF_TRUE) ;
-    /* reading into short */
-    num_frames = sf_readf_short (sndfile, stoch1->sound, stoch1->frames);
-  }
-  else // reading into short
-    num_frames = sf_readf_short (sndfile, stoch1->sound, stoch1->frames);
-  if (num_frames != stoch1->frames)
-    error ("Read incorrect number of frames for stoch file %s, %ld instead of %ld\n", 
-            subtoken, num_frames, stoch1->frames);
-  sf_close (sndfile);
-  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
-  {  // if resampled and not keep option remove resampled file
-    char command [4096] = {'\0'};
-    strcpy (command, "rm ");
-    strcat (command, filename);
-    system (command);
-  }
-
-  /* find the maximum amplitude in the sound file, always short int once read */
-  for (k = 0 ; k < stoch1->frames ; k += stoch1->channels)
-  { 
-    holder = abs (stoch1->sound [k]) ;
-    peak  = holder > peak ? holder : peak ;
-    if (stoch1->channels == 2)
-    {
-      holder = abs (stoch1->sound [k+1]) ;
-      peak  = holder > peak ? holder : peak ;
-    }
-  } 
-  // scale factor is 1 divided by maximum amplitude in file
-  stoch1->scale = 1.0 / ((double) peak + 10.0);  
+  sb1 = process_sound_file (filename);
+  stoch1->channels = sb1->channels;
+  stoch1->mono = sb1->mono;
+  stoch1->frames = sb1->frames;
+  stoch1->sound = sb1->sound;
+  stoch1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2155,12 +2099,7 @@ setup_sample (char *token, void **work)
   char *saveptr2;
   char filename [256];
   sample *sample1 = NULL;
-  SNDFILE *sndfile;
-  SF_INFO sfinfo;
-  sf_count_t num_frames;
-  int subformat ;
-  short holder, peak=0;
-  int k;
+  snd_buffer *sb1 = NULL;
 
   sample1 = (sample *) Alloc (sizeof (sample) * 1);
   *work = sample1;
@@ -2172,80 +2111,12 @@ setup_sample (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for sample sound */
   strcpy (filename, subtoken);
-  check_samplerate (filename);  // if filename is not same rate as out_rate, resample to new file
-  if (! (sndfile = sf_open (filename, SFM_READ, &sfinfo)))
-    error ("Couldn't open sample file %s\n", filename);
-  if (sfinfo.channels == 1)
-  {
-    sample1->channels = sfinfo.channels;  // mono
-    sample1->mono = 1;  // mono
-  }
-  else if (sfinfo.channels == 2)  // check if mono in stereo format
-  {
-    sample1->channels = 2;  // stereo channels
-    double peaks[2];
-    int retval = sf_command (sndfile, SFC_CALC_MAX_ALL_CHANNELS, peaks, sizeof (peaks));
-    if (retval == 0)
-      if (peaks [0] < 1e-10)  // a mute channel
-        sample1->mono = 2;  // right channel has sound
-      else if (peaks [1] < 1e-10)  // a mute channel
-        sample1->mono = 1;  // left channel has sound
-      else if (peaks[0] / peaks [1] > 100)  // large imbalance
-        sample1->mono = 1;  // left channel has sound
-      else if (peaks[1] / peaks [0] > 100)  // large imbalance
-        sample1->mono = 2;  // right channel has sound
-      else
-        sample1->mono = 0;
-    else
-      sample1->mono = 0;
-  }
-  else
-    error ("Sample file %s has incorrect number of channels %d\n", 
-            subtoken, sfinfo.channels);
-  num_frames = sf_seek (sndfile, 0, SEEK_END);
-  sample1->frames = num_frames;
-  sample1->sound = (short *) Alloc ((sizeof (short)) * num_frames * sfinfo.channels);
-  sf_seek (sndfile, 0, SEEK_SET);
-  subformat = sfinfo.format & SF_FORMAT_SUBMASK ;
-  if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE)
-  {	double	scale ;
-
-    sf_command (sndfile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
-    if (scale < 1e-10)
-      scale = 1.0 ;
-    else
-      scale = 32700.0 / scale ;
-    sf_command (sndfile, SFC_SET_SCALE_FLOAT_INT_READ, NULL, SF_TRUE) ;
-    /* reading into short */
-    num_frames = sf_readf_short (sndfile, sample1->sound, sample1->frames);
-  }
-  else /* reading into short */
-    num_frames = sf_readf_short (sndfile, sample1->sound, sample1->frames);
-  if (num_frames != sample1->frames)
-    error ("Read incorrect number of frames for sample file %s, %ld instead of %ld\n", 
-            subtoken, num_frames, sample1->frames);
-  sf_close (sndfile);
-  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
-  {  // if resampled and not keep option remove resampled file
-    char command [4096];
-    strcat (command, "rm ");
-    strcat (command, filename);
-    system (command);
-  }
-
-  /* find the maximum amplitude in the sound file */
-  for (k = 0 ; k < sample1->frames ; k += sample1->channels)
-  { 
-    holder = abs (sample1->sound [k]) ;
-    peak  = holder > peak ? holder : peak ;
-    if (sample1->channels == 2)
-    {
-      holder = abs (sample1->sound [k+1]) ;
-      peak  = holder > peak ? holder : peak ;
-    }
-  } 
-  // scale factor is 1 divided by maximum amplitude in file
-  sample1->scale = 1.0 / ((double) peak + 10.0);  
+  sb1 = process_sound_file (filename);
+  sample1->channels = sb1->channels;
+  sample1->mono = sb1->mono;
+  sample1->frames = sb1->frames;
+  sample1->sound = sb1->sound;
+  sample1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2340,12 +2211,7 @@ setup_repeat (char *token, void **work)
   char *saveptr2;
   char filename [256];
   repeat *repeat1 = NULL;
-  SNDFILE *sndfile;
-  SF_INFO sfinfo;
-  sf_count_t num_frames;
-  int subformat ;
-  short holder, peak=0;
-  int k;
+  snd_buffer *sb1 = NULL;
 
   repeat1 = (repeat *) Alloc (sizeof (repeat) * 1);
   *work = repeat1;
@@ -2357,80 +2223,12 @@ setup_repeat (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for repeat sound */
   strcpy (filename, subtoken);
-  check_samplerate (filename);  // if filename is not same rate as out_rate, resample to new file
-  if (! (sndfile = sf_open (filename, SFM_READ, &sfinfo)))
-    error ("Couldn't open repeat file %s\n", filename);
-  if (sfinfo.channels == 1)
-  {
-    repeat1->channels = sfinfo.channels;  // mono
-    repeat1->mono = 1;  // mono
-  }
-  else if (sfinfo.channels == 2)  // check if mono in stereo format
-  {
-    repeat1->channels = 2;  // stereo channels
-    double peaks[2];
-    int retval = sf_command (sndfile, SFC_CALC_MAX_ALL_CHANNELS, peaks, sizeof (peaks));
-    if (retval == 0)
-      if (peaks [0] < 1e-10)  // a mute channel
-        repeat1->mono = 2;  // right channel has sound
-      else if (peaks [1] < 1e-10)  // a mute channel
-        repeat1->mono = 1;  // left channel has sound
-      else if (peaks[0] / peaks [1] > 100)  // large imbalance
-        repeat1->mono = 1;  // left channel has sound
-      else if (peaks[1] / peaks [0] > 100)  // large imbalance
-        repeat1->mono = 2;  // right channel has sound
-      else
-        repeat1->mono = 0;
-    else
-      repeat1->mono = 0;
-  }
-  else
-    error ("Repeat file %s has incorrect number of channels %d\n", 
-            subtoken, sfinfo.channels);
-  num_frames = sf_seek (sndfile, 0, SEEK_END);
-  repeat1->frames = num_frames;
-  repeat1->sound = (short *) Alloc ((sizeof (short)) * num_frames * sfinfo.channels);
-  sf_seek (sndfile, 0, SEEK_SET);
-  subformat = sfinfo.format & SF_FORMAT_SUBMASK ;
-  if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE)
-  {	double	scale ;
-
-    sf_command (sndfile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
-    if (scale < 1e-10)
-      scale = 1.0 ;
-    else
-      scale = 32700.0 / scale ;
-    sf_command (sndfile, SFC_SET_SCALE_FLOAT_INT_READ, NULL, SF_TRUE) ;
-    /* reading into short */
-    num_frames = sf_readf_short (sndfile, repeat1->sound, repeat1->frames);
-  }
-  else /* reading into short */
-    num_frames = sf_readf_short (sndfile, repeat1->sound, repeat1->frames);
-  if (num_frames != repeat1->frames)
-    error ("Read incorrect number of frames for repeat file %s, %ld instead of %ld\n", 
-            subtoken, num_frames, repeat1->frames);
-  sf_close (sndfile);
-  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
-  {  // if resampled and not keep option remove resampled file
-    char command [4096];
-    strcat (command, "rm ");
-    strcat (command, filename);
-    system (command);
-  }
-
-  /* find the maximum amplitude in the sound file */
-  for (k = 0 ; k < repeat1->frames ; k += repeat1->channels)
-  { 
-    holder = abs (repeat1->sound [k]) ;
-    peak  = holder > peak ? holder : peak ;
-    if (repeat1->channels == 2)
-    {
-      holder = abs (repeat1->sound [k+1]) ;
-      peak  = holder > peak ? holder : peak ;
-    }
-  } 
-  // scale factor is 1 divided by maximum amplitude in file
-  repeat1->scale = 1.0 / ((double) peak + 10.0);
+  sb1 = process_sound_file (filename);
+  repeat1->channels = sb1->channels;
+  repeat1->mono = sb1->mono;
+  repeat1->frames = sb1->frames;
+  repeat1->sound = sb1->sound;
+  repeat1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2513,12 +2311,7 @@ setup_once (char *token, void **work)
   char *saveptr2;
   char filename [256];
   once *once1 = NULL;
-  SNDFILE *sndfile;
-  SF_INFO sfinfo;
-  sf_count_t num_frames;
-  int subformat ;
-  short holder, peak=0;
-  int k;
+  snd_buffer *sb1 = NULL;
 
   once1 = (once *) Alloc (sizeof (once) * 1);
   *work = once1;
@@ -2531,80 +2324,12 @@ setup_once (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for once sound */
   strcpy (filename, subtoken);
-  check_samplerate (filename);  // if filename is not same rate as out_rate, resample to new file
-  if (! (sndfile = sf_open (filename, SFM_READ, &sfinfo)))
-    error ("Couldn't open once file %s\n", filename);
-  if (sfinfo.channels == 1)
-  {
-    once1->channels = sfinfo.channels;  // mono
-    once1->mono = 1;  // mono
-  }
-  else if (sfinfo.channels == 2)  // check if mono in stereo format
-  {
-    once1->channels = 2;  // stereo channels
-    double peaks[2];
-    int retval = sf_command (sndfile, SFC_CALC_NORM_MAX_ALL_CHANNELS, peaks, sizeof (peaks));
-    if (retval == 0)
-      if (peaks [0] < 1e-10)  // a mute channel
-        once1->mono = 2;  // right channel has sound
-      else if (peaks [1] < 1e-10)  // a mute channel
-        once1->mono = 1;  // left channel has sound
-      else if (peaks[0] / peaks [1] > 100)  // large imbalance
-        once1->mono = 1;  // left channel has sound
-      else if (peaks[1] / peaks [0] > 100)  // large imbalance
-        once1->mono = 2;  // right channel has sound
-      else
-        once1->mono = 0;
-    else
-      once1->mono = 0;
-  }
-  else
-    error ("Once file %s has incorrect number of channels %d\n", 
-            subtoken, sfinfo.channels);
-  num_frames = sf_seek (sndfile, 0, SEEK_END);
-  once1->frames = num_frames;
-  once1->sound = (short *) Alloc ((sizeof (short)) * num_frames * sfinfo.channels);
-  sf_seek (sndfile, 0, SEEK_SET);
-  subformat = sfinfo.format & SF_FORMAT_SUBMASK ;
-  if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE)
-  {	double	scale ;
-
-    sf_command (sndfile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
-    if (scale < 1e-10)
-      scale = 1.0 ;
-    else
-      scale = 32700.0 / scale ;
-    sf_command (sndfile, SFC_SET_SCALE_FLOAT_INT_READ, NULL, SF_TRUE) ;
-    /* reading into short */
-    num_frames = sf_readf_short (sndfile, once1->sound, once1->frames);
-  }
-  else // reading into short
-    num_frames = sf_readf_short (sndfile, once1->sound, once1->frames);
-  if (num_frames != once1->frames)
-    error ("Read incorrect number of frames for once file %s, %ld instead of %ld\n", 
-            subtoken, num_frames, once1->frames);
-  sf_close (sndfile);
-  if (strcmp (filename, subtoken) != 0 && opt_k == 0)
-  {  // if resampled and not keep option remove resampled file
-    char command [4096];
-    strcat (command, "rm ");
-    strcat (command, filename);
-    system (command);
-  }
-
-  /* find the maximum amplitude in the sound file */
-  for (k = 0 ; k < once1->frames ; k += once1->channels)
-  { 
-    holder = abs (once1->sound [k]) ;
-    peak  = holder > peak ? holder : peak ;
-    if (once1->channels == 2)
-    {
-      holder = abs (once1->sound [k+1]) ;
-      peak  = holder > peak ? holder : peak ;
-    }
-  } 
-  // scale factor is 1 divided by maximum amplitude in file
-  once1->scale = 1.0 / ((double) peak + 10.0);  
+  sb1 = process_sound_file (filename);
+  once1->channels = sb1->channels;
+  once1->mono = sb1->mono;
+  once1->frames = sb1->frames;
+  once1->sound = sb1->sound;
+  once1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -3019,6 +2744,127 @@ init_binaural ()
     else
       work2 = NULL;
   }
+}
+
+/* Take care of importing a sound file.  Check if it is already imported.
+ * If it is return a pointer to the sound buffer.  If it isn't, check if
+ * it needs to be resampled and then create a snd_buffer node for it
+ * in the Sound_Files list.  Return a pointer to that node.
+ */
+snd_buffer * 
+process_sound_file (char *filename)
+{
+  snd_buffer *sb1 = NULL;
+  SNDFILE *sndfile;
+  SF_INFO sfinfo;
+  sf_count_t num_frames;
+  int subformat ;
+  short holder, peak=0;
+  int k;
+
+  if (Sound_Files != NULL)
+  {
+    sb1 = Sound_Files;
+    do
+    {
+      if (strcmp (sb1->filename, filename) == 0)
+        return sb1;  // file already processed
+      else
+        sb1 = sb1->next;
+    }while (sb1 != NULL);
+  }
+  /* file not already processed, create a new node for it */
+  sb1 = (snd_buffer *) Alloc (sizeof (snd_buffer) * 1);
+  if (Sound_Files == NULL)       // no buffer files yet, make root node
+  {
+    sb1->next = NULL;
+    sb1->prev = NULL;
+  }
+  else  // insert at front of list
+  {
+    sb1->next = Sound_Files;
+    sb1->prev = NULL;
+    Sound_Files->prev = sb1;
+  }
+  Sound_Files = sb1;
+  sb1->filename = StrDup (filename); // save name before possible modification below
+  /* if filename is not same rate as out_rate, resample to new file.
+   * Modifies filename by addition of samplerate.
+   */
+  long flag = check_samplerate (filename);  
+  if (! (sndfile = sf_open (filename, SFM_READ, &sfinfo)))
+    error ("Couldn't open input sound file %s\n", filename);
+  if (sfinfo.channels == 1)
+  {
+    sb1->channels = sfinfo.channels;  // mono
+    sb1->mono = 1;  // mono
+  }
+  else if (sfinfo.channels == 2)  // check if mono in stereo format
+  {
+    sb1->channels = 2;  // stereo channels
+    double peaks[2];
+    int retval = sf_command (sndfile, SFC_CALC_MAX_ALL_CHANNELS, peaks, sizeof (peaks));
+    if (retval == 0)
+      if (peaks [0] < 1e-10)  // a mute channel
+        sb1->mono = 2;  // right channel has sound
+      else if (peaks [1] < 1e-10)  // a mute channel
+        sb1->mono = 1;  // left channel has sound
+      else if (peaks[0] / peaks [1] > 100)  // large imbalance
+        sb1->mono = 1;  // left channel has sound
+      else if (peaks[1] / peaks [0] > 100)  // large imbalance
+        sb1->mono = 2;  // right channel has sound
+      else
+        sb1->mono = 0;
+    else
+      sb1->mono = 0;
+  }
+  else
+    error ("Import sound file %s has incorrect number of channels %d\n", 
+            filename, sfinfo.channels);
+  num_frames = sf_seek (sndfile, 0, SEEK_END);
+  sb1->frames = num_frames;
+  sb1->sound = (short *) Alloc ((sizeof (short)) * num_frames * sfinfo.channels);
+  sf_seek (sndfile, 0, SEEK_SET);
+  subformat = sfinfo.format & SF_FORMAT_SUBMASK ;
+  if (subformat == SF_FORMAT_FLOAT || subformat == SF_FORMAT_DOUBLE)
+  {	double	scale ;
+
+    sf_command (sndfile, SFC_CALC_SIGNAL_MAX, &scale, sizeof (scale)) ;
+    if (scale < 1e-10)
+      scale = 1.0 ;
+    else
+      scale = 32700.0 / scale ;
+    sf_command (sndfile, SFC_SET_SCALE_FLOAT_INT_READ, NULL, SF_TRUE) ;
+    /* reading into short */
+    num_frames = sf_readf_short (sndfile, sb1->sound, sb1->frames);
+  }
+  else // reading into short
+    num_frames = sf_readf_short (sndfile, sb1->sound, sb1->frames);
+  if (num_frames != sb1->frames)
+    error ("Read incorrect number of frames for sound file %s, %ld instead of %ld\n", 
+            filename, num_frames, sb1->frames);
+  sf_close (sndfile);
+  if (flag != 0 && opt_k == 0)
+  {  // if resampled and not keep option remove resampled file
+    char command [4096];
+    strcpy (command, "rm ");
+    strcat (command, filename);
+    system (command);
+  }
+  /* find the maximum amplitude in the sound file, always short int once read */
+  for (k = 0 ; k < sb1->frames ; k += sb1->channels)
+  { 
+    holder = abs (sb1->sound [k]) ;
+    peak  = holder > peak ? holder : peak ;
+    if (sb1->channels == 2)
+    {
+      holder = abs (sb1->sound [k+1]) ;
+      peak  = holder > peak ? holder : peak ;
+    }
+  } 
+  // scale factor is 1 divided by maximum amplitude in file
+  sb1->scale = 1.0 / ((double) peak + 10.0); // 10 ensures no clipping
+  return sb1;
 }
 
 //
