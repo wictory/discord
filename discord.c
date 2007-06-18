@@ -1753,9 +1753,10 @@ setup_bell (char *token, void **work)
   {
       // frames to next play random piece of possible interval
     int_64 delta = (int_64) ( (drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
-    bell1->next_play = delta;
+    bell1->next_play = delta/2;
   }
-  bell1->sofar = (int_64) (drand48() * bell1->next_play);  // random start
+  bell1->sofar = 0LL;
+  //bell1->sofar = (int_64) (drand48() * bell1->next_play);  // random start
 }
 
 /* Set up a noise sequence */
@@ -2959,16 +2960,6 @@ play_loop ()
           fade_val += fade_incr * fast_mult;
         }
       }
-      display_frames += (fade_length * fast_mult);  // adjust display frames
-      if (display_frames >= display_count)  // time to display?
-      {
-        pthread_mutex_lock (&mtx_status);  // block until previous status operation complete
-          /* this create is non blocking, continue creating frames to play */
-        pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-        pthread_mutex_unlock (&mtx_status);   // release mutex so status_t can lock it
-        //status (snd1, stderr);
-        display_frames = 0L;
-      }
       snd1->cur_frames += (fade_length * fast_mult);  // adjust frames so far in this sound stream
       if (!opt_d)
       {
@@ -2979,6 +2970,16 @@ play_loop ()
         //pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
         pthread_mutex_unlock (&mtx_play);  // release mutex so alsa_write can lock it
         alsa_write_double (alsa_dev, play_buffer, offset, channels) ;
+      }
+      display_frames += (fade_length * fast_mult);  // adjust display frames
+      if (display_frames >= display_count)  // time to display?
+      {
+        pthread_mutex_lock (&mtx_status);  // block until previous status operation complete
+          /* this create is non blocking, continue creating frames to play */
+        pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
+        pthread_mutex_unlock (&mtx_status);   // release mutex so status_t can lock it
+        //status (snd1, stderr);
+        display_frames = 0L;
       }
       offset = 0;
     }

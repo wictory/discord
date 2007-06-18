@@ -41,7 +41,7 @@
 #
 #      case 'e':  // every, display status every x seconds
 #--every=10
--e 10
+-e 5
 #
 #      case 'f':  // fast, move through at multiple of time, 60 ==> 1min becomes 1 sec
 #                    so a 1 hour play sequence will play in 1 minute
