@@ -3,36 +3,41 @@
 #
 #  This file will run with discord 0.7.2 and above.
 #
-##  Options
+#  Anything after two hash marks (#) will be printed to stderr, if you want to watch parse progress
+#
+#  Options
 #
 #      case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and float
-#                     unless you are sending to a file, your card has to handle it unless alsa
-#                     converts
+#                     Relevant only when sending output to a file.  All internal processing is 
+#                     done using doubles regardless.
 #--bit_accuracy=16i
 #-b 16i
 #
-#      case 'c':  // compensate for human hearing, low and high freqs need to be louder, max 32
-#                    If this is correct, a sound at the compensated frequency
+#      case 'c':  // Compensate for human hearing, low and high freqs need to be louder
+#                    to have the same subjective loudness to the human ear.
+#                    If this is set correctly, a sound at the compensated frequency
 #                    sounds the same loudness as any other sound at its
 #                    compensated frequency.  i.e. It linearizes the range
 #                    This is individual, depends on your hearing, so the below is only a starting
-#                    point for you to play with and tweak.  It has 32 points, so if you add
-#                    one, remove one.  There is some ambiguity about whether sounds
-#                    below 20 Hz have any effect, 20 Hz being the accepted lower limit of human
-#                    hearing.  And whether those sounds even get to your ears through the system.
-#                    If you use compensation, set all amplitudes to 1 for binaural, bell, and noise.
+#                    point for you to play with and tweak.  It has a max of 32 points.
+#                    There is some dispute whether sounds outside the range of hearing
+#                    have any effect.  Of course, that is dependent on
+#                    whether those sounds even get to your ears through the system.  This
+#                    applies to the internally generated sounds: binaural, chronaural, bell, noise.
+#                    If you use compensation, set all amplitudes to a fixed value.
 #                    Or whatever ratio between the loudness you want them to have, as if linear.
-#                    The stochastic, sample, and repeat voices are not compensated so should be
-#                    set at the amplitude you want.  Low to high frequency order is important.
-#                    And frequencies have to be sorted, monotonically increasing.
-#--compensate=5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4''80=1.3''100=1.2''200=1.2''300=1.2'''400:1.1''500:1''600:1''700=1''800=1''900=1''1000=1''2000=1''3000=1''5000=1.0''7000=1.1'',,,9000:1.3,,10000:1.5,,12000:1.5,,13000=3,,16000=5.0,,17000=6.5,,18000=7.5,,19000=9.0,,20000=11.0
-#-c 5=7''10=4.6''20=3.1''30=2.4''40=1.9''50=1.6''60=1.4''80=1.3''100=1.2''200=1.2''300=1.1'''400:1.1''500:1''600:1''700=1''800=1''900=1''1000=1''2000=1''3000=1''4000=1.1''5000=1.1''6000=1.2'',,,9000:1.3,,10000:1.5,,12000:1.5,,13000=2,,16000=2,,17000=2.5,,18000=2.5,,19000=3,,20000=4
-#-c 5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4''80=1.3''100=1.2''200=1.2''300=1.2'''400:1.1''500:1''600:1''700=1''800=1''900=1''1000=1''2000=1''3000=1''5000=1.0''7000=1.1'',,,9000:1.3,,10000:1.5,,12000:1.5,,13000=3,,16000=5.0,,17000=6.5,,18000=7.5,,19000=9.0,,20000=11.0
+#                    The stochastic, sample, repeat and once voices are not compensated so should be
+#                    set at the amplitude you want.
+#--compensate=5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4
+#--compensate=80=1.3''100=1.2''200=1.2''300=1.2'''400:1.1''500:1
+#--compensate=600:1''700=1''800=1''900=1''1000=1''2000=1''3000=1
+#--compensate=5000=1.0''7000=1.1'',,,9000:1.3,,10000:1.5,,12000:1.5
+#--compensate=13000=3,,16000=5.0,,17000=6.5,,18000=7.5,,19000=8.0,,20000=9.0
 -c 5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4''80=1.3''100=1.2
 -c 200=1.2''300=1.2'''400:1.1''500:1''600:1''700=1''800=1
 -c 900=1''1000=1''2000=1''3000=1''5000=1.0''7000=1.1'',,,9000:1.3
 -c 10000:1.5,,12000:1.5,,13000=3,,16000=5.0,,17000=6.5
--c 18000=7.5,,19000=9.0,,20000=11.0
+-c 18000=7.5,,19000=8.0,,20000=9.0
 #
 #
 #      case 'd':  // display only
@@ -71,13 +76,13 @@
 -r 44100
 #
 #      case 'w':  // write to file instead of the default, playing via the sound card
-#--write=mindblowing.flac
-#-w  mindblowing.flac
+#--write=mindblowing.wav  # same as ./mindblowing.wav, will write in current directory
+#-w  /home/clover/discord/mindblowing.flac
 #
 #  A time sequence may span multiple lines, but a voice (binaural, bell, noise, etc.)
 #  cannot be split across lines.
 #
-##  Time Sequences
+#  Time Sequences
 #
 #  Separators allowed are | , ; ' =, multiples are allowed mixed with singles, any combination
 #  of separators even within a voice.
@@ -158,19 +163,19 @@
 #  This is a test run file for discord, testing repeat.
 #  Fade in for 10 seconds, run for 20 seconds, fade out for 10 seconds.
 #
-## Fade in
+# Fade in
 #
 00:00:10''''<  
   repeat''''slightly_musical_conehead.aiff''''2.20''''3.30''''-1''''-1''''.050''''.950
   repeat''''fastcalling_tree_cricket.aiff''''2.20''''3.30''''-1''''-1''''.050''''.950
 #
-## Play constant
+# Play constant
 #
 00:00:10  
   repeat''''slightly_musical_conehead.aiff''''2.20''''3.30''''-1''''-1''''.050''''.950
   repeat''''fastcalling_tree_cricket.aiff''''2.20''''3.30''''-1''''-1''''.050''''.950
 #
-## Fade out
+# Fade out
 #
 00:00:10''''>  
   repeat''''slightly_musical_conehead.aiff''''2.20''''3.30''''-1''''-1''''.050''''.950

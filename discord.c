@@ -921,8 +921,11 @@ read_file (FILE * infile, char **config_options)
       cmnt = strchr (curlin, '#');
       if (cmnt && cmnt[1] == '#')
       {
-        fprintf (stderr, "Configuration comment  %s\n", curlin);
-        fflush (stderr);
+        if (!opt_q)  // quiet
+        {
+          fprintf (stderr, "Configuration comment  %s\n", curlin);
+          fflush (stderr);
+        }
       }
       if (token[0] == '-')      // options line
       {
@@ -995,7 +998,8 @@ read_file (FILE * infile, char **config_options)
       else if (token[0] == '#') // line is a comment
         ;  // do nothing
       else
-        fprintf (stderr, "Skipped line with token %s at start of line\n", token);
+        if (!opt_q)  // quiet
+          fprintf (stderr, "Skipped line with token %s at start of line\n", token);
     }
     memset (worklin, 0x00, 4096);
     fgets (worklin, sizeof (worklin), infile);
@@ -1062,7 +1066,8 @@ set_options ()
         else if (strcmp(sow->option_string, "64f") == 0)
           bit_accuracy = SF_FORMAT_DOUBLE;
         else // default to 16 bit sound
-          fprintf (stderr, "Unrecognized format for --bit_accuracy/-b %s.  Setting to 16 bit.\n", sow->option_string);
+          if (!opt_q)  // quiet
+            fprintf (stderr, "Unrecognized format for --bit_accuracy/-b %s.  Setting to 16 bit.\n", sow->option_string);
           bit_accuracy = SF_FORMAT_PCM_16;
         break;
       case 'c':  // compensate for human hearing, edge freqs need to be louder
@@ -1093,7 +1098,8 @@ set_options ()
         {
           if (errno == 0)       // no errors
           {
-            fprintf (stderr, "Seconds for --every/-e cannot be 0.  Setting to 5.\n");
+            if (!opt_q)  // quiet
+              fprintf (stderr, "Seconds for --every/-e cannot be 0.  Setting to 5.\n");
             every = 5;
           }
           else                  // there was an error
@@ -1110,7 +1116,8 @@ set_options ()
         {
           if (errno == 0)       // no errors
           {
-            fprintf (stderr, "Multiplier for --fast/-f cannot be 0.  Setting to 1.\n");
+            if (!opt_q)  // quiet
+              fprintf (stderr, "Multiplier for --fast/-f cannot be 0.  Setting to 1.\n");
             fast_mult = 1;
           }
           else                  // there was an error
@@ -1136,7 +1143,8 @@ set_options ()
           else if (sow->option_string[0] == 'w')
             outfile_format = SF_FORMAT_WAV;
           else  // default to flac
-            fprintf (stderr, "Unrecognized format for --output/-o %c.  Setting to flac.\n", sow->option_string[0]);
+            if (!opt_q)  // quiet
+              fprintf (stderr, "Unrecognized format for --output/-o %c.  Setting to flac.\n", sow->option_string[0]);
             outfile_format = SF_FORMAT_FLAC;
         }
         else  // default to flac
@@ -1165,7 +1173,8 @@ set_options ()
     sow = sow->prev;
   }
   opt_c_points = setup_opt_c (compvals);  // all option lines concatenated into compvals
-  fprintf (stderr, "opt_c_points %d\n", opt_c_points);
+  if (!opt_q)  // quiet
+    fprintf (stderr, "opt_c_points %d\n", opt_c_points);
   return 0;                     // success
 }
 
@@ -1233,9 +1242,10 @@ setup_opt_c (char *config)
         compensate[a].adj = compensate[b].adj;
         compensate[b].adj = holder;
       }
-  for (a = 0; a < point_count; a++)
-    fprintf (stderr, "compensate freq %f comp %f\n",
-                compensate[a].freq, compensate[a].adj);
+  if (!opt_q)  // quiet
+    for (a = 0; a < point_count; a++)
+      fprintf (stderr, "compensate freq %f comp %f\n",
+                  compensate[a].freq, compensate[a].adj);
   // Check for duplicate frequencies
   for (a = 0; a < point_count; a++)
     for (b = a + 1; b < a + 2; b++)
@@ -4577,39 +4587,42 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 		goto catch_error ;
 		} ;
 
-  // check parameters for the card
-  snd_pcm_hw_params_get_channels_min (hw_params, &val);
-  fprintf (stderr, "Minimum channels (%u)\n", val);
-  snd_pcm_hw_params_get_channels_max (hw_params, &val);
-  fprintf (stderr, "Maximum channels (%u)\n", val);
-  snd_pcm_hw_params_get_rate_min (hw_params, &val, &dir);
-  fprintf (stderr, "Minimum rate (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_rate_max (hw_params, &val, &dir);
-  fprintf (stderr, "Maximum rate (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_period_time_min (hw_params, &val, &dir);
-  fprintf (stderr, "Minimum period_time (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_period_time_max (hw_params, &val, &dir);
-  fprintf (stderr, "Maximum period_time (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_period_size_min (hw_params, &lval, &dir);
-  fprintf (stderr, "Minimum period_size (%lu)  Direction = %d\n", lval, dir);
-  snd_pcm_hw_params_get_period_size_max (hw_params, &lval, &dir);
-  fprintf (stderr, "Maximum period_size (%lu)  Direction = %d\n", lval, dir);
-  snd_pcm_hw_params_get_periods_min (hw_params, &val, &dir);
-  fprintf (stderr, "Minimum periods (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_periods_max (hw_params, &val, &dir);
-  fprintf (stderr, "Maximum periods (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_buffer_time_min (hw_params, &val, &dir);
-  fprintf (stderr, "Minimum buffer_time (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_buffer_time_max (hw_params, &val, &dir);
-  fprintf (stderr, "Maximum buffer_time (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_buffer_size_min (hw_params, &lval);
-  fprintf (stderr, "Minimum buffer_size (%lu)\n", lval);
-  snd_pcm_hw_params_get_buffer_size_max (hw_params, &lval);
-  fprintf (stderr, "Maximum buffer_size (%lu)\n", lval);
-  snd_pcm_hw_params_get_tick_time_min (hw_params, &val, &dir);
-  fprintf (stderr, "Minimum tick_time (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_tick_time_max (hw_params, &val, &dir);
-  fprintf (stderr, "Maximum tick_time (%u)  Direction = %d\n", val, dir);
+  if (!opt_q)  // quiet
+  {
+    // check parameters for the card
+    snd_pcm_hw_params_get_channels_min (hw_params, &val);
+    fprintf (stderr, "Minimum channels (%u)\n", val);
+    snd_pcm_hw_params_get_channels_max (hw_params, &val);
+    fprintf (stderr, "Maximum channels (%u)\n", val);
+    snd_pcm_hw_params_get_rate_min (hw_params, &val, &dir);
+    fprintf (stderr, "Minimum rate (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_rate_max (hw_params, &val, &dir);
+    fprintf (stderr, "Maximum rate (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_period_time_min (hw_params, &val, &dir);
+    fprintf (stderr, "Minimum period_time (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_period_time_max (hw_params, &val, &dir);
+    fprintf (stderr, "Maximum period_time (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_period_size_min (hw_params, &lval, &dir);
+    fprintf (stderr, "Minimum period_size (%lu)  Direction = %d\n", lval, dir);
+    snd_pcm_hw_params_get_period_size_max (hw_params, &lval, &dir);
+    fprintf (stderr, "Maximum period_size (%lu)  Direction = %d\n", lval, dir);
+    snd_pcm_hw_params_get_periods_min (hw_params, &val, &dir);
+    fprintf (stderr, "Minimum periods (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_periods_max (hw_params, &val, &dir);
+    fprintf (stderr, "Maximum periods (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_buffer_time_min (hw_params, &val, &dir);
+    fprintf (stderr, "Minimum buffer_time (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_buffer_time_max (hw_params, &val, &dir);
+    fprintf (stderr, "Maximum buffer_time (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_buffer_size_min (hw_params, &lval);
+    fprintf (stderr, "Minimum buffer_size (%lu)\n", lval);
+    snd_pcm_hw_params_get_buffer_size_max (hw_params, &lval);
+    fprintf (stderr, "Maximum buffer_size (%lu)\n", lval);
+    snd_pcm_hw_params_get_tick_time_min (hw_params, &val, &dir);
+    fprintf (stderr, "Minimum tick_time (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_tick_time_max (hw_params, &val, &dir);
+    fprintf (stderr, "Maximum tick_time (%u)  Direction = %d\n", val, dir);
+  }
 
 	if ((err = snd_pcm_hw_params_set_access (alsa_dev, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0)
 	{	fprintf (stderr, "cannot set access type (%s)\n", snd_strerror (err)) ;
@@ -4654,14 +4667,17 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 	{	fprintf (stderr, "Can't use period equal to buffer size (%lu == %lu)", alsa_period_size, buffer_size) ;
 		goto catch_error ;
 		} ;
-  snd_pcm_hw_params_get_rate (hw_params, &val, &dir);
-  fprintf (stderr, "Actual rate (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_channels (hw_params, &val);
-  fprintf (stderr, "Actual channels (%u)\n", val);
-  snd_pcm_hw_params_get_periods (hw_params, &val, &dir);
-  fprintf (stderr, "Actual period_size (%u)  Direction = %d\n", val, dir);
-  snd_pcm_hw_params_get_buffer_size (hw_params, &lval);
-  fprintf (stderr, "Actual buffer_size (%lu)\n", lval);
+  if (!opt_q)  // quiet
+  {
+    snd_pcm_hw_params_get_rate (hw_params, &val, &dir);
+    fprintf (stderr, "Actual rate (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_channels (hw_params, &val);
+    fprintf (stderr, "Actual channels (%u)\n", val);
+    snd_pcm_hw_params_get_periods (hw_params, &val, &dir);
+    fprintf (stderr, "Actual period_size (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_buffer_size (hw_params, &lval);
+    fprintf (stderr, "Actual buffer_size (%lu)\n", lval);
+  }
 
 	snd_pcm_hw_params_free (hw_params) ;
 
