@@ -90,8 +90,12 @@
 #  of separators even within a voice.
 #  However, every voice must be joined by separators.  No white space is allowed.
 #  The < or > after the duration/time is a fade in <, or fade out > for that time sequence.
-#  The > after a binaural voice is a slide, and will adjust to be the next binaural at the
+#  The > after a binaural or chronaural voice is a slide, and will adjust to be the next binaural or chronaural at the
 #  end of the time period.
+#  The & with number of steps, slide time, and fuzz is a step slide, and will adjust to be the 
+#  next binaural or chronaural at the end of the time period in a sequence of descending steps.
+#  The ~ with number of steps and slide time is a vary slide, and will adjust to be the 
+#  next binaural or chronaural at the end of the time period in a sequence of random steps.
 #  All amplitudes are in percentages, 0 is none, 100 is max.
 #  All splits are expressed as fraction for Left channel.  e.g. .3 means .3 left channel, .7 right channel
 #  All durations in voices are expressed as seconds.  e.g. .3 = .3 second, 20 = 20 seconds, 1200 = 20 minutes
@@ -103,6 +107,9 @@
 #    Must be at the end, before the slide indicator if they are present.
 #    The + or - on the beat frequency indicates whether the left ear is higher + or lower -.
 #    The beat is centered on the carrier frequency, so 200  +4 results in L 202 and R 198.
+#    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
+#    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
+#    have number of steps and slide time after it.
 #
 #  Fields for bell are name, frequency, minimum start amplitude, maximum start amplitude, beginning split, ending split,
 #    lowest split allowed, highest split allowed, minimum time allowed to ring, maximum time allowed to ring,
@@ -160,7 +167,9 @@
 #      3 dirac delta approximation, power of sin
 #    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
 #    Split beat is the frequency through time of the oscillation of the left and right split.
-#    Slide must be > or no slide will occur.
+#    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
+#    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
+#    have number of steps and slide time after it.
 #
 #  This is a morning file for discord.  Use first thing in the morning, one or more times.  Works well before morning
 #  meditation.

@@ -224,7 +224,7 @@ struct binaural
 {
   void *prev;
   void *next;
-  int type;                 // 1
+  int type;                 // 1  Can be 9 for step, 11 for vary
   double carrier;               // Carrier freq
   double beat;                  // Resonance freq or beat freq
   double amp;                   // Amplitude level 0-100%, stored as decimal. i.e. .06
@@ -242,6 +242,13 @@ struct binaural
     */
   int *last_off1, *last_off2;   
   int first_pass;  // is this voice inactive?
+  /* used for step and vary */
+  binaural *step_next;  // point to linked list of binaural voices for steps and vary
+  int_64 tot_frames;  // total frames for this step
+  int_64 cur_frames;  // current frames for this step
+  int steps;  // number of steps if selected
+  double slide_time;  // how many seconds to slide between steps
+  double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
 } ;
 
 /* structure for playing a bell during the beat */
@@ -400,7 +407,7 @@ struct chronaural
 {
   void *prev;
   void *next;
-  int type;                 // 8
+  int type;                 // 8 or 10 for chronaural step slide, 12 for vary
   double carrier;               // Carrier freq
   double amp;   // Amplitude level 0-100%, stored as decimal. i.e. .06
   double amp_beat;   // Amplitude variation frequency
@@ -423,6 +430,12 @@ struct chronaural
     */
   int *last_off1, *last_off2;   
   int first_pass;  // is this voice inactive?
+  chronaural *step_next;  // point to linked list of chronaural voices for steps or vary
+  int_64 tot_frames;  // total frames for this step
+  int_64 cur_frames;  // current frames for this step
+  int steps;  // number of steps if selected
+  double slide_time;  // how many seconds to slide between steps
+  double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
 } ;
 
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
@@ -902,15 +915,15 @@ int
 read_file (FILE * infile, char **config_options)
 {
   char *curlin, *cmnt, *token;
-  char savelin[4096], worklin[4096], rawline[4096];
+  char savelin[16384], worklin[16384], rawline[16384];
   size_t len, destlen;
   int line_count = 0;
   time_seq *tsh = NULL, *tsw = NULL;
 
-  memset (savelin, 0x00, 4096);
-  memset (worklin, 0x00, 4096);
+  memset (savelin, 0x00, 16384);
+  memset (worklin, 0x00, 16384);
   fgets (worklin, sizeof (worklin), infile);
-  strncpy (rawline, worklin, 4096); // strtok is destructive, save raw copy of line
+  strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (*curlin != '\0')
   {
@@ -950,7 +963,7 @@ read_file (FILE * infile, char **config_options)
         if (savelin[0] == '-')          // just finished the options
         {
           *config_options = StrDup (savelin);    // save them for further processing
-          memset (savelin, 0x00, 4096);         // reset saved line
+          memset (savelin, 0x00, 16384);         // reset saved line
         }
         else if (strchr(savelin, ':') != NULL)   // just finished a time sequence
         {
@@ -968,7 +981,7 @@ read_file (FILE * infile, char **config_options)
           }
           tsw = tsh;
           tsw->sequence = StrDup (savelin);        // save them
-          memset (savelin, 0x00, 4096);         // reset saved line
+          memset (savelin, 0x00, 16384);         // reset saved line
         }
         if (cmnt)
           strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
@@ -987,7 +1000,7 @@ read_file (FILE * infile, char **config_options)
         {
           strncpy (savelin, curlin, len);
         }
-        else if (destlen + len + 1 < 4096)
+        else if (destlen + len + 1 < 16384)
         {
           strncat (savelin, " ", 1);  // add trailing space so voices are separate
           strncat (savelin, curlin, len);  // add voices
@@ -1001,9 +1014,9 @@ read_file (FILE * infile, char **config_options)
         if (!opt_q)  // quiet
           fprintf (stderr, "Skipped line with token %s at start of line\n", token);
     }
-    memset (worklin, 0x00, 4096);
+    memset (worklin, 0x00, 16384);
     fgets (worklin, sizeof (worklin), infile);
-    strncpy (rawline, worklin, 4096); // strtok is destructive, save raw copy of line
+    strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
   if (*curlin == '\0')
@@ -1172,9 +1185,12 @@ set_options ()
     }
     sow = sow->prev;
   }
-  opt_c_points = setup_opt_c (compvals);  // all option lines concatenated into compvals
-  if (!opt_q)  // quiet
-    fprintf (stderr, "opt_c_points %d\n", opt_c_points);
+  if (opt_c)
+  {
+    opt_c_points = setup_opt_c (compvals);  // all option lines concatenated into compvals
+    if (!opt_q)  // quiet
+      fprintf (stderr, "opt_c_points %d\n", opt_c_points);
+  }
   return 0;                     // success
 }
 
@@ -1516,6 +1532,13 @@ setup_binaural (char *token, void **work)
   binaural1->off1 = binaural1->off2 = 0;  // begin at 0 degrees
   binaural1->last_off1 = binaural1->last_off2 = NULL;  // no previous voice offsets yet
   binaural1->first_pass = 1;  // inactive
+  /* used for step and vary */
+  binaural1->step_next = NULL;  // default no steps
+  binaural1->tot_frames = 0;  // total frames for this step
+  binaural1->cur_frames = 0;  // current frames for this step
+  binaural1->steps = 0;  // no steps
+  binaural1->slide_time = 0.0;  // no slide between steps
+  binaural1->fuzz = 0.0;  // no fuzziness around step frequency
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -1554,9 +1577,69 @@ setup_binaural (char *token, void **work)
   binaural1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // there and slide, done, no amp variation
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
     binaural1->slide = 1;
-  else if (subtoken != NULL)  // there, not slide, must be amp variation
+  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
+  {
+    binaural1->type = 9;  // binaural step
+    binaural1->slide = 2;  // binaural step slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for binaural had an error.\n");
+    }
+    binaural1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for binaural had an error.\n");
+    }
+    binaural1->slide_time = slide_time;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double fuzz = strtod (subtoken, &endptr);
+    if (fuzz == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Fuzz for binaural had an error.\n");
+    }
+    binaural1->fuzz = AMP_AD(fuzz);
+  }
+  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
+  {
+    binaural1->type = 11;  // binaural vary
+    binaural1->slide = 3;  // binaural vary slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for binaural had an error.\n");
+    }
+    binaural1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for binaural had an error.\n");
+    }
+    binaural1->slide_time = slide_time;
+  }
+  else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
   {
     errno = 0;
     double amp_beat1 = strtod (subtoken, &endptr);
@@ -1596,11 +1679,71 @@ setup_binaural (char *token, void **work)
         error ("Amplitude adj2 for binaural had an error.\n");
     }
     binaural1->amp_pct2 = AMP_AD(amp_pct2);
-  }
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)
-    binaural1->slide = 1;
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+      binaural1->slide = 1;
+    else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // step slide
+    {
+      binaural1->type = 9;  // binaural step
+      binaural1->slide = 2;  // binaural step slide
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if (steps == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Step count for binaural had an error.\n");
+      }
+      binaural1->steps = (int) steps;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if (slide_time == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Slide time for binaural had an error.\n");
+      }
+      binaural1->slide_time = slide_time;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double fuzz = strtod (subtoken, &endptr);
+      if (fuzz == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Fuzz for binaural had an error.\n");
+      }
+      binaural1->fuzz = AMP_AD(fuzz);
+    }
+    else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
+    {
+      binaural1->type = 11;  // binaural vary
+      binaural1->slide = 3;  // binaural vary slide
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if (steps == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Step count for binaural had an error.\n");
+      }
+      binaural1->steps = (int) steps;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if (slide_time == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Slide time for binaural had an error.\n");
+      }
+      binaural1->slide_time = slide_time;
+    }
+  }
 }
 
 /* Set up a bell sequence */
@@ -2440,6 +2583,13 @@ setup_chronaural (char *token, void **work)
   chronaural1->off1 = chronaural1->off2 = 0;  // begin at 0 degrees
   chronaural1->last_off1 = chronaural1->last_off2 = NULL;  // no previous voice offsets yet
   chronaural1->first_pass = 1;  // inactive
+  /* used for step and vary */
+  chronaural1->step_next = NULL;  // default no steps
+  chronaural1->tot_frames = 0;  // total frames for this step
+  chronaural1->cur_frames = 0;  // current frames for this step
+  chronaural1->steps = 0;  // no steps
+  chronaural1->slide_time = 0.0;  // no slide between steps
+  chronaural1->fuzz = 0.0;  // no fuzziness around step frequency
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -2559,6 +2709,66 @@ setup_chronaural (char *token, void **work)
   errno = 0;
   if (subtoken != NULL && strcmp (subtoken, ">") == 0)
     chronaural1->slide = 1;
+  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
+  {
+    chronaural1->type = 10;  // chronaural step slide
+    chronaural1->slide = 2;  // chronaural step slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for chronaural had an error.\n");
+    }
+    chronaural1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for chronaural had an error.\n");
+    }
+    chronaural1->slide_time = slide_time;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double fuzz = strtod (subtoken, &endptr);
+    if (fuzz == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Fuzz for chronaural had an error.\n");
+    }
+    chronaural1->fuzz = AMP_AD(fuzz);
+  }
+  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
+  {
+    chronaural1->type = 12;  // chronaural vary slide
+    chronaural1->slide = 3;  // chronaural vary slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for chronaural had an error.\n");
+    }
+    chronaural1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for chronaural had an error.\n");
+    }
+    chronaural1->slide_time = slide_time;
+  }
 }
 
 /*  Initialize all values possible for each voice */
@@ -2598,7 +2808,7 @@ init_binaural ()
             if (work2 != NULL)
             { 
               stub2 = (stub *) work2;
-              if (stub2->type == 1)  // also binaural
+              if (stub2->type == 1 || stub2->type == 9 || stub2->type == 11)  // also binaural
               { 
                 binaural2 = (binaural *) work2;
                 /* Set the pointers to the previous voice's offsets here so it can be used while running.
@@ -2665,7 +2875,7 @@ init_binaural ()
             if (work2 != NULL)
             { 
               stub2 = (stub *) work2;
-              if (stub2->type == 8)  // also chronaural
+              if (stub2->type == 8 || stub2->type == 10 || stub2->type == 12)  // also chronaural
               { 
                 chronaural2 = (chronaural *) work2;
                 /* Set the pointers to the previous voice's offsets here so it can be used while running.
@@ -2723,7 +2933,561 @@ init_binaural ()
                 chronaural1->split_end = split_hold;
               }
               chronaural1->split_adj = 0.0;  // don't adjust split when there is a split beat
-              double cycle_frames = (int) (out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+              double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+              chronaural1->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
+                                          / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+            }
+            break;
+          }
+        case 9:  // binaural step slide, have to create list of steps and slides
+          { 
+            binaural *binaural1 = NULL, *binaural2 = NULL, *binaural3 = NULL, *binaural4 = NULL;
+
+            binaural1 = (binaural *) work1;
+            binaural1->off1 = binaural1->inc1 = binaural1->off2 = binaural1->inc2 = 0;
+            binaural1->amp_off1 = binaural1->amp_inc1 = binaural1->amp_off2 = binaural1->amp_inc2 = 0;
+             /* First step is always the input frequency, so no adjust. */
+            binaural1->carr_adj = binaural1->beat_adj = binaural1->amp_adj = 0.0;
+            binaural1->amp_beat1_adj = binaural1->amp_beat2_adj = 0.0;
+            binaural1->amp_pct1_adj = binaural1->amp_pct2_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * binaural1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * binaural1->steps);  //  total slide time
+            int_64 step_frames = (snd1->tot_frames - total_slide) / binaural1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last step. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * binaural1->steps));
+            binaural1->tot_frames = step_frames;
+            binaural1->cur_frames = 0;  // binaural1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine binaural we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 1 || stub2->type == 9 || stub2->type == 11)  // also binaural
+                binaural2 = (binaural *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not binaural.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next binaural in time sequence!\n");
+            double carr_diff = (binaural2->carrier - binaural1->carrier);
+            double beat_diff = (binaural2->beat - binaural1->beat);
+            double amp_diff = (binaural2->amp - binaural1->amp);
+            double amp_beat1_diff = (binaural2->amp_beat1 - binaural1->amp_beat1);
+            double amp_beat2_diff = (binaural2->amp_beat2 - binaural1->amp_beat2);
+            double amp_pct1_diff = (binaural2->amp_pct1 - binaural1->amp_pct1);
+            double amp_pct2_diff = (binaural2->amp_pct2 - binaural1->amp_pct2);
+            double next_carrier = 0.0;
+            double next_beat = 0.0;
+            double next_amp = 0.0;
+            double next_amp_beat1 = 0.0;
+            double next_amp_beat2 = 0.0;
+            double next_amp_pct1 = 0.0;
+            double next_amp_pct2 = 0.0;
+            binaural4 = binaural1;  // set last node processed
+            int total_steps = (2 * binaural1->steps);
+            int ii;
+            for (ii = 1; ii < total_steps; ii++)  // create rest of step list nodes
+            {
+              binaural3 = (binaural *) Alloc ((sizeof (binaural)) * 1);  // create next node of step list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) binaural3, (void *) binaural4, sizeof (binaural)); // copy last step
+                binaural3->tot_frames = slide_frames;
+                if (ii == total_steps - 1)  // last slide, to next time sequence voice binaural2
+                {
+                  binaural2->last_off1 = &(binaural3->off1);
+                  binaural2->last_off2 = &(binaural3->off2);
+                  next_carrier = binaural2->carrier;
+                  next_beat = binaural2->beat;
+                  next_amp = binaural2->amp;
+                  next_amp_beat1 = binaural2->amp_beat1;
+                  next_amp_beat2 = binaural2->amp_beat2;
+                  next_amp_pct1 = binaural2->amp_pct1;
+                  next_amp_pct2 = binaural2->amp_pct2;
+                  binaural3->step_next = NULL;  // last node, no next node
+                }
+                else  // internal slide
+                {
+                  double fraction = ((double) (ii+1)/(double) total_steps);  // fraction of interval
+                  next_carrier = binaural1->carrier + (carr_diff * fraction);
+                  next_beat = binaural1->beat + (beat_diff * fraction);
+                  next_amp = binaural1->amp + (amp_diff * fraction);
+                  next_amp_beat1 = binaural1->amp_beat1 + (amp_beat1_diff * fraction);
+                  next_amp_beat2 = binaural1->amp_beat2 + (amp_beat2_diff * fraction);
+                  next_amp_pct1 = binaural1->amp_pct1 + (amp_pct1_diff * fraction);
+                  next_amp_pct2 = binaural1->amp_pct2 + (amp_pct2_diff * fraction);
+                  if (binaural1->fuzz > 0.0)  // fuzz the interval
+                  {
+                    double adjust = drand48() - 0.5;  // fuzz adjustment between -.5 and +.5 of fuzz
+                    next_carrier += ((carr_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                    next_beat += ((beat_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                    next_amp += ((amp_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                    next_amp_beat1 += ((amp_beat1_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                    next_amp_beat2 += ((amp_beat2_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                    next_amp_pct1 += ((amp_pct1_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                    next_amp_pct2 += ((amp_pct2_diff/binaural1->steps) * binaural1->fuzz * adjust);
+                  }
+                }
+                binaural3->carr_adj = (next_carrier - binaural4->carrier)/ binaural3->tot_frames;
+                binaural3->beat_adj = (next_beat - binaural4->beat)/ binaural3->tot_frames;
+                binaural3->amp_adj = (next_amp - binaural4->amp)/ binaural3->tot_frames;
+                /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_beat1 > 0.0)
+                  binaural3->amp_beat1_adj = (next_amp_beat1 - binaural4->amp_beat1)/ binaural3->tot_frames;
+                else  // zero amp_beat1 in next binaural
+                  binaural3->amp_beat1_adj = - binaural4->amp_beat1 / binaural3->tot_frames;
+                if (next_amp_beat2 > 0.0)
+                  binaural3->amp_beat2_adj = (next_amp_beat2 - binaural4->amp_beat2)/ binaural3->tot_frames;
+                else  // zero amp_beat2 in next binaural
+                  binaural3->amp_beat2_adj = - binaural4->amp_beat2 / binaural3->tot_frames;
+                /* Amplitude percents are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_pct1 > 0.0)
+                  binaural3->amp_pct1_adj = (next_amp_pct1 - binaural4->amp_pct1)/ binaural3->tot_frames;
+                else  // zero amp_pct1 in next binaural
+                  binaural3->amp_pct1_adj = - binaural4->amp_pct1 / binaural3->tot_frames;
+                if (next_amp_pct2 > 0.0)
+                  binaural3->amp_pct2_adj = (next_amp_pct2 - binaural4->amp_pct2)/ binaural3->tot_frames;
+                else  // zero amp_pct2 in next binaural
+                  binaural3->amp_pct2_adj = - binaural4->amp_pct2 / binaural3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) binaural3, (void *) binaural1, sizeof (binaural)); // copy first in list to it
+                if (ii == (total_steps - 2))
+                  binaural3->tot_frames += frame_residue;  // use up leftover frames in last step
+                /* Set values used for calculation in last slide */
+                binaural3->carrier = next_carrier;
+                binaural3->beat = next_beat;
+                binaural3->amp = next_amp;
+                binaural3->amp_beat1 = next_amp_beat1;
+                binaural3->amp_beat2 = next_amp_beat2;
+                binaural3->amp_pct1 = next_amp_pct1;
+                binaural3->amp_pct2 = next_amp_pct2;
+              }
+              binaural4->step_next = binaural3;  // set list pointer for previous node
+              binaural3->last_off1 = &(binaural4->off1);  // each node starts where last left off as offset
+              binaural3->last_off2 = &(binaural4->off2);
+              binaural4 = binaural3;  // make current node previous node
+            }
+            break;
+          }
+        case 10:  // chronaural step slide, have to create list of steps and slides
+          { 
+            chronaural *chronaural1 = NULL, *chronaural2 = NULL, *chronaural3 = NULL, *chronaural4 = NULL;
+
+            chronaural1 = (chronaural *) work1;
+            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = chronaural1->inc2 = 0;
+             /* First step is always the input frequency, so no adjust. */
+            chronaural1->carr_adj = chronaural1->amp_beat_adj = chronaural1->amp_adj = 0.0;
+            chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide time
+            int_64 step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last step. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * chronaural1->steps));
+            chronaural1->tot_frames = step_frames;
+            chronaural1->cur_frames = 0;  // chronaural1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine chronaural we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 8 || stub2->type == 10 || stub2->type == 12)  // also chronaural
+                chronaural2 = (chronaural *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not chronaural.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next chronaural in time sequence!\n");
+            double carr_diff = (chronaural2->carrier - chronaural1->carrier);
+            double amp_beat_diff = (chronaural2->amp_beat - chronaural1->amp_beat);
+            double amp_diff = (chronaural2->amp - chronaural1->amp);
+            double next_carrier = 0.0;
+            double next_amp_beat = 0.0;
+            double next_amp = 0.0;
+            chronaural4 = chronaural1;  // set last node processed
+            int total_steps = (2 * chronaural1->steps);
+            int ii;
+            for (ii = 1; ii < total_steps; ii++)  // create rest of step list nodes
+            {
+              chronaural3 = (chronaural *) Alloc ((sizeof (chronaural)) * 1);  // create next node of step list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) chronaural3, (void *) chronaural4, sizeof (chronaural)); // copy last step
+                chronaural3->tot_frames = slide_frames;
+                if (ii == total_steps - 1)  // last slide, to next time sequence voice chronaural2
+                {
+                  chronaural2->last_off1 = &(chronaural3->off1);
+                  chronaural2->last_off2 = &(chronaural3->off2);
+                  next_carrier = chronaural2->carrier;
+                  next_amp_beat = chronaural2->amp_beat;
+                  next_amp = chronaural2->amp;
+                  chronaural3->step_next = NULL;  // last node, no next node
+                }
+                else  // internal slide
+                {
+                  double fraction = ((double) (ii+1)/(double) total_steps);  // fraction of interval
+                  next_carrier = chronaural1->carrier + (carr_diff * fraction);
+                  next_amp_beat = chronaural1->amp_beat + (amp_beat_diff * fraction);
+                  next_amp = chronaural1->amp + (amp_diff * fraction);
+                  if (chronaural1->fuzz > 0.0)  // fuzz the interval
+                  {
+                    double adjust = drand48() - 0.5;  // fuzz adjustment between -.5 and +.5 of fuzz
+                    next_carrier += ((carr_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
+                    next_amp_beat += ((amp_beat_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
+                    next_amp += ((amp_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
+                  }
+                }
+                chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
+                chronaural3->amp_beat_adj = (next_amp_beat - chronaural4->amp_beat)/ chronaural3->tot_frames;
+                chronaural3->amp_adj = (next_amp - chronaural4->amp)/ chronaural3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) chronaural3, (void *) chronaural1, sizeof (chronaural)); // copy first in list to it
+                if (ii == (total_steps - 2))
+                  chronaural3->tot_frames += frame_residue;  // use up leftover frames in last step
+                /* Set values used for calculation in last slide */
+                chronaural3->carrier = next_carrier;
+                chronaural3->amp_beat = next_amp_beat;
+                chronaural3->amp = next_amp;
+              }
+                /* Set up the split logic here as it applies throughout the voice period.
+                 * Use chronaural1 to determine branching as it won't be changed until list is complete.
+                   Don't need to worry about overwriting begin and end splits as they are only used once
+                   Same logic for slides and steps */
+              if (chronaural1->split_begin == -1.0)  // chronaural split start random
+              {
+                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                chronaural3->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
+              }
+              chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
+              if (chronaural1->split_end == -1.0)  // chronaural split end random
+              {
+                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+              }
+              if (chronaural1->split_beat == 0.0)  // no split beat
+              {
+                chronaural3->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
+                                          / (double) chronaural3->tot_frames);  // adjust per frame
+                chronaural3->split_beat_adj = 0.0;  // no split beat, no split beat adjust
+              }
+              else
+              {
+                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  chronaural3->split_begin = chronaural3->split_end;
+                  chronaural3->split_end = split_hold;
+                }
+                chronaural3->split_adj = 0.0;  // don't adjust split when there is a split beat
+                double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                chronaural3->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
+                                            / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+              }
+              chronaural4->step_next = chronaural3;  // set list pointer for previous node
+              chronaural3->last_off1 = &(chronaural4->off1);  // each node starts where last left off as offset
+              chronaural3->last_off2 = &(chronaural4->off2);
+              chronaural4 = chronaural3;  // make current node previous node
+            }
+              /* Now set up the split logic for chronaural1 as it applies throughout the voice period.
+                 Don't need to worry about overwriting begin and end splits as they are only used once
+                 and the rest of the step slide list is done */
+            if (chronaural1->split_begin == -1.0)  // chronaural split start random
+            {
+              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+              chronaural1->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
+            }
+            chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+            if (chronaural1->split_end == -1.0)  // chronaural split end random
+            {
+              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+              chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+            }
+            if (chronaural1->split_beat == 0.0)  // no split beat
+            {
+              chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
+                                        / (double) chronaural1->tot_frames);  // adjust per frame
+              chronaural1->split_beat_adj = 0.0;  // no split beat, no split beat adjust
+            }
+            else
+            {
+              if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+              {
+                double split_hold = chronaural1->split_begin;  // swap begin and end
+                chronaural1->split_begin = chronaural1->split_end;
+                chronaural1->split_end = split_hold;
+              }
+              chronaural1->split_adj = 0.0;  // don't adjust split when there is a split beat
+              double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+              chronaural1->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
+                                          / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+            }
+            break;
+          }
+        case 11:  // binaural vary slide, have to create list of steps and slides
+          { 
+            binaural *binaural1 = NULL, *binaural2 = NULL, *binaural3 = NULL, *binaural4 = NULL;
+
+            binaural1 = (binaural *) work1;
+            binaural1->off1 = binaural1->inc1 = binaural1->off2 = binaural1->inc2 = 0;
+            binaural1->amp_off1 = binaural1->amp_inc1 = binaural1->amp_off2 = binaural1->amp_inc2 = 0;
+             /* First step is always the input frequency, so no adjust. */
+            binaural1->carr_adj = binaural1->beat_adj = binaural1->amp_adj = 0.0;
+            binaural1->amp_beat1_adj = binaural1->amp_beat2_adj = 0.0;
+            binaural1->amp_pct1_adj = binaural1->amp_pct2_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * binaural1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * binaural1->steps);  //  total slide time
+            int_64 step_frames = (snd1->tot_frames - total_slide) / binaural1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last slide. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * binaural1->steps));
+            binaural1->tot_frames = step_frames;
+            binaural1->cur_frames = 0;  // binaural1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine binaural we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 1 || stub2->type == 9 || stub2->type == 11)  // also binaural
+                binaural2 = (binaural *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not binaural.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next binaural in time sequence!\n");
+            double carr_diff = (binaural2->carrier - binaural1->carrier);
+            double beat_diff = (binaural2->beat - binaural1->beat);
+            double amp_diff = (binaural2->amp - binaural1->amp);
+            double amp_beat1_diff = (binaural2->amp_beat1 - binaural1->amp_beat1);
+            double amp_beat2_diff = (binaural2->amp_beat2 - binaural1->amp_beat2);
+            double amp_pct1_diff = (binaural2->amp_pct1 - binaural1->amp_pct1);
+            double amp_pct2_diff = (binaural2->amp_pct2 - binaural1->amp_pct2);
+            double next_carrier = 0.0;
+            double next_beat = 0.0;
+            double next_amp = 0.0;
+            double next_amp_beat1 = 0.0;
+            double next_amp_beat2 = 0.0;
+            double next_amp_pct1 = 0.0;
+            double next_amp_pct2 = 0.0;
+            binaural4 = binaural1;  // set last node processed
+            int total_steps = (2 * binaural1->steps);
+            int ii;
+            for (ii = 1; ii < total_steps; ii++)  // create rest of vary list nodes
+            {
+              binaural3 = (binaural *) Alloc ((sizeof (binaural)) * 1);  // create next node of vary list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) binaural3, (void *) binaural4, sizeof (binaural)); // copy last step
+                binaural3->tot_frames = slide_frames;
+                if (ii == total_steps - 1)  // last slide, to next time sequence voice binaural2
+                {
+                  binaural2->last_off1 = &(binaural3->off1);  // binaural2 will start from these offsets
+                  binaural2->last_off2 = &(binaural3->off2);
+                  next_carrier = binaural2->carrier;
+                  next_beat = binaural2->beat;
+                  next_amp = binaural2->amp;
+                  next_amp_beat1 = binaural2->amp_beat1;
+                  next_amp_beat2 = binaural2->amp_beat2;
+                  next_amp_pct1 = binaural2->amp_pct1;
+                  next_amp_pct2 = binaural2->amp_pct2;
+                  binaural3->step_next = NULL;  // last node, no next node
+                  binaural3->tot_frames += frame_residue;  // use up leftover frames in last slide
+                }
+                else  // internal slide
+                {
+                  double fraction = drand48 ();  // random fraction of interval
+                  next_carrier = binaural1->carrier + (carr_diff * fraction);
+                  next_beat = binaural1->beat + (beat_diff * fraction);
+                  next_amp = binaural1->amp + (amp_diff * fraction);
+                  next_amp_beat1 = binaural1->amp_beat1 + (amp_beat1_diff * fraction);
+                  next_amp_beat2 = binaural1->amp_beat2 + (amp_beat2_diff * fraction);
+                  next_amp_pct1 = binaural1->amp_pct1 + (amp_pct1_diff * fraction);
+                  next_amp_pct2 = binaural1->amp_pct2 + (amp_pct2_diff * fraction);
+                }
+                binaural3->carr_adj = (next_carrier - binaural4->carrier)/ binaural3->tot_frames;
+                binaural3->beat_adj = (next_beat - binaural4->beat)/ binaural3->tot_frames;
+                binaural3->amp_adj = (next_amp - binaural4->amp)/ binaural3->tot_frames;
+                /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_beat1 > 0.0)
+                  binaural3->amp_beat1_adj = (next_amp_beat1 - binaural4->amp_beat1)/ binaural3->tot_frames;
+                else  // zero amp_beat1 in next binaural
+                  binaural3->amp_beat1_adj = - binaural4->amp_beat1 / binaural3->tot_frames;
+                if (next_amp_beat2 > 0.0)
+                  binaural3->amp_beat2_adj = (next_amp_beat2 - binaural4->amp_beat2)/ binaural3->tot_frames;
+                else  // zero amp_beat2 in next binaural
+                  binaural3->amp_beat2_adj = - binaural4->amp_beat2 / binaural3->tot_frames;
+                /* Amplitude percents are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_pct1 > 0.0)
+                  binaural3->amp_pct1_adj = (next_amp_pct1 - binaural4->amp_pct1)/ binaural3->tot_frames;
+                else  // zero amp_pct1 in next binaural
+                  binaural3->amp_pct1_adj = - binaural4->amp_pct1 / binaural3->tot_frames;
+                if (next_amp_pct2 > 0.0)
+                  binaural3->amp_pct2_adj = (next_amp_pct2 - binaural4->amp_pct2)/ binaural3->tot_frames;
+                else  // zero amp_pct2 in next binaural
+                  binaural3->amp_pct2_adj = - binaural4->amp_pct2 / binaural3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) binaural3, (void *) binaural1, sizeof (binaural)); // copy first in list to it
+                /* Set values used for calculation in last slide */
+                binaural3->carrier = next_carrier;
+                binaural3->beat = next_beat;
+                binaural3->amp = next_amp;
+                binaural3->amp_beat1 = next_amp_beat1;
+                binaural3->amp_beat2 = next_amp_beat2;
+                binaural3->amp_pct1 = next_amp_pct1;
+                binaural3->amp_pct2 = next_amp_pct2;
+              }
+              binaural4->step_next = binaural3;  // set list pointer for previous node
+              binaural3->last_off1 = &(binaural4->off1);  // each node starts where last left off as offset
+              binaural3->last_off2 = &(binaural4->off2);
+              binaural4 = binaural3;  // make current node previous node
+            }
+            break;
+          }
+        case 12:  // chronaural vary slide, have to create list of steps and slides
+          { 
+            chronaural *chronaural1 = NULL, *chronaural2 = NULL, *chronaural3 = NULL, *chronaural4 = NULL;
+
+            chronaural1 = (chronaural *) work1;
+            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = chronaural1->inc2 = 0;
+             /* First step is always the input frequency, so no adjust. */
+            chronaural1->carr_adj = chronaural1->amp_beat_adj = chronaural1->amp_adj = 0.0;
+            chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide time
+            int_64 step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last slide. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * chronaural1->steps));
+            chronaural1->tot_frames = step_frames;
+            chronaural1->cur_frames = 0;  // chronaural1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine chronaural we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 8 || stub2->type == 10 || stub2->type == 12)  // also chronaural
+                chronaural2 = (chronaural *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not chronaural.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next chronaural in time sequence!\n");
+            double carr_diff = (chronaural2->carrier - chronaural1->carrier);
+            double amp_beat_diff = (chronaural2->amp_beat - chronaural1->amp_beat);
+            double amp_diff = (chronaural2->amp - chronaural1->amp);
+            double next_carrier = 0.0;
+            double next_amp_beat = 0.0;
+            double next_amp = 0.0;
+            chronaural4 = chronaural1;  // set last node processed
+            int total_steps = (2 * chronaural1->steps);
+            int ii;
+            for (ii = 1; ii < total_steps; ii++)  // create rest of step list nodes
+            {
+              chronaural3 = (chronaural *) Alloc ((sizeof (chronaural)) * 1);  // create next node of step list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) chronaural3, (void *) chronaural4, sizeof (chronaural)); // copy last step
+                chronaural3->tot_frames = slide_frames;
+                if (ii == total_steps - 1)  // last slide, to next time sequence voice chronaural2
+                {
+                  chronaural2->last_off1 = &(chronaural3->off1);
+                  chronaural2->last_off2 = &(chronaural3->off2);
+                  next_carrier = chronaural2->carrier;
+                  next_amp_beat = chronaural2->amp_beat;
+                  next_amp = chronaural2->amp;
+                  chronaural3->tot_frames += frame_residue;  // use up leftover frames in last slide
+                  chronaural3->step_next = NULL;  // last node, no next node
+                }
+                else  // internal slide
+                {
+                  double fraction = drand48 ();  // random fraction of interval
+                  next_carrier = chronaural1->carrier + (carr_diff * fraction);
+                  next_amp_beat = chronaural1->amp_beat + (amp_beat_diff * fraction);
+                  next_amp = chronaural1->amp + (amp_diff * fraction);
+                }
+                chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
+                chronaural3->amp_beat_adj = (next_amp_beat - chronaural4->amp_beat)/ chronaural3->tot_frames;
+                chronaural3->amp_adj = (next_amp - chronaural4->amp)/ chronaural3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) chronaural3, (void *) chronaural1, sizeof (chronaural)); // copy first in list to it
+                /* Set values used for calculation in last slide */
+                chronaural3->carrier = next_carrier;
+                chronaural3->amp_beat = next_amp_beat;
+                chronaural3->amp = next_amp;
+              }
+                /* Set up the split logic here as it applies throughout the voice period and to slide or step.
+                 * Use chronaural1 to determine branching as it won't be changed until list is complete.
+                   Don't need to worry about overwriting begin and end splits as they are only used once
+                   Same logic for slides and steps */
+              if (chronaural1->split_begin == -1.0)  // chronaural split start random
+              {
+                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                chronaural3->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
+              }
+              chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
+              if (chronaural1->split_end == -1.0)  // chronaural split end random
+              {
+                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+              }
+              if (chronaural1->split_beat == 0.0)  // no split beat
+              {
+                chronaural3->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
+                                          / (double) chronaural3->tot_frames);  // adjust per frame
+                chronaural3->split_beat_adj = 0.0;  // no split beat, no split beat adjust
+              }
+              else
+              {
+                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  chronaural3->split_begin = chronaural3->split_end;
+                  chronaural3->split_end = split_hold;
+                }
+                chronaural3->split_adj = 0.0;  // don't adjust split when there is a split beat
+                double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                chronaural3->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
+                                            / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+              }
+              chronaural4->step_next = chronaural3;  // set list pointer for previous node
+              chronaural3->last_off1 = &(chronaural4->off1);  // each node starts where last left off as offset
+              chronaural3->last_off2 = &(chronaural4->off2);
+              chronaural4 = chronaural3;  // make current node previous node
+            }
+              /* Now set up the split logic for chronaural1 as it applies throughout the voice period.
+                 Don't need to worry about overwriting begin and end splits as they are only used once
+                 and the rest of the step slide list is done */
+            if (chronaural1->split_begin == -1.0)  // chronaural split start random
+            {
+              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+              chronaural1->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
+            }
+            chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+            if (chronaural1->split_end == -1.0)  // chronaural split end random
+            {
+              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+              chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+            }
+            if (chronaural1->split_beat == 0.0)  // no split beat
+            {
+              chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
+                                        / (double) chronaural1->tot_frames);  // adjust per frame
+              chronaural1->split_beat_adj = 0.0;  // no split beat, no split beat adjust
+            }
+            else
+            {
+              if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+              {
+                double split_hold = chronaural1->split_begin;  // swap begin and end
+                chronaural1->split_begin = chronaural1->split_end;
+                chronaural1->split_end = split_hold;
+              }
+              chronaural1->split_adj = 0.0;  // don't adjust split when there is a split beat
+              double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
               chronaural1->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
                                           / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
             }
@@ -3230,6 +3994,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (bell1->sofar >= bell1->next_play)
             {                     // time to ring
               bell1->sofar = 0;
+              bell1->off1 = 0;
               if (bell1->repeat_max == bell1->repeat_min)
               {
                 bell1->next_play = bell1->repeat_min;      // fixed period
@@ -3292,7 +4057,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (bell1->ring > 0L)
             {
-              bell1->inc1 = (int) round( bell1->carrier * 2. * fast_mult);
+              bell1->inc1 = (int) round( bell1->carrier * 2.);
               //bell1->inc1 = (int) round(( (bell1->carrier * (out_rate * 2)) / out_rate) * fast_mult);
               bell1->off1 += bell1->inc1;
               bell1->off1 = bell1->off1 % (out_rate * 2);
@@ -3322,6 +4087,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (noise1->sofar >= noise1->next_play)
             {                     // time to play
               noise1->sofar = 0;
+              noise1->off1 = 0;
               /* First determine the play length for this tone.
                  Has to be first as the next play depends on it. */
               if (noise1->length_max == noise1->length_min)
@@ -3404,7 +4170,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (noise1->play > 0)  // noise is active
             {
               //noise1->inc1 = (int) (( (noise1->carrier * (out_rate * 2)) / out_rate) * fast_mult);
-              noise1->inc1 = (int) round( noise1->carrier * 2. * fast_mult);
+              noise1->inc1 = (int) round( noise1->carrier * 2.);
               noise1->off1 += noise1->inc1;
               noise1->off1 = noise1->off1 % (out_rate * 2);
               out_buffer[ii] += noise1->split_now * noise1->amp * sin_table[noise1->off1];
@@ -3780,23 +4546,222 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else // split beat so no split adjust, split beat adjust instead, oscillates between begin and end
             {
               chronaural1->split_now += chronaural1->split_beat_adj * fast_mult;
+              double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
                 /* assumes split_end > split_begin, this is done in init_binaural */
               if (chronaural1->split_now > chronaural1->split_end)  // larger than end
               {
-                chronaural1->split_now = chronaural1->split_end;
+                double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to end
+                  chronaural1->split_now = chronaural1->split_end;
+                else // overshoot smaller than overall split, reflect from end
+                  chronaural1->split_now = chronaural1->split_end - delta;
                 chronaural1->split_beat_adj *= -1.;  // swap direction
               }
               else if (chronaural1->split_now < chronaural1->split_begin)  // smaller than begin
               {
-                chronaural1->split_now = chronaural1->split_begin;
+                double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to begin
+                  chronaural1->split_now = chronaural1->split_begin;
+                else // overshoot smaller than overall split, reflect from begin
+                  chronaural1->split_now = chronaural1->split_begin + delta;
                 chronaural1->split_beat_adj *= -1.;  // swap direction
               }
             }  
             chronaural1->carrier += (chronaural1->carr_adj * fast_mult);  // tone to sound if time
+            chronaural1->amp_beat += (chronaural1->amp_beat_adj * fast_mult);  // beat of the amplitude
             chronaural1->amp += (chronaural1->amp_adj * fast_mult);  // amplitude to sound at
             if (chronaural1->amp < 0.0)  // no negative amplitudes
               chronaural1->amp = 0.0;
+          }
+        }
+        break;
+      case 9:                // Binaural tone, step slide, little less efficient, two extra checks each pass
+      case 11:                // Binaural tone, vary slide, little less efficient, two extra checks each pass
+        {
+          double freq1, freq2;
+          double amp1, amp2;
+          binaural *binaural1;
+
+          binaural1 = (binaural *) this;  // reassign void pointer as binaural struct
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
+          {
+            if (binaural1->cur_frames >= binaural1->tot_frames)  // step voice finished
+            {
+              binaural *binaural2;
+              binaural2 = binaural1->step_next;
+              binaural2->next = binaural1->next;
+              binaural2->prev = binaural1->prev;
+              if (binaural1->prev != NULL)
+                ((binaural *) binaural1->prev)->next = binaural2;
+              else  // must be first voice in chain for time sequence
+                snd1->voices = (void *) binaural2;
+              if (binaural1->next != NULL)
+                ((binaural *) binaural1->next)->prev = binaural2;
+              /* free(binaural1); */  // not bothering to free, because it could slow down sound generation
+              binaural1 = binaural2;  // new voice from step list
+            }
+
+            /* if start of the voice, set starting offset to be last offset of previous voice */
+            if (binaural1->first_pass)
+            {
+              binaural1->first_pass = 0;  // now active
+              if (binaural1->last_off1 != NULL)  // there *is* a previous offset to use
+                binaural1->off1 = *binaural1->last_off1;  // to eliminate crackle from discontinuity in wave
+              if (binaural1->last_off2 != NULL)  // there *is* a previous offset to use
+                binaural1->off2 = *binaural1->last_off2;
+            }
+            freq1 = binaural1->carrier + binaural1->beat / 2;
+            freq2 = binaural1->carrier - binaural1->beat / 2;
+            if (opt_c)  // compensate
+            {
+              amp1 = (binaural1->amp * amp_comp (freq1));
+              amp2 = (binaural1->amp * amp_comp (freq2));
+            }
+            else
+              amp1 = amp2 = binaural1->amp;
+            /* perform the amplitude variation adjustment if required */
+            if (binaural1->amp_beat1 > 0.0)
+            {
+              binaural1->amp_inc1 = (int) round(binaural1->amp_beat1*2);
+              binaural1->amp_off1 += binaural1->amp_inc1;
+              binaural1->amp_off1 = binaural1->amp_off1 % (out_rate * 2);
+              amp1 += ((amp1 * binaural1->amp_pct1) * sin_table[binaural1->amp_off1]);
+            }
+            if (binaural1->amp_beat2 > 0.0)
+            {
+              binaural1->amp_inc2 = (int) round(binaural1->amp_beat2*2);
+              binaural1->amp_off2 += binaural1->amp_inc2;
+              binaural1->amp_off2 = binaural1->amp_off2 % (out_rate * 2);
+              amp2 += ((amp2 * binaural1->amp_pct2) * sin_table[binaural1->amp_off2]);
+            }
+            binaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
+            binaural1->off1 += binaural1->inc1;
+            binaural1->off1 = binaural1->off1 % (out_rate * 2);
+            out_buffer[ii] += (amp1 * sin_table[binaural1->off1]);
+            binaural1->inc2 = (int) round(freq2*2);  // (freq2 / out_rate) * (out_rate * 2));
+            binaural1->off2 += binaural1->inc2;
+            binaural1->off2 = binaural1->off2 % (out_rate * 2);
+            out_buffer[ii+1] += (amp2 * sin_table[binaural1->off2]);
+            if (binaural1->slide)
+            { /* adjust values for next pass only if this binaural is sliding */
+              binaural1->carrier += (binaural1->carr_adj * fast_mult);
+              binaural1->amp += (binaural1->amp_adj * fast_mult);
+              binaural1->beat += (binaural1->beat_adj * fast_mult);
+              binaural1->amp_beat1 += (binaural1->amp_beat1_adj * fast_mult);
+              binaural1->amp_beat2 += (binaural1->amp_beat2_adj * fast_mult);
+              binaural1->amp_pct1 += (binaural1->amp_pct1_adj * fast_mult);
+              binaural1->amp_pct2 += (binaural1->amp_pct2_adj * fast_mult);
+            }
+            binaural1->cur_frames += 1 * fast_mult;  
+          }
+        }
+        break;
+      case 10:                // Chronaural tones step slide
+      case 12:                // Chronaural tones vary slide
+        {
+          double freq1, sinval;
+          double amp1;
+          chronaural *chronaural1;
+
+          chronaural1 = (chronaural *) this;  // reassign void pointer as chronaural struct
+
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
+          {
+            if (chronaural1->cur_frames >= chronaural1->tot_frames)  // step voice finished
+            {
+              chronaural *chronaural2;
+              chronaural2 = chronaural1->step_next;
+              chronaural2->next = chronaural1->next;
+              chronaural2->prev = chronaural1->prev;
+              if (chronaural1->prev != NULL)
+                ((chronaural *) chronaural1->prev)->next = chronaural2;
+              else  // must be first voice in chain for time sequence
+                snd1->voices = (void *) chronaural2;
+              if (chronaural1->next != NULL)
+                ((chronaural *) chronaural1->next)->prev = chronaural2;
+              /* free(chronaural1); */  // not bothering to free, because it could slow down sound generation
+              chronaural1 = chronaural2;  // new voice from step list
+            }
+
+            if (chronaural1->first_pass)
+            {
+              chronaural1->first_pass = 0;  // now active
+              if (chronaural1->last_off1 != NULL)  // there *is* a previous offset to use
+                chronaural1->off1 = *chronaural1->last_off1;  // to eliminate crackle from discontinuity in wave
+              if (chronaural1->last_off2 != NULL)  // there *is* a previous offset to use
+                chronaural1->off2 = *chronaural1->last_off2;
+            }
+            chronaural1->inc2 = (int) round( chronaural1->amp_beat * 2. * fast_mult);  //inc to next sin value
+            chronaural1->off2 += chronaural1->inc2;  // offset for beat frequency into sin table
+            chronaural1->off2 = chronaural1->off2 % (out_rate * 2);  // mod to wrap offset
+            sinval = sin_table [chronaural1->off2];  // sin val at current amp_beat point
+            if (sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
+            {
+              freq1 = chronaural1->carrier;
+              if (opt_c)  // compensate
+              {
+                amp1 = (chronaural1->amp * amp_comp (freq1));
+              }
+              else
+                amp1 = chronaural1->amp;
+              chronaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
+              chronaural1->off1 += chronaural1->inc1;
+              chronaural1->off1 = chronaural1->off1 % (out_rate * 2);
+              if (chronaural1->amp_behave == 1)  // sin wave, adjust by sin value
+              {
+                out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * sin_table[chronaural1->off1]);
+              }
+              else if (chronaural1->amp_behave == 2)      // square wave, full volume
+              {
+                out_buffer[ii] += (chronaural1->split_now * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * sin_table[chronaural1->off1]);
+              }
+              else if (chronaural1->amp_behave == 3)  // dirac delta approximation
+              {
+                double filter = pow(sinval, 5.); // quint the sin to make pseudo dirac
+                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * sin_table[chronaural1->off1]);
+              }
+            }
+            if (chronaural1->split_beat == 0.0)  // no split beat, adjust split towards split_end
+            {
+              chronaural1->split_now += (chronaural1->split_adj * fast_mult);
+              if (chronaural1->split_now < 0.0)
+                chronaural1->split_now = 0.0;
+              else if (chronaural1->split_now > 1.0)
+                chronaural1->split_now = 1.0;
+            }
+            else // split beat so no split adjust, split beat adjust instead, oscillates between begin and end
+            {
+              chronaural1->split_now += chronaural1->split_beat_adj * fast_mult;
+              double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
+                /* assumes split_end > split_begin, this is done in init_binaural */
+              if (chronaural1->split_now > chronaural1->split_end)  // larger than end
+              {
+                double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to end
+                  chronaural1->split_now = chronaural1->split_end;
+                else // overshoot smaller than overall split, reflect from end
+                  chronaural1->split_now = chronaural1->split_end - delta;
+                chronaural1->split_beat_adj *= -1.;  // swap direction
+              }
+              else if (chronaural1->split_now < chronaural1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to begin
+                  chronaural1->split_now = chronaural1->split_begin;
+                else // overshoot smaller than overall split, reflect from begin
+                  chronaural1->split_now = chronaural1->split_begin + delta;
+                chronaural1->split_beat_adj *= -1.;  // swap direction
+              }
+            }  
+            chronaural1->carrier += (chronaural1->carr_adj * fast_mult);  // tone to sound if time
             chronaural1->amp_beat += (chronaural1->amp_beat_adj * fast_mult);  // beat of the amplitude
+            chronaural1->amp += (chronaural1->amp_adj * fast_mult);  // amplitude to sound at
+            if (chronaural1->amp < 0.0)  // no negative amplitudes
+              chronaural1->amp = 0.0;
+            chronaural1->cur_frames += 1 * fast_mult;  
           }
         }
         break;
@@ -3897,8 +4862,8 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
         char_count += fprintf (fp, " %d %d %d %d", 
                                    binaural1->amp_inc1, binaural1->amp_off1, binaural1->amp_inc2, binaural1->amp_off2);
-        char_count += fprintf (fp, " %.3e %.3e %.3e", binaural1->carr_adj, binaural1->beat_adj, binaural1->amp_adj);
-        char_count += fprintf (fp, " %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
+        char_count += fprintf (fp, " %.3e %.3e %.3e\n", binaural1->carr_adj, binaural1->beat_adj, binaural1->amp_adj);
+        char_count += fprintf (fp, "       %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
         char_count += fprintf (fp, " %d\n", binaural1->slide);
       }
@@ -4031,19 +4996,64 @@ fprint_voice_all (FILE *fp, void *this)
 
         chronaural1 = (chronaural *) this;
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
-        char_count += fprintf (fp, " %.3f", AMP_DA (chronaural1->amp));
-        char_count += fprintf (fp, " %.3e %.3e", chronaural1->amp_beat, chronaural1->amp_fraction);
+        char_count += fprintf (fp, " %.3f", chronaural1->amp_beat);
+        char_count += fprintf (fp, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
         char_count += fprintf (fp, " %d", chronaural1->amp_behave);
         char_count += fprintf (fp, " %d %d", chronaural1->inc1, chronaural1->off1);
         char_count += fprintf (fp, " %d %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
         char_count += fprintf (fp, " %.3f", chronaural1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f\n",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        char_count += fprintf (fp, " %.3e", chronaural1->split_beat);
+        char_count += fprintf (fp, "         %.3e", chronaural1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e",
                         chronaural1->split_beat_adj, chronaural1->split_adj);
         char_count += fprintf (fp, " %d\n", chronaural1->slide);
+      }
+      break;
+    case 9:  // binaural step slide
+    case 11:  // binaural vary slide, even though doesn't have fuzz
+      {
+        binaural *binaural1;
+
+        binaural1 = (binaural *) this;
+        char_count += fprintf (fp, "   bin %.3f %+.3f", binaural1->carrier, binaural1->beat);
+        char_count += fprintf (fp, " %.3f", AMP_DA (binaural1->amp));
+        char_count += fprintf (fp, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
+        char_count += fprintf (fp, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
+        char_count += fprintf (fp, " %d %d %d %d", 
+                                   binaural1->amp_inc1, binaural1->amp_off1, binaural1->amp_inc2, binaural1->amp_off2);
+        char_count += fprintf (fp, " %.3e %.3e %.3e\n", binaural1->carr_adj, binaural1->beat_adj, binaural1->amp_adj);
+        char_count += fprintf (fp, "       %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
+        char_count += fprintf (fp, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
+        char_count += fprintf (fp, " %d", binaural1->slide);
+        char_count += fprintf (fp, " %lld %lld", binaural1->tot_frames, binaural1->cur_frames);
+        char_count += fprintf (fp, " %d %.2f %.1f\n", binaural1->steps, binaural1->slide_time, binaural1->fuzz);
+      }
+      break;
+    case 10:  // chronaural step slide
+    case 12:  // chronaural vary slide, even though doesn't have fuzz
+      {
+        chronaural *chronaural1;
+
+        chronaural1 = (chronaural *) this;
+        char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
+        char_count += fprintf (fp, " %.3f", chronaural1->amp_beat);
+        char_count += fprintf (fp, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
+        char_count += fprintf (fp, " %d", chronaural1->amp_behave);
+        char_count += fprintf (fp, " %d %d", chronaural1->inc1, chronaural1->off1);
+        char_count += fprintf (fp, " %d %d", chronaural1->inc2, chronaural1->off2);
+        char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
+        char_count += fprintf (fp, " %.3f", chronaural1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f\n",
+                        chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
+        char_count += fprintf (fp, "         %.3e", chronaural1->split_beat);
+        char_count += fprintf (fp, " %.3e %.3e",
+                        chronaural1->split_beat_adj, chronaural1->split_adj);
+        char_count += fprintf (fp, " %d", chronaural1->slide);
+        char_count += fprintf (fp, " %lld %lld", chronaural1->tot_frames, chronaural1->cur_frames);
+        char_count += fprintf (fp, " %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
       }
       break;
     default:  // not known, do nothing
@@ -4066,6 +5076,8 @@ fprint_voice (FILE *fp, void *this)
       ;
       break;
     case 1:  // binaural
+    case 9:  // binaural step slide
+    case 11:  // binaural vary slide
       {
         double freq1, freq2;
         double amp1, amp2;
@@ -4146,13 +5158,15 @@ fprint_voice (FILE *fp, void *this)
         break;
       }
     case 8:  // chronaural
+    case 10:  // chronaural step slide
+    case 12:  // chronaural vary slide
       {
         chronaural *chronaural1;
 
         chronaural1 = (chronaural *) this;
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
+        char_count += fprintf (fp, " %.3f", chronaural1->amp_beat);
         char_count += fprintf (fp, " %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
-        char_count += fprintf (fp, " %.3e", chronaural1->amp_beat);
         char_count += fprintf (fp, " %.3f\n", chronaural1->split_now );
         break;
       }
@@ -4373,19 +5387,62 @@ sprintVoiceAll (char **p, void *this)
 
         chronaural1 = (chronaural *) this;
         *p += sprintf (*p, "   chron %.3f", chronaural1->carrier);
-        *p += sprintf (*p, " %.3f", AMP_DA (chronaural1->amp));
-        *p += sprintf (*p, " %.3e %.3e", chronaural1->amp_beat, chronaural1->amp_fraction);
+        *p += sprintf (*p, " %.3f", chronaural1->amp_beat);
+        *p += sprintf (*p, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
         *p += sprintf (*p, " %d", chronaural1->amp_behave);
         *p += sprintf (*p, " %d %d", chronaural1->inc1, chronaural1->off1);
         *p += sprintf (*p, " %d %d", chronaural1->inc2, chronaural1->off2);
         *p += sprintf (*p, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
         *p += sprintf (*p, " %.3f", chronaural1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
+        *p += sprintf (*p, " %.3f %.3f %.3f %.3f\n",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        *p += sprintf (*p, " %.3e", chronaural1->split_beat);
+        *p += sprintf (*p, "         %.3e", chronaural1->split_beat);
         *p += sprintf (*p, " %.3e %.3e",
                         chronaural1->split_beat_adj, chronaural1->split_adj);
         *p += sprintf (*p, " %d\n", chronaural1->slide);
+        break;
+      }
+    case 9:  // binaural step slide
+    case 11:  // binaural step slide, even though doesn't have fuzz
+      {
+        binaural *binaural1;
+
+        binaural1 = (binaural *) this;
+        *p += sprintf (*p, "   bin %.3f %+.3f %.3f", binaural1->carrier, binaural1->beat, AMP_DA (binaural1->amp));
+        *p += sprintf (*p, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
+        *p += sprintf (*p, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
+        *p += sprintf (*p, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
+        *p += sprintf (*p, " %d %d %d %d", binaural1->amp_inc1, binaural1->amp_off1, binaural1->amp_inc2, binaural1->amp_off2);
+        *p += sprintf (*p, " %.3e% .3e %.3e\n", binaural1->carr_adj, binaural1->beat_adj, binaural1->amp_adj);
+        *p += sprintf (*p, "       %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
+        *p += sprintf (*p, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
+        *p += sprintf (*p, " %d", binaural1->slide);
+        *p += sprintf (*p, " %lld %lld", binaural1->tot_frames, binaural1->cur_frames);
+        *p += sprintf (*p, " %d %.2f %.1f\n", binaural1->steps, binaural1->slide_time, binaural1->fuzz);
+      }
+      break;
+    case 10:  // chronaural step slide
+    case 12:  // chronaural step slide, even though doesn't have fuzz
+      {
+        chronaural *chronaural1;
+
+        chronaural1 = (chronaural *) this;
+        *p += sprintf (*p, "   chron %.3f", chronaural1->carrier);
+        *p += sprintf (*p, " %.3f", chronaural1->amp_beat);
+        *p += sprintf (*p, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
+        *p += sprintf (*p, " %d", chronaural1->amp_behave);
+        *p += sprintf (*p, " %d %d", chronaural1->inc1, chronaural1->off1);
+        *p += sprintf (*p, " %d %d", chronaural1->inc2, chronaural1->off2);
+        *p += sprintf (*p, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
+        *p += sprintf (*p, " %.3f", chronaural1->split_now );
+        *p += sprintf (*p, " %.3f %.3f %.3f %.3f\n",
+                        chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
+        *p += sprintf (*p, "         %.3e", chronaural1->split_beat);
+        *p += sprintf (*p, " %.3e %.3e",
+                        chronaural1->split_beat_adj, chronaural1->split_adj);
+        *p += sprintf (*p, " %d", chronaural1->slide);
+        *p += sprintf (*p, " %lld %lld", chronaural1->tot_frames, chronaural1->cur_frames);
+        *p += sprintf (*p, " %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
         break;
       }
     default:  // not known, do nothing
@@ -4406,6 +5463,8 @@ sprintVoice (char **p, void *this)
       ;
       break;
     case 1:  // binaural
+    case 9:  // binaural step slide
+    case 11:  // binaural vary slide
       {
         binaural *binaural1;
 
@@ -4469,13 +5528,15 @@ sprintVoice (char **p, void *this)
         break;
       }
     case 8:  // chronaural
+    case 10:  // chronaural step slide
+    case 12:  // chronaural vary slide
       {
         chronaural *chronaural1;
 
         chronaural1 = (chronaural *) this;
         *p += sprintf (*p, "   chron %.3f", chronaural1->carrier);
-        *p += sprintf (*p, " %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
         *p += sprintf (*p, " %.3e", chronaural1->amp_beat);
+        *p += sprintf (*p, " %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
         *p += sprintf (*p, " %.3f\n", chronaural1->split_now );
         break;
       }

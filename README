@@ -5,9 +5,12 @@ a learning curve.  Use the test configuration files as templates and
 experiment with changing the variables to see the effects.  There are
 help files in text and html format.
 
-This was developed on a Fedora Core 6 linux system.  It requires
+This was developed on a Fedora Core 6/7 linux system.  It requires
 libsndfile and libsamplerate.  If your distro does not provide them,
-go to http://www.mega-nerd.com for the latest versions.
+go to http://www.mega-nerd.com for the latest versions.  The library
+libFLAC must be present for libsndfile to have FLAC capability.  If it
+was compiled without the library present and you try to use FLAC, it
+will abort with no indication of why. 
 
 To compile:
 ./mkd

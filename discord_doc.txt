@@ -222,7 +222,7 @@
 
   --quiet   -q
 
-    quiet, don't display status while running
+    quiet, don't display status or any other output while running
 
   --rate   -r
 
@@ -259,23 +259,63 @@
   Time Sequences
 
   A time sequence always starts with a duration in the format
-  hh:mm:ss.  This may be followed with a fade indicator of < for fade
-  in or > for fade out. e.g. 00:02:03''''< means to fade in for 2
-  minutes and 3 seconds.  The duration is followed by the voices that
-  will play during that time period.
+  hh:mm:ss.  This may be followed with a fade indicator of less than
+  sign "<" for fade in or greater than sign ">" for fade out. e.g.
+  00:02:03''''< means to fade in for 2 minutes and 3 seconds.  The
+  duration is followed by the voices that will play during that time
+  period.
 
   Separators allowed are | , ; ' =, multiples are allowed mixed with
   singles, any combination of separators even within a voice.
   However, every voice must be joined by separators.  No white space
   is allowed.
   
-  The > after a binaural or chronaural voice is a slide, and will
-  adjust to be the next binaural or chronaural at the end of the time
-  period.  For slides to work, the binaural or chronaural voices must
-  be in the same relative position in the time sequences.  There is no
-  other way to know that there is a link between the voices.  So the
-  first voice in the sequence will always look to the first
-  voice in the next sequence to slide to, etc.
+  The greater than sign ">" after a binaural or chronaural voice is a
+  slide, and will continuously adjust carrier, beat, amplitude,
+  amplitude beat and amplitude variation to be the next binaural or
+  chronaural at the end of the time period.  For slides to work, the
+  binaural or chronaural voices must be in the same relative position
+  in the time sequences.  There is no other way to know that there is
+  a link between the voices.  So the first voice in the sequence will
+  always look to the first voice in the next sequence to slide to,
+  etc.
+
+  One alternative slide format is the step slide.  Instead of using a
+  greater than sign ">" to indicate a slide, use an ampersand "&".
+  Instead of sliding smoothly to the next time sequence, the slide
+  will occur in a series of steps with slides between them.  The
+  ampersand is followed by three fields separated by separators:
+  number of steps, time for slide joins and fuzz.  Number of steps is
+  the number of step-slide sequences that you want in the time period.
+  The time for slide join is how long to make the slides that bridge
+  the steps in seconds.  And the fuzz is the percent of the interval
+  that the constant tone can occur in, if it is 10 per cent, then it
+  will be the fixed frequence +/- 5 per cent.  The time for slide join
+  determines the length of the constant step as the total time for the
+  period minus all of the slides has to equal the number of steps.
+  The first step or constant tone is always the starting frequency.
+  Time to entrain varies and you should make sure that the step time
+  is above this for you.  For some, this will work better than a
+  continuous slide.
+
+  Another alternative slide format is the vary slide.  Instead of
+  using a greater than sign ">" to indicate a slide, use a tilde "~".
+  Instead of sliding smoothly to the next time sequence, the slide
+  will occur in a series of steps with slides between them.  The tilde
+  is followed by two fields separated by separators:  number of steps
+  and time for slide joins.  Number of steps is the number of
+  step-slide sequences that you want in the time period.  The time for
+  slide join is how long to make the slides that bridge the steps in
+  seconds.  The time for slide join determines the length of the
+  constant step as the total time for the period minus all of the
+  slides has to equal the number of steps.  The first step or constant
+  tone is always the starting frequency.  Time to entrain varies and
+  you should make sure that the step time is above this for you.  This
+  varies from the step slide in that the steps are random in their
+  ordering; they can be anywhere between the starting voice and the
+  voice being slid to.  The last slide will always be to the
+  corresponding voice of the next time sequence.  This is a great way
+  to experience a lot of frequencies in a range.
 
   All amplitudes are in percentages, 0 is none, 100 is max.  
 
@@ -305,7 +345,15 @@
     binaural''''60.0''''+10.01''''1.0''''0.5''''0.5''''10.0''''10.0'>
              |                            |                    |    |
          field separators            left amplitude beat     right  |
-                                                                   slide
+          |     |                                               slide
+  &''''8''''30'''',,,,10  (slide with & instead of >)
+  |    |    |         |
+  | steps slide time  fuzz percent
+  step slide
+  ~,,,,5''''20  (slide with ~ instead of >)
+  |    |    |
+  | steps slide time
+  vary slide
 
   Fields for chronaural are name, carrier, amplitude, amplitude beat,
   amplitude fraction, amplitude behave, beginning split, ending split,
@@ -321,12 +369,22 @@
   through time of the oscillation of the left and right split.  Slide
   must be > or no slide will occur.
   Example
-             carrier                begin split
-               |                       |   
-  chronaural''145.0''1.0''4.0''.00''3''0.0''0.5''.050''.950''1.200
+             carrier                begin split                 slide
+               |                       |                            |
+  chronaural''145.0''1.0''4.0''.00''3''0.0''0.5''.050''.950''1.200''>
     |       |        |     |    |   |        |    |      |     |
    name     |        | amp beat | amp behave | low split |  split beat
         separators amplitude  amp fraction  end split  high split
+          |     |
+  &''''8''''30'''',,,,10  (slide with & instead of >)
+  |    |    |         |
+  | steps slide time  fuzz percent
+  step slide
+  ~,,,,5''''20  (slide with ~ instead of >)
+  |    |    |
+  | steps slide time
+  vary slide
+
 
   Fields for bell are name, frequency, minimum start amplitude, maximum
   start amplitude, beginning split, ending split, lowest split allowed,
