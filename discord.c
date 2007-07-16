@@ -1849,13 +1849,13 @@ setup_bell (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double length_min = strtod (subtoken, &endptr);
-
   if (length_min == 0.0)
   {
     if (errno != 0)             //  error
       error ("Length_min for bell had an error.\n");
   }
-  bell1->length_min = length_min * out_rate;      // convert to frames from seconds
+  bell1->length_min = (int_64) (length_min * out_rate);      // convert to frames from seconds
+
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double length_max = strtod (subtoken, &endptr);
@@ -1864,7 +1864,7 @@ setup_bell (char *token, void **work)
     if (errno != 0)             //  error
       error ("Length_max for bell had an error.\n");
   }
-  bell1->length_max = length_max * out_rate;      // convert to frames from seconds
+  bell1->length_max = (int_64) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -1874,7 +1874,7 @@ setup_bell (char *token, void **work)
     if (errno != 0)             //  error
       error ("Repeat_min for bell had an error.\n");
   }
-  bell1->repeat_min = repeat_min * out_rate;      // convert to frames from seconds
+  bell1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -1884,7 +1884,7 @@ setup_bell (char *token, void **work)
     if (errno != 0)             //  error
       error ("Repeat_max for bell had an error.\n");
   }
-  bell1->repeat_max = repeat_max * out_rate;      // convert to frames from seconds
+  bell1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -1900,8 +1900,8 @@ setup_bell (char *token, void **work)
 
   /* create the time to first play of bell */
   if (bell1->repeat_min == bell1->repeat_max)
-    // fixed period, random start
-    bell1->next_play = (int_64) (drand48() * bell1->repeat_min);      
+    // fixed period, start immediately
+    bell1->next_play = 0LL;
   else
   {
       // frames to next play random piece of possible interval
@@ -1909,7 +1909,6 @@ setup_bell (char *token, void **work)
     bell1->next_play = delta/2;
   }
   bell1->sofar = 0LL;
-  //bell1->sofar = (int_64) (drand48() * bell1->next_play);  // random start
 }
 
 /* Set up a noise sequence */
@@ -3668,6 +3667,8 @@ play_loop ()
 
       /* open alsa default via libsndfile */
   alsa_dev = alsa_open (alsa_dev, channels, (unsigned) out_rate, SF_FALSE); 
+  if (alsa_dev == NULL)
+    error("Could not open the default sound device\n");
       /* set up the slice structure that will be passed to alsa_play_* */
   sound_slice = (slice *) Alloc (sizeof (slice) * 1);
   sound_slice->alsa_dev = alsa_dev;  // sound device
@@ -4881,9 +4882,9 @@ fprint_voice_all (FILE *fp, void *this)
                         AMP_DA (bell1->amp_min), AMP_DA (bell1->amp_max));
         char_count += fprintf (fp, " %lld %lld %lld %lld",
                         bell1->length_min, bell1->length_max, bell1->repeat_min, bell1->repeat_max);
-        char_count += fprintf (fp, " %d %d %d %lld %lld %lld",
-                        bell1->behave, bell1->inc1, bell1->off1, bell1->next_play,
-                        bell1->sofar, bell1->ring);
+        char_count += fprintf (fp, " %d\n", bell1->behave);
+        char_count += fprintf (fp, "        %d %d %lld %lld %lld",
+                        bell1->inc1, bell1->off1, bell1->next_play, bell1->sofar, bell1->ring);
         char_count += fprintf (fp, " %.3e %.3e\n",
                         bell1->amp_adj, bell1->split_adj);
       }
@@ -5272,8 +5273,9 @@ sprintVoiceAll (char **p, void *this)
                         AMP_DA (bell1->amp_min), AMP_DA (bell1->amp_max));
         *p += sprintf (*p, " %lld %lld %lld %lld",
                         bell1->length_min, bell1->length_max, bell1->repeat_min, bell1->repeat_max);
-        *p += sprintf (*p, " %d %d %d %lld %lld %lld",
-                        bell1->behave, bell1->inc1, bell1->off1, bell1->next_play,
+        *p += sprintf (*p, " %d\n", bell1->behave);
+        *p += sprintf (*p, "        %d %d %lld %lld %lld",
+                        bell1->inc1, bell1->off1, bell1->next_play,
                         bell1->sofar, bell1->ring);
         *p += sprintf (*p, " %.3e %.3e\n",
                         bell1->amp_adj, bell1->split_adj);
@@ -5610,7 +5612,6 @@ static snd_pcm_t *
 alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 {	
   const char * device = "default" ;
-  // const char * device = "analog" ;
   //const char * device = "plughw:0,0" ;
   unsigned val;
   unsigned long lval;
@@ -5628,7 +5629,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 		}
 	else
 	{	alsa_period_size = 1024 ;
-		alsa_buffer_frames = 8 * alsa_period_size ;
+		alsa_buffer_frames = 32 * alsa_period_size ;
 		} ;
 
 	if ((err = snd_pcm_open (&alsa_dev, device, SND_PCM_STREAM_PLAYBACK, 0)) < 0)
@@ -5636,7 +5637,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 		goto catch_error ;
 		} ;
 
-	//snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock
+	//snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock, 0 is default
 
 	if ((err = snd_pcm_hw_params_malloc (&hw_params)) < 0)
 	{	fprintf (stderr, "cannot allocate hardware parameter structure (%s)\n", snd_strerror (err)) ;
@@ -5734,8 +5735,8 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
     fprintf (stderr, "Actual rate (%u)  Direction = %d\n", val, dir);
     snd_pcm_hw_params_get_channels (hw_params, &val);
     fprintf (stderr, "Actual channels (%u)\n", val);
-    snd_pcm_hw_params_get_periods (hw_params, &val, &dir);
-    fprintf (stderr, "Actual period_size (%u)  Direction = %d\n", val, dir);
+    snd_pcm_hw_params_get_period_size (hw_params, &lval, &dir);
+    fprintf (stderr, "Actual period_size (%lu)  Direction = %d\n", lval, dir);
     snd_pcm_hw_params_get_buffer_size (hw_params, &lval);
     fprintf (stderr, "Actual buffer_size (%lu)\n", lval);
   }
