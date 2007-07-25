@@ -23,6 +23,7 @@
         3.1.8 once
 
   4. OPTIONS
+     4.0 --audio_device   -a
      4.1 --bit_accuracy   -b
      4.2 --compensate   -c
      4.3 --display_only   -d
@@ -62,18 +63,24 @@
   because of patent issues.  For practical purposes, this means wav,
   flac, or raw files on a PC, though au and aiff formats are also
   available.  If an input sound file has a different sample rate than
-  that selected for the output, it will automatically resampled to the
-  requested rate. A copy can be retained in the same directory as
+  that selected for the output, it will automatically be resampled to
+  the requested rate.  A copy can be retained in the same directory as
   it was found with the new rate appended to the filename.  Output
   file types are limited to wav, flac, and raw; these are all lossless
   formats.
 
   While all of the options below can be used on the command line, the
-  sequences to play must be defined in a configuration file.  Options
-  on the command line override options in a configuration file.
+  sequences to play must be defined in a script file.  Options
+  on the command line override options in a script file.
   Configuration files are named with a .discord extension by
   convention.  You can, however, use whatever name you want for your
-  configuration files.
+  script files.  All of the options can also be set in a
+  configuration file in your home directory called .discordrc.  This
+  file contains options identical to those in a script file or on the
+  command line.  The options found here have the lowest priority and
+  will be overridden by either a script file or the command line.
+  There is a sample .discordrc included, so you can move it to your
+  $HOME directory if you want.
 
   There are eight voice types in discord.  These are binaural,
   chronaural, bell, noise, stoch (stands for stochastic), sample,
@@ -147,6 +154,19 @@
 
   OPTIONS
 
+  --audio_device   -a
+
+    specify the hardware device to use for playback.  discord will
+    automatically create a direct hardware link if this is not
+    specified.  Distortion can result if the link is not direct to
+    hardware.  The first number is the card number, the second is the
+    device number, both starting at 0.  See the alsa documentation at
+    www.alsa-project.org for a fuller explanation.
+    
+    Examples
+      --audio_device=plughw:0,0  
+      -a plughw:0,2
+
   --bit_accuracy   -b
 
     bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
@@ -186,7 +206,7 @@
 
   --every   -e
 
-    display status every x seconds
+    display status every x seconds, integer >= 1.
 
     Examples
       --every=10   
@@ -197,7 +217,8 @@
     fast, move through at multiple of time, 60 ==> 1min becomes 1 sec
     so a 1 hour play sequence will play in 1 minute.  Good for
     testing a new sequence for correctness, though obviously the
-    effect won't be the same.
+    effect won't be the same.  Bell has been tweaked so that the pitch
+    doesn't change while using this.
 
     Examples
       --fast=60
@@ -245,12 +266,22 @@
       --write=/home/xkdi/mindblowing.flac
       -w  /home/xkdi/mindblowing.wav
 
+
   CONFIGURATION FILE
+
+  You may optionally place a configuration file called .discordrc in
+  your $HOME directory.  It may contain only options, in the same
+  format as in a script file or on the command line.  These options
+  will be overridden by a script file or the command line.  A sample
+  is provided.
+
+
+  SCRIPT FILE
 
   Any text after a # is disregarded, whether at the start of a line or
   after meaningful text.
 
-  Options may be set in a configuration file, in fact it is easier to
+  Options may be set in a script file, in fact it is easier to
   do so, but they must be before any time sequences in that file.
 
   A time sequence may span multiple lines, but a voice (binaural,
@@ -367,7 +398,7 @@
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.  Split beat is the frequency
   through time of the oscillation of the left and right split.  Slide
-  must be > or no slide will occur.
+  indicator must be present or no slide will occur.
   Example
              carrier                begin split                 slide
                |                       |                            |
@@ -495,7 +526,7 @@
   name     min amplitude    begin split  min allowed split  |
                                                    when to play
 
-  There are test configuration files called binaural_test.discord,
+  There are test script files called binaural_test.discord,
   chronaural_test.discord, bell_test.discord, noise_test.discord,
   stoch_test.discord, sample_test.discord, repeat_test.discord,
   once_test.discord, and frequency_loudness_test.discord.
@@ -504,7 +535,7 @@
   BUGS
 
   Error checking is not robust on the input parameters in the
-  configuration file.
+  script file.
   
   Doesn't follow standard ./configure, make, make install format.
 

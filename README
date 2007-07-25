@@ -1,9 +1,9 @@
 discord is a program that allows you to program binaural and
 chronaural beats with great flexibility and mixed with sound files of
-your choice.  The flexibility requires some complexibility.  There is
-a learning curve.  Use the test configuration files as templates and
-experiment with changing the variables to see the effects.  There are
-help files in text and html format.
+your choice.  The flexibility requires some complexity.  There is a
+learning curve.  Use the test script files as templates and experiment
+with changing the variables to see the effects.  There is a help file
+in text format.
 
 This was developed on a Fedora Core 6/7 linux system.  It requires
 libsndfile and libsamplerate.  If your distro does not provide them,
@@ -17,6 +17,11 @@ To compile:
 
 Install manually wherever you want it.  Single executable, discord.
 Alternatively, just run as ./discord.
+
+A sample configuration file called .discordrc is provided for your
+$HOME directory.  It allows you to have minimal script files, just the
+sequences, if you want, using the options from the configuration file
+to play.  
 
 If you want to port to another architecture, the engine should work
 just fine.  However the dependencies on the sound system alsa will

@@ -115,10 +115,12 @@ typedef long long int int_64 ;
 typedef __uint64_t llong;
 typedef unsigned char uchar;
 
+int opt_a;                      // audio card and device set in options
+char *opt_a_plughw = NULL;      // audio card and device to use
 int opt_b;                      // bit accuracy of output
-int bit_accuracy = SF_FORMAT_PCM_16;  // bit accuracy of output defaults to 16
+int bit_accuracy = SF_FORMAT_PCM_16;  // bit accuracy of file output defaults to 16
 int opt_c;                      // Compensate for human hearing low and high freq dropoff
-int opt_c_points;               // Number of -c option points provided (max 32)
+int opt_c_points = 0;           // Number of -c option points provided (max 32)
 struct comp_pt
 {
   double freq, adj;
@@ -162,8 +164,12 @@ struct saved_option
   char *option_string;
 } ;
 
-/* string of saved options */
-saved_option *SO = NULL;
+/* string of saved options for each possible source
+ * in order of priority
+ */
+saved_option *ARGV_OPTIONS = NULL;
+saved_option *SCRIPT_OPTIONS = NULL;
+saved_option *CONFIG_OPTIONS = NULL;
 
 /* node to contain a time sequence
    line */
@@ -475,10 +481,12 @@ int read_time (char *, int *);
 void help ();
 int parse_argv_options (int argc, char **argv);
 int parse_argv_configs (int argc, char **argv);
-int set_options ();
+int parse_discordrc ();
+int set_options (saved_option *SO);
 int setup_play_seq ();
-int read_file (FILE * infile, char **config_options);
-int append_options (char *config_options);
+int read_script_file (FILE *infile, char **config_options);
+int read_config_file (FILE *infile, char **config_options);
+int append_options (saved_option **SO, char *config_options);
 int setup_opt_c (char *spec);
 void setup_binaural (char *token, void **work);
 void setup_bell (char *token, void **work);
@@ -548,8 +556,11 @@ main (int argc, char **argv)
   time_now = time(&utc_secs);  // seconds since Jan 1 1970 UTC
   srand48(time_now);  // initialize the drand48 generator
   parse_argv_options (argc, argv);  // parse command line options
-  parse_argv_configs (argc, argv); // parse configuration files
-  set_options ();  // set the options now that complete
+  parse_argv_configs (argc, argv); // parse script/sequence files
+  parse_discordrc (); // parse discord configuration file
+  set_options (CONFIG_OPTIONS);  // set the configuration options, lowest priority
+  set_options (SCRIPT_OPTIONS);  // set the script file options, next priority
+  set_options (ARGV_OPTIONS);  // set the command line options, highest priority
   init_sin_table ();  // now that rate is known, create lookup sin table
   setup_play_seq ();  // set the voices now that options complete
   if (opt_w)  // write a file
@@ -609,12 +620,13 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "b:c:de:f:hko:qr:w:";
+  const char *ostr = "a:b:c:de:f:hko:qr:w:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
   static struct option long_options[] =
     {
+      {"audio_device", 1, 0, 'a'},
       {"bit_accuracy", 1, 0, 'b'},
       {"compensate", 1, 0, 'c'},
       {"display_only", 0, 0, 'd'},
@@ -647,6 +659,7 @@ parse_argv_options (int argc, char **argv)
                long_options[option_index].name);
         break;
 
+      case 'a':
       case 'b':
       case 'c':
       case 'd':
@@ -660,10 +673,10 @@ parse_argv_options (int argc, char **argv)
       case 'w':
         soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
         soh->next = NULL;
-        if (SO == NULL)         // option list doesn't exist
+        if (ARGV_OPTIONS == NULL)         // option list doesn't exist
         {
           soh->prev = NULL;
-          SO = soh;
+          ARGV_OPTIONS = soh;
         }
         else
         {
@@ -690,7 +703,7 @@ parse_argv_options (int argc, char **argv)
   return optind;                // index into argv where non options start i.e. filenames
 }
 
-/* parses the configuration files for
+/* parses the sequence files for
    options and time sequences.  Places
    them in appropriate linked lists.
    The time sequences can't be processed
@@ -712,8 +725,8 @@ parse_argv_configs (int argc, char **argv)
       filecount++;
       filename = argv[optind++];
       infile = fopen (filename, "r");
-      read_file (infile, &config_options);
-      append_options (config_options);
+      read_script_file (infile, &config_options);
+      append_options (&SCRIPT_OPTIONS, config_options);
       fclose (infile);
     }
   }
@@ -726,9 +739,9 @@ parse_argv_configs (int argc, char **argv)
     from the command line, if it exists.
     Create it if it doesn't. */
 int
-append_options (char *config_options)
+append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "b:c:de:f:hko:qr:w:";
+  const char *ostr = "a:b:c:de:f:hko:qr:w:";
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -737,6 +750,7 @@ append_options (char *config_options)
   saved_option *soh = NULL, *sow = NULL;
   static struct option long_options[] =
     {
+      {"audio_device", 1, 0, 'a'},
       {"bit_accuracy", 1, 0, 'b'},
       {"compensate", 1, 0, 'c'},
       {"display_only", 0, 0, 'd'},
@@ -758,16 +772,16 @@ append_options (char *config_options)
   {
     soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
     soh->next = NULL;
-    if (SO == NULL)             // option list doesn't exist, no command line options
+    if (*SO == NULL)             // option list doesn't exist, no command line options
     {
       soh->prev = NULL;
-      SO = soh;
+      *SO = soh;
     }
     else
     {
       if (sow == NULL)  // first time through, there are command line options
       {
-        sow = SO;  // start at root of linked list of options
+        sow = *SO;  // start at root of linked list of options
         while (sow->next != NULL)
             sow = sow->next;
       }
@@ -906,13 +920,13 @@ append_options (char *config_options)
 }
 
 /*
-   Read a configuration/sequence file, discarding blank
+   Read a script file, discarding blank
    lines and comments.  Rets: 0 on success.
    Everything from the file is put into a character
    string for options, or a linked list for play sequences. */
 
 int
-read_file (FILE * infile, char **config_options)
+read_script_file (FILE * infile, char **config_options)
 {
   char *curlin, *cmnt, *token;
   char savelin[16384], worklin[16384], rawline[16384];
@@ -1022,7 +1036,8 @@ read_file (FILE * infile, char **config_options)
   if (*curlin == '\0')
   {
     if (feof (infile))
-    {                           // save last time sequence
+    {                           
+      // save last time sequence
       tsh = (time_seq *) Alloc ((sizeof (time_seq)) * 1);
       tsh->next = NULL;
       if (TS == NULL)           // time seq list doesn't exist
@@ -1044,12 +1059,126 @@ read_file (FILE * infile, char **config_options)
   return 0;
 }
 
+/* parses the discord configuration file
+   options.  Places them in linked list.
+*/
+int
+parse_discordrc ()
+{
+  char *homedir;
+  // points to a string containing all the configuration file options
+  char *config_options = NULL;
+  struct stat stat_buffer;
+  
+  homedir = getenv("HOME");
+  if ((homedir != NULL) && strlen(homedir))
+  {
+    char config_file [512] = {'\0'};
+
+    strncpy (config_file, homedir, sizeof(config_file) - 1);
+    strcat (config_file, "/.discordrc");
+    int retval = stat(config_file, &stat_buffer);
+    if (retval != -1)
+    {
+      FILE *infile;
+
+      infile = fopen (config_file, "r");
+      read_config_file (infile, &config_options);
+      append_options (&CONFIG_OPTIONS, config_options);
+      fclose (infile);
+      return 1;
+    }
+    return 0;
+  }
+  return 0;
+}
+
+/*
+   Read a configuration file, discarding blank
+   lines and comments.  Rets: 0 on success.
+   Everything from the file is put into a character
+   string for options.
+*/
+
+int
+read_config_file (FILE * infile, char **config_options)
+{
+  char *curlin, *cmnt, *token;
+  char savelin[16384], worklin[16384], rawline[16384];
+  size_t len, destlen;
+  int line_count = 0;
+
+  memset (savelin, 0x00, 16384);
+  memset (worklin, 0x00, 16384);
+  fgets (worklin, sizeof (worklin), infile);
+  strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
+  curlin = rawline;
+  while (*curlin != '\0')
+  {
+    line_count++;
+    token = strtok (worklin, " \t\n");    // get first token separated by spaces, tabs, or newline
+    if (token)                  // not an empty line
+    {
+      cmnt = strchr (curlin, '#');
+      if (cmnt && cmnt[1] == '#')
+      {
+        if (!opt_q)  // quiet
+        {
+          fprintf (stderr, "Configuration comment  %s\n", curlin);
+          fflush (stderr);
+        }
+      }
+      if (token[0] == '-')      // options line
+      {
+        if (cmnt)
+          strncpy (cmnt, " \0", 2);     // truncate at comment
+        while (isspace (*curlin))       // remove leading spaces
+          curlin++;
+        len = strlen (curlin);
+        destlen = strlen (savelin);
+        if (destlen == 0)  // no options saved yet
+          strncpy (savelin, curlin, len);
+        else
+        {
+          if (savelin[0] == '-')  // already some options saved
+            strncat (savelin, curlin, len);
+          else
+            error ("Options are only permitted at start of sequence file:\n  %s", curlin);
+        }
+      }
+      else if (token[0] == '#') // line is a comment
+        ;  // do nothing
+      else
+        if (!opt_q)  // quiet
+          fprintf (stderr, "Skipped line %d in script file with invalid %s at start of line\n", 
+                          line_count, token);
+    }
+    memset (worklin, 0x00, 16384);
+    fgets (worklin, sizeof (worklin), infile);
+    strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
+    curlin = rawline;
+  }
+  if (*curlin == '\0')
+  {
+    if (feof (infile))
+    {                           
+      if (savelin[0] == '-')          // only options in the file, config file
+      {
+        *config_options = StrDup (savelin);    // save them for further processing
+        return 0;
+      }
+    }
+    error ("Read error on sequence file");
+  }
+  return 0;
+}
+
 /*  Process the linked list of options
-    pointed to by global SO.  Do it in reverse
+    pointed to by SO.  Do it in reverse
     so that later options are overridden
     by earlier options. */
 int
-set_options ()
+set_options (saved_option *SO)
 {
   char *endptr;
   char *compvals=NULL;
@@ -1066,6 +1195,14 @@ set_options ()
     c = sow->option;
     switch (c)
     {
+      case 'a':  // audio card and device to use for playback
+        opt_a = 1;
+        if (sow->option_string != NULL)
+          opt_a_plughw = StrDup(sow->option_string);
+        else
+          if (!opt_q)  // quiet
+            fprintf (stderr, "No plughw set for --audip_device/-a.  Will use alsa default device.\n");
+        break;
       case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f
         opt_b = 1;
         if (strcmp(sow->option_string, "16i") == 0)
@@ -1185,7 +1322,7 @@ set_options ()
     }
     sow = sow->prev;
   }
-  if (opt_c)
+  if (compvals != NULL)  // there are new compensation values
   {
     opt_c_points = setup_opt_c (compvals);  // all option lines concatenated into compvals
     if (!opt_q)  // quiet
@@ -1209,6 +1346,15 @@ setup_opt_c (char *config)
   int point_count = 0;
 
   max_points = sizeof (compensate) / sizeof (compensate[0]);
+  if (opt_c_points > 0)  // already populated, clear it for higher priority
+  {
+    int ii;
+    for (ii = 0; ii < max_points; ii++)
+    {
+      compensate[ii].freq = 0.0;
+      compensate[ii].adj = 0.0;
+    }
+  }
   str1 = config;
   token = strtok_r (str1, ",'", &saveptr1);          // get first token after commas or apostrophes
   str1 = NULL;
@@ -1243,6 +1389,7 @@ setup_opt_c (char *config)
     token = strtok_r (str1, ",'", &saveptr1);          // get next token after commas or apostrophes
     point_count++;
   }
+  free (config);  // reclaim the storage
   // Sort the list
   int a, b;
   double holder;
@@ -5611,17 +5758,18 @@ StrDup (char *str)
 static snd_pcm_t *
 alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 {	
-  const char * device = "default" ;
-  //const char * device = "plughw:0,0" ;
+  char *default_device = "default" ;
+  //char *device = "plughw:0,0" ;
+  char *device_to_use = NULL;
   unsigned val;
   unsigned long lval;
   int dir = 0;
+	int err ;
+	snd_pcm_info_t *info_params ;
 	snd_pcm_hw_params_t *hw_params ;
 	snd_pcm_uframes_t buffer_size, xfer_align, start_threshold ;
 	snd_pcm_uframes_t alsa_period_size, alsa_buffer_frames ;
 	snd_pcm_sw_params_t *sw_params ;
-
-	int err ;
 
 	if (realtime)
 	{	alsa_period_size = 256 ;
@@ -5632,24 +5780,95 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 		alsa_buffer_frames = 32 * alsa_period_size ;
 		} ;
 
-	if ((err = snd_pcm_open (&alsa_dev, device, SND_PCM_STREAM_PLAYBACK, 0)) < 0)
-	{	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", device, snd_strerror (err)) ;
+  if (opt_a)  // audio device in options or configuration
+    device_to_use = opt_a_plughw;
+  else  // use default device
+    device_to_use = default_device;
+
+  err = snd_pcm_open (&alsa_dev, device_to_use, SND_PCM_STREAM_PLAYBACK, 0);
+	if (err < 0)
+	{	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	//snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock, 0 is default
+  if (!opt_a)  // no option or configuration audio plughw, have to create it from default
+  {
+    err = snd_pcm_info_malloc (&info_params);
+    if (err < 0)
+    {	fprintf (stderr, "cannot allocate information parameter structure (%s)\n", snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
 
-	if ((err = snd_pcm_hw_params_malloc (&hw_params)) < 0)
+    err = snd_pcm_info (alsa_dev, info_params);  // get info on the default card
+    if (err < 0)
+    {	fprintf (stderr, "cannot get information for the default card (%s)\n", snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+    if (!opt_q)  // not quiet
+    {
+          /* RO/WR (control): device number */
+      fprintf (stderr, "Default device number (%u)\n", snd_pcm_info_get_device (info_params));
+         /* RO/WR (control): subdevice number */
+      fprintf (stderr, "Default subdevice number (%u)\n", snd_pcm_info_get_subdevice (info_params));
+            /* RO/WR (control): stream number */
+      fprintf (stderr, "Default stream number (%d)\n", snd_pcm_info_get_stream (info_params));
+           /* R: card number */
+      fprintf (stderr, "Default card number (%d)\n", snd_pcm_info_get_card (info_params));
+         /* ID (user selectable) */
+      fprintf (stderr, "Default id (%s)\n", snd_pcm_info_get_id (info_params));
+         /* name of this device */
+      fprintf (stderr, "Default name (%s)\n", snd_pcm_info_get_name (info_params));
+        /* subdevice name */
+      fprintf (stderr, "Default subname (%s)\n", snd_pcm_info_get_subdevice_name (info_params));
+            /* SNDRV_PCM_CLASS_* */
+      fprintf (stderr, "Default dev_class (%d)\n", snd_pcm_info_get_class (info_params));
+         /* SNDRV_PCM_SUBCLASS_* */
+      fprintf (stderr, "Default dev_subclass (%d)\n", snd_pcm_info_get_subclass (info_params));
+      fprintf (stderr, "Default subdevices_count (%u)\n", snd_pcm_info_get_subdevices_count (info_params));
+      fprintf (stderr, "Default subdevices_avail (%u)\n", snd_pcm_info_get_subdevices_avail (info_params));
+    }
+    err = snd_pcm_close (alsa_dev) ;  // close the device so we can create new direct hw plugin
+    if (err < 0)
+    {	fprintf (stderr, "Could not close audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+
+    char hw_from_default [32];
+    int cardno = snd_pcm_info_get_card (info_params); 
+    if (cardno < 0)  // If default is user defined, this is set to actual card.
+      cardno = 0;  //  If not, dmix leaves as -1 and defaults to card 0 (look at id in info).
+    int devno = snd_pcm_info_get_device (info_params);
+    if (devno < 0)  // This appears to always be set, just here as insurance.
+      devno = 0;
+    int numchars = snprintf (hw_from_default, sizeof (hw_from_default), 
+                                  "plughw:%d,%d", cardno, devno); 
+    if (!opt_q)  // not quiet
+      fprintf (stderr, "Plughw  %s  numchars %d\n", hw_from_default, numchars);
+    /*  Now reopen and get feasible hardware parameters with plughw instead of default.
+     *  This will allow direct to hardware setting of rates, bypassing dmix.
+     */
+    err = snd_pcm_open (&alsa_dev, hw_from_default, SND_PCM_STREAM_PLAYBACK, 0);
+    if (err < 0)
+    {	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", hw_from_default, snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+
+    //snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock, 0 is default
+    snd_pcm_info_free (info_params) ;  // done with info
+  }
+  err = snd_pcm_hw_params_malloc (&hw_params);
+	if (err < 0)
 	{	fprintf (stderr, "cannot allocate hardware parameter structure (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params_any (alsa_dev, hw_params)) < 0)
+  err = snd_pcm_hw_params_any (alsa_dev, hw_params);
+	if (err < 0)
 	{	fprintf (stderr, "cannot initialize hardware parameter structure (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-  if (!opt_q)  // quiet
+  if (!opt_q)  // not quiet
   {
     // check parameters for the card
     snd_pcm_hw_params_get_channels_min (hw_params, &val);
@@ -5686,38 +5905,44 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
     fprintf (stderr, "Maximum tick_time (%u)  Direction = %d\n", val, dir);
   }
 
-	if ((err = snd_pcm_hw_params_set_access (alsa_dev, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0)
+  err = snd_pcm_hw_params_set_access (alsa_dev, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set access type (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params_set_format (alsa_dev, hw_params, SND_PCM_FORMAT_FLOAT64)) < 0)
-	//if ((err = snd_pcm_hw_params_set_format (alsa_dev, hw_params, SND_PCM_FORMAT_S32_LE)) < 0)
+  err = snd_pcm_hw_params_set_format (alsa_dev, hw_params, SND_PCM_FORMAT_FLOAT64);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set sample format (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params_set_rate_near (alsa_dev, hw_params, &samplerate, 0)) < 0)
+  err = snd_pcm_hw_params_set_rate_near (alsa_dev, hw_params, &samplerate, 0);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set sample rate (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params_set_channels (alsa_dev, hw_params, channels)) < 0)
+  err = snd_pcm_hw_params_set_channels (alsa_dev, hw_params, channels);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set channel count (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params_set_buffer_size_near (alsa_dev, hw_params, &alsa_buffer_frames)) < 0)
+  err = snd_pcm_hw_params_set_buffer_size_near (alsa_dev, hw_params, &alsa_buffer_frames);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set buffer size (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params_set_period_size_near (alsa_dev, hw_params, &alsa_period_size, 0)) < 0)
+  err = snd_pcm_hw_params_set_period_size_near (alsa_dev, hw_params, &alsa_period_size, 0);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set period size (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 
-	if ((err = snd_pcm_hw_params (alsa_dev, hw_params)) < 0)
+  err = snd_pcm_hw_params (alsa_dev, hw_params);
+	if (err < 0)
 	{	fprintf (stderr, "cannot set parameters (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
@@ -5729,7 +5954,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 	{	fprintf (stderr, "Can't use period equal to buffer size (%lu == %lu)", alsa_period_size, buffer_size) ;
 		goto catch_error ;
 		} ;
-  if (!opt_q)  // quiet
+  if (!opt_q)  // not quiet
   {
     snd_pcm_hw_params_get_rate (hw_params, &val, &dir);
     fprintf (stderr, "Actual rate (%u)  Direction = %d\n", val, dir);
