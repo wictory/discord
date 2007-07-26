@@ -7,6 +7,9 @@
 #
 #      case 'a':  // audio device to set as hardware through which to route playback.
 #                     This removes any filtering that alsa is doing, writes directly to the hardware.
+#                     At a command line run the command "aplay -lLv" to find out more information about
+#                     your sound card(s) and their devices.  That is not a 1, but a lowercase L.
+#                     See "man aplay" or "pinfo aplay".
 #--audio_device=plughw:0,0  # first card, first device, usually analog out
 #-a plughw:0,2  # first card, third device, usually digital out
 #
@@ -73,7 +76,7 @@
 #--display_only
 #-d
 #
-#      case 'e':  // every, display status every x seconds
+#      case 'e':  // every, display status every x seconds, integer only, >= 1.
 #--every=10
 -e 5
 #
@@ -101,6 +104,9 @@
 #      case 'r':  // frame rate per second, whatever your card can do, 44100 is CD quality
 #                    Higher rates are beneficial on binaurals at high frequencies,
 #                    say 15000 Hz and above.  For low frequencies, 44100 just fine.
+#                    At a command line run the command "amixer [-c cardnumber] | less" to 
+#                    find out more information about your sound card(s) and the 
+#                    hardware frequencies they support.  See "man amixer" or "pinfo amixer".
 --rate=44100
 #-r 48000
 #-r 96000
