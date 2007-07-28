@@ -556,11 +556,17 @@ main (int argc, char **argv)
   time_now = time(&utc_secs);  // seconds since Jan 1 1970 UTC
   srand48(time_now);  // initialize the drand48 generator
   parse_argv_options (argc, argv);  // parse command line options
+  /* set the command line options before all others so they will 
+   * be in effect while the rest of the options are parsed and set.
+   * In particular, this prevents printing of compensation arrays
+   * when quiet is set.
+   */
+  set_options (ARGV_OPTIONS);
   parse_argv_configs (argc, argv); // parse script/sequence files
   parse_discordrc (); // parse discord configuration file
   set_options (CONFIG_OPTIONS);  // set the configuration options, lowest priority
   set_options (SCRIPT_OPTIONS);  // set the script file options, next priority
-  set_options (ARGV_OPTIONS);  // set the command line options, highest priority
+  set_options (ARGV_OPTIONS);  // reset the command line options, highest priority
   init_sin_table ();  // now that rate is known, create lookup sin table
   setup_play_seq ();  // set the voices now that options complete
   if (opt_w)  // write a file
@@ -1406,9 +1412,11 @@ setup_opt_c (char *config)
         compensate[b].adj = holder;
       }
   if (!opt_q)  // quiet
+  {
     for (a = 0; a < point_count; a++)
-      fprintf (stderr, "compensate freq %f comp %f\n",
+      fprintf (stderr, "compensate freq %g comp %g\n",
                   compensate[a].freq, compensate[a].adj);
+  }
   // Check for duplicate frequencies
   for (a = 0; a < point_count; a++)
     for (b = a + 1; b < a + 2; b++)
@@ -5827,7 +5835,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
       fprintf (stderr, "Default subdevices_count (%u)\n", snd_pcm_info_get_subdevices_count (info_params));
       fprintf (stderr, "Default subdevices_avail (%u)\n", snd_pcm_info_get_subdevices_avail (info_params));
     }
-    err = snd_pcm_close (alsa_dev) ;  // close the device so we can create new direct hw plugin
+    err = snd_pcm_close (alsa_dev) ;  // close the device so we can create new direct plughw plugin
     if (err < 0)
     {	fprintf (stderr, "Could not close audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
       goto catch_error ;
@@ -5845,7 +5853,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
     if (!opt_q)  // not quiet
       fprintf (stderr, "Plughw  %s  numchars %d\n", hw_from_default, numchars);
     /*  Now reopen and get feasible hardware parameters with plughw instead of default.
-     *  This will allow direct to hardware setting of rates, bypassing dmix.
+     *  This will allow bypassing dmix in order to set higher rates than 48000.
      */
     err = snd_pcm_open (&alsa_dev, hw_from_default, SND_PCM_STREAM_PLAYBACK, 0);
     if (err < 0)
@@ -5914,6 +5922,15 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
   err = snd_pcm_hw_params_set_format (alsa_dev, hw_params, SND_PCM_FORMAT_FLOAT64);
 	if (err < 0)
 	{	fprintf (stderr, "cannot set sample format (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  /* lock the sample rate to use only hardware
+   * supported rates, avoid resampling
+   */
+  err = snd_pcm_hw_params_set_rate_resample (alsa_dev, hw_params, 0);
+	if (err < 0)
+	{	fprintf (stderr, "cannot block resample of sample rates (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
 

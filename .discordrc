@@ -6,12 +6,13 @@
 #  Options
 #
 #      case 'a':  // audio device to set as hardware through which to route playback.
-#                     This removes any filtering that alsa is doing, writes directly to the hardware.
+#                     Discord will use only hardware frame rates, so no resampling will occur, though
+#                     the sound format will be converted by alsa to match that of the card.
 #                     At a command line run the command "aplay -lLv" to find out more information about
 #                     your sound card(s) and their devices.  That is not a 1, but a lowercase L.
 #                     See "man aplay" or "pinfo aplay".
 #--audio_device=plughw:0,0  # first card, first device, usually analog out
-#-a plughw:0,2  # first card, third device, usually digital out
+#-a plughw:0,1  # first card, second device, usually digital out, IEC958
 #
 #      case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and float
 #                     Relevant only when sending output to a file.  All internal processing is 
@@ -107,6 +108,8 @@
 #                    At a command line run the command "amixer [-c cardnumber] | less" to 
 #                    find out more information about your sound card(s) and the 
 #                    hardware frequencies they support.  See "man amixer" or "pinfo amixer".
+#                    Discord will use the nearest hardware supported frequency to the frequency you 
+#                    set here.
 --rate=44100
 #-r 48000
 #-r 96000
