@@ -1,7 +1,7 @@
   NAME
 
-  discord - Generate binaural and chronaural tones to direct play or
-  file.
+  discord - Generate binaural and chronaural tones to soundcard or
+  file for use in brain wave entrainment.
 
   SYNOPSIS
 
@@ -110,12 +110,19 @@
 
   -a, --audio_device
 
-    specify the hardware device to use for playback.  discord will
-    automatically create a direct hardware link if this is not
-    specified.  Distortion can result if the link is not direct to
-    hardware.  The first number is the card number, the second is the
-    device number, both starting at 0.  See the alsa documentation at
-    www.alsa-project.org for a fuller explanation.
+    Specify the audio device to use for playback in alsa plug format.
+    Discord will automatically create a plughw alsa plugin from the
+    default audio device if this is not specified.  Discord uses alsa to
+    do format conversion from internal program representation to what the
+    card requires, but locks the sample rates to be only those supported
+    by the card hardware.  This prevents resampling with consequent
+    distortion and slowdown.  If you try to use a direct hardware link
+    like "hw:0,0" here it will cause a segmentation fault.  To implement
+    direct hardware writing discord would have to incorporate all of the
+    format conversion.  This seems counterproductive.  The first number is
+    the card number, the second is the device number, both starting at 0.
+    See the alsa documentation at www.alsa-project.org for a fuller
+    explanation.
     
     Examples
       --audio_device=plughw:0,0  
@@ -346,13 +353,16 @@
   Amplitude beat is the frequency through time of the carrier tone.
   Amplitude fraction is the value the sin function has to have before
   the tone is played.  Behavior for amp beat is as follows:
+
   1 sin wave  tone is adjusted by sin value 
   2 square wave  tone is either on or off 
   3 dirac delta approximation  power of sin 
+
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.  Split beat is the frequency
   through time of the oscillation of the left and right split.  Slide
   indicator must be present or no slide will occur.
+
   Example
              carrier                begin split                 slide
                |                       |                            |
@@ -376,17 +386,20 @@
   highest split allowed, minimum time allowed to ring, maximum time
   allowed to ring, minimum time till next ring, maximum time till next
   ring, and decay pattern for the ring, 1 through 5.  
+
   1 decrease linearly to 0 
   2 decrease linearly to .5, 
   3 constant, 
   4 increase linearly to 1.1 
   5 decrease quadratically to 0  (this is the most natural sounding) 
+
   The minimum and maximum time till next play are relative to the
   beginning of the last play. i.e. unlike noise, bell will interrupt
   itself.  The bell can start ringing again before the current ring
   has finished.  It displaces the currently ringing bell.  If
   beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.
+
   Example
       frequency        begin split   high split  max time        decay
         |                  |              |         |                |
@@ -400,21 +413,28 @@
   split, ending split, lowest split allowed, highest split allowed,
   minimum time allowed to play, maximum time allowed to play, minimum
   time till next play, maximum time till next play, minimum decay
-  pattern for the play, 1 through 5.  maximum decay pattern for the
-  play, 1 through 5, and the number of repeats.  
+  pattern for the play, 1 through 21.  maximum decay pattern for the
+  play, 1 through 21, and the number of repeats.  
+
   1 decrease linearly to 0 
   2 decrease linearly to .5, 
   3 constant, 
   4 increase linearly to 1.1 
   5 decrease linearly  to 1.25 
-  If beginning split or ending split are -1, they are set randomly
-  between lowest split and highest split.  Minimum decay has to be
-  less than maximum decay or unpredicable behavior results.  The
-  minimum and maximum time till next play are relative to the end of
-  the last play. i.e. unlike bell, noise will never interrupt itself.
-  The next voice in a slot will never start playing until after the
-  current voice has finished.  If there is no repeat on the end, 1 is
-  the default.
+  6 increase sinusoidally from .25 to 1.25 and back down to .25
+  7 decrease sinusoidally from 1.0 to 0.5 and back up to 1.0
+  8-14 same as above with 10% drop in carrier frequency during each play
+  15-21 same as above with 10% rise in carrier frequency during each play
+  
+  If beginning split or ending split are -1, they are set randomly between
+  lowest split and highest split.  Minimum decay has to be less than maximum
+  decay or unpredicable behavior results.  The minimum and maximum time till
+  next play are relative to the end of the last play. i.e. unlike bell, noise
+  will never interrupt itself.  The next voice in a slot will never start
+  playing until after the current voice has finished.  If there is no repeat
+  on the end, 1 is the default.  To reduce crackle there is a 25 frame fade in
+  and fade out on the noise voice.
+
   Example - line split for expository reasons, has to be single in script
   separators  max frequency  max amplitude    end split
         |             |                |              | 
@@ -448,6 +468,7 @@
   highest split allowed, and length of the sample (constant in seconds).
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.
+
   Example
       file to play  max amplitude  end split  max allowed split
                |              |           |             |
@@ -460,6 +481,7 @@
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed.  If beginning split or ending split are -1,
   they are set randomly between lowest split and highest split.
+
   Example
       file to play  max amplitude  end split  max allowed split
                |              |           |             |
@@ -472,6 +494,7 @@
   highest split allowed, when to play.  If beginning split or ending
   split are -1, they are set randomly between lowest split and highest
   split.
+  
   Example
       file to play  max amplitude  end split  max allowed split
                |              |         |            |
@@ -483,7 +506,8 @@
   There are test script files called binaural_test.discord,
   chronaural_test.discord, bell_test.discord, noise_test.discord,
   stoch_test.discord, sample_test.discord, repeat_test.discord,
-  once_test.discord, and frequency_loudness_test.discord.
+  once_test.discord, and frequency_loudness_test.discord and several script
+  files for actual usage.
 
 
 QUESTIONS AND ANSWERS

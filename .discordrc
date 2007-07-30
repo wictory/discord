@@ -8,6 +8,7 @@
 #      case 'a':  // audio device to set as hardware through which to route playback.
 #                     Discord will use only hardware frame rates, so no resampling will occur, though
 #                     the sound format will be converted by alsa to match that of the card.
+#                     If this is not specified, discord will open the default audio device as a plughw plugin.
 #                     At a command line run the command "aplay -lLv" to find out more information about
 #                     your sound card(s) and their devices.  That is not a 1, but a lowercase L.
 #                     See "man aplay" or "pinfo aplay".

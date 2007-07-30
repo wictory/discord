@@ -313,11 +313,16 @@ struct noise
   // 2 decrease linearly to .25, 3 constant,
   // 4 increase linearly to 1.25
   // 5 increase linearly to 1.50
+  // 6 increase sinusoidally to 1.0 and back to 0.0
+  // 7 decrease sinusoidally to -1.0 and back to 0.0
+  // 8-14 above with 10% carrier drop
+  // 15-21 above with 10% carrier rise
   // values the same, then constant
   int inc1, off1;               // for noise tones, offset + increment into sine
   int_64 next_play, sofar;             // Samples till next noise, how many so far
   int_64 play;                    // number of frames to play the noise
-  double amp_adj, split_adj;      // adjust while noise is playing
+  double carrier_adj, amp_adj, split_adj;      // adjust while noise is playing
+  double behave_inc1, behave_off1;      // for adjust behavior 6 and 7, offset and inc into sine
 } ;
 
 /* structure for playing a file at random intervals with the beat */
@@ -4231,7 +4236,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           }
         }
         break;
-      case 3:                // Noise
+      case 3:                // noise
         {
           noise *noise1;
           double split_end = 0.0;  // hold the ending split while creating voice
@@ -4244,8 +4249,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             {                     // time to play
               noise1->sofar = 0;
               noise1->off1 = 0;
-              /* First determine the play length for this tone.
-                 Has to be first as the next play depends on it. */
+              /* first determine the play length for this tone.
+                 has to be first as the next play depends on it. */
               if (noise1->length_max == noise1->length_min)
               {                   // fixed play time
                 noise1->play = noise1->length_min;
@@ -4295,16 +4300,82 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 int diff = (noise1->behave_high - noise1->behave_low) + 1;
                 noise1->behave = noise1->behave_low + (int) (rand () % diff);
               }
-              if (noise1->behave == 1)   // linear reduce to .50
-                noise1->amp_adj = - (noise1->amp * .50) / noise1->play;
-              else if (noise1->behave == 2)      // linear reduce to .90
-                noise1->amp_adj = - (noise1->amp * .10) / noise1->play;
-              else if (noise1->behave == 3)
-                noise1->amp_adj = 0.0;     // no change
-              else if (noise1->behave == 4)      // linear enhance to 1.10
-                noise1->amp_adj = (noise1->amp * .10) / noise1->play;
-              else if (noise1->behave == 5)      // linear enhance to 1.50
-                noise1->amp_adj = (noise1->amp * .50) / noise1->play;
+              /* how the tone behaves while it is playing has become complex.
+               * Both carrier and amplitude can change.
+               */
+              switch (noise1->behave)  // adjust the carrier frequency portion of behave
+              {
+                case 8:   // 10% carrier drop
+                case 9:
+                case 10:
+                case 11:
+                case 12:
+                case 13:
+                case 14:
+                  noise1->carrier_adj = -(noise1->carrier * .10) / ((double) noise1->play);
+                  break;
+                case 15:   // 10% carrier rise
+                case 16:
+                case 17:
+                case 18:
+                case 19:
+                case 20:
+                case 21:
+                  noise1->carrier_adj = (noise1->carrier * .10) / ((double) noise1->play);
+                  break;
+                default:
+                  noise1->carrier_adj = 0.0;
+              }
+              switch (noise1->behave)  // adjust amplitude portion of behave
+              {
+                case 1:   // linear reduce to .50
+                case 8: 
+                case 15:
+                  noise1->amp_adj = - (noise1->amp * .50) / ((double) noise1->play);
+                  break;
+                case 2:      // linear reduce to .90
+                case 9:
+                case 16:
+                  noise1->amp_adj = - (noise1->amp * .10) / ((double) noise1->play);
+                  break;
+                case 3:     // no change
+                case 10:
+                case 17:
+                  noise1->amp_adj = 0.0;
+                  break;
+                case 4:      // linear enhance to 1.10
+                case 11:
+                case 18:
+                  noise1->amp_adj = (noise1->amp * .10) / ((double) noise1->play);
+                  break;
+                case 5:      // linear enhance to 1.50
+                case 12:
+                case 19:
+                  noise1->amp_adj = (noise1->amp * .50) / ((double) noise1->play);
+                  break;
+                case 6:      // follow first half of sine wave, +ve
+                case 13:
+                case 20:
+                  {
+                    noise1->behave_off1 = 0.0;
+                    /* Sin table twice sample rate in size, half is sample_rate in size.
+                     * Want to traverse first pi of it over the course of the noise play */
+                    noise1->behave_inc1 = ((double) out_rate) / ((double) noise1->play);
+                  }
+                  break;
+                case 7:      // follow second half of sine wave, -ve
+                case 14:
+                case 21:
+                  {
+                    noise1->behave_off1 = (double) out_rate;
+                    /* Sin table twice sample rate in size, half is sample_rate in size.
+                     * Want to traverse last pi of it over the course of the noise play */
+                    noise1->behave_inc1 = ((double) out_rate) / ((double) noise1->play);
+                  }
+                  break;
+                default:
+                  noise1->amp_adj = 0.0;
+              }
                 /* assign directly to split_now to preserve -1 in split begin */
               if (noise1->split_begin == -1.0)  // noise split start
               {
@@ -4325,13 +4396,45 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (noise1->play > 0)  // noise is active
             {
+              /* adjust carrier if behave requires it before setting new sin table offset value */
+              if (noise1->behave >= 8 && noise1->behave <= 21)
+                noise1->carrier += noise1->carrier_adj;
               //noise1->inc1 = (int) (( (noise1->carrier * (out_rate * 2)) / out_rate) * fast_mult);
               noise1->inc1 = (int) round( noise1->carrier * 2.);
               noise1->off1 += noise1->inc1;
               noise1->off1 = noise1->off1 % (out_rate * 2);
-              out_buffer[ii] += noise1->split_now * noise1->amp * sin_table[noise1->off1];
-              out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_table[noise1->off1];
-              noise1->amp += (noise1->amp_adj * fast_mult);
+              double sin_factor;  // used for sinusoidal adjustment to amplitude
+              /* check for sinusoidal behavior */
+              if (noise1->behave == 6 || noise1->behave == 13 || noise1->behave == 20)
+                sin_factor = 0.25 + sin_table [(int) noise1->behave_off1];  // increase to 1.25 of start as hump
+              else if (noise1->behave == 7 || noise1->behave == 14 || noise1->behave == 21)
+                sin_factor = 1.0 + (0.5 * sin_table [(int) noise1->behave_off1]);  // drop only to half amplitude as bowl
+              else
+                sin_factor = 1.0;  // default to standard behavior
+              if (noise1->sofar > 25 && noise1->play  > 25)  // in middle of play range
+              {
+                out_buffer[ii] += noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1];
+                out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1];
+              }
+              else  // 25 frame ramp in to reduce crackle at start
+              if (noise1->sofar <= 25)
+              {
+                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
+                                   * (((double) noise1->sofar) / 25.));
+                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
+                                   * (((double) noise1->sofar) / 25.));
+              }
+              else  // 25 frame ramp out to reduce crackle at end
+              {
+                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
+                                   * (((double) noise1->play) / 25.));
+                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
+                                   * (((double) noise1->play) / 25.));
+              }
+              if (noise1->behave >= 1 && noise1->behave <= 5)
+                noise1->amp += (noise1->amp_adj * fast_mult);
+              else  // sinusoidal behavior, digital approximation
+                noise1->behave_off1 += (noise1->behave_inc1 * fast_mult);
               noise1->split_now += (noise1->split_adj * fast_mult);
               noise1->play -= fast_mult;
             }
@@ -5057,9 +5160,9 @@ fprint_voice_all (FILE *fp, void *this)
                         noise1->carrier_min, noise1->carrier_max);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (noise1->amp_min), AMP_DA (noise1->amp_max));
-        char_count += fprintf (fp, " %lld %lld %lld %lld ",
+        char_count += fprintf (fp, " %lld %lld %lld %lld\n",
                         noise1->length_min, noise1->length_max, noise1->repeat_min, noise1->repeat_max);
-        char_count += fprintf (fp, " %d %d %d %lld %lld %lld",
+        char_count += fprintf (fp, "         %d %d %d %lld %lld %lld",
                         noise1->behave, noise1->behave_low, noise1->behave_high, noise1->next_play,
                         noise1->sofar, noise1->play);
         char_count += fprintf (fp, " %.3e %.3e\n",
@@ -5255,7 +5358,7 @@ fprint_voice (FILE *fp, void *this)
           amp1 += ((amp1 * binaural1->amp_pct1) * sin_table[binaural1->amp_off1]);
         if (binaural1->amp_beat2 > 0.0)
           amp2 += ((amp2 * binaural1->amp_pct2) * sin_table[binaural1->amp_off2]);
-        char_count = fprintf (fp, "   bin %.3f   %+.3f   %.3f   %.3f\n", 
+        char_count = fprintf (fp, "   bin %.3f    %+.3f   %.3f   %.3f\n", 
                       binaural1->carrier, binaural1->beat, AMP_DA (amp1), AMP_DA (amp2));
       }
       break;
@@ -5273,8 +5376,9 @@ fprint_voice (FILE *fp, void *this)
         noise *noise1;
 
         noise1 = (noise *) this;
-        char_count = fprintf (fp, "   noise %.3f   %.3e   %.3f\n", 
-                      noise1->carrier, AMP_DA (noise1->amp * amp_comp (noise1->carrier)), noise1->split_now );
+        char_count = fprintf (fp, "   noise %.3f   %.4f   %.3f   %d\n", 
+                      noise1->carrier, AMP_DA (noise1->amp * amp_comp (noise1->carrier)), 
+                      noise1->split_now, noise1->behave );
         break;
       }
     case 4:  // random
@@ -5321,9 +5425,9 @@ fprint_voice (FILE *fp, void *this)
 
         chronaural1 = (chronaural *) this;
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
-        char_count += fprintf (fp, " %.3f", chronaural1->amp_beat);
-        char_count += fprintf (fp, " %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
-        char_count += fprintf (fp, " %.3f\n", chronaural1->split_now );
+        char_count += fprintf (fp, "   %.3f", chronaural1->amp_beat);
+        char_count += fprintf (fp, "   %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
+        char_count += fprintf (fp, "   %.3f\n", chronaural1->split_now );
         break;
       }
     default:  // not known, do nothing

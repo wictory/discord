@@ -7,6 +7,16 @@
 #
 #  Options
 #
+#      case 'a':  // audio device to set as hardware through which to route playback.
+#                     Discord will use only hardware frame rates, so no resampling will occur, though
+#                     the sound format will be converted by alsa to match that of the card.
+#                     If this is not specified, discord will open the default audio device as a plughw plugin.
+#                     At a command line run the command "aplay -lLv" to find out more information about
+#                     your sound card(s) and their devices.  That is not a 1, but a lowercase L.
+#                     See "man aplay" or "pinfo aplay".
+#--audio_device=plughw:0,0  # first card, first device, usually analog out
+#-a plughw:0,1  # first card, second device, usually digital out, IEC958
+#
 #      case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and float
 #                     Relevant only when sending output to a file.  All internal processing is 
 #                     done using doubles regardless.
@@ -33,11 +43,37 @@
 #--compensate=600:1''700=1''800=1''900=1''1000=1''2000=1''3000=1
 #--compensate=5000=1.0''7000=1.1'',,,9000:1.3,,10000:1.5,,12000:1.5
 #--compensate=13000=3,,16000=5.0,,17000=6.5,,18000=7.5,,19000=8.0,,20000=9.0
--c 5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4''80=1.3''100=1.2
--c 200=1.2''300=1.2'''400:1.1''500:1''600:1''700=1''800=1
--c 900=1''1000=1''2000=1''3000=1''5000=1.0''7000=1.1'',,,9000:1.3
--c 10000:1.5,,12000:1.5,,13000=3,,16000=5.0,,17000=6.5
--c 18000=7.5,,19000=8.0,,20000=9.0
+-c 5=9
+-c 10=6.2
+-c 20=4.6
+-c 30=3.4
+-c 40=2.4
+-c 50=1.6
+-c 60=1.4
+-c 80=1.3
+-c 100=1.2
+-c 200=1.2
+-c 300=1.2
+-c 400:1.1
+-c 500:1
+-c 600:1
+-c 700=1
+-c 800=1
+-c 900=1
+-c 1000=1
+-c 2000=1
+-c 3000=1
+-c 5000=1.0
+-c 7000=1.1
+-c 9000:1.3
+-c 10000:1.5
+-c 12000:1.5
+-c 13000=3
+-c 16000=5.0
+-c 17000=6.5
+-c 18000=7.5
+-c 19000=8.0
+-c 20000=9.0
 #
 #
 #      case 'd':  // display only
@@ -88,12 +124,8 @@
 #  of separators even within a voice.
 #  However, every voice must be joined by separators.  No white space is allowed.
 #  The < or > after the duration/time is a fade in <, or fade out > for that time sequence.
-#  The > after a binaural or chronaural voice is a slide, and will adjust to be the next binaural or chronaural at the
+#  The > after a binaural voice is a slide, and will adjust to be the next binaural at the
 #  end of the time period.
-#  The & with number of steps, slide time, and fuzz is a step slide, and will adjust to be the 
-#  next binaural or chronaural at the end of the time period in a sequence of descending steps.
-#  The ~ with number of steps and slide time is a vary slide, and will adjust to be the 
-#  next binaural or chronaural at the end of the time period in a sequence of random steps.
 #  All amplitudes are in percentages, 0 is none, 100 is max.
 #  All splits are expressed as fraction for Left channel.  e.g. .3 means .3 left channel, .7 right channel
 #  All durations in voices are expressed as seconds.  e.g. .3 = .3 second, 20 = 20 seconds, 1200 = 20 minutes
@@ -105,9 +137,6 @@
 #    Must be at the end, before the slide indicator if they are present.
 #    The + or - on the beat frequency indicates whether the left ear is higher + or lower -.
 #    The beat is centered on the carrier frequency, so 200  +4 results in L 202 and R 198.
-#    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
-#    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
-#    have number of steps and slide time after it.
 #
 #  Fields for bell are name, frequency, minimum start amplitude, maximum start amplitude, beginning split, ending split,
 #    lowest split allowed, highest split allowed, minimum time allowed to ring, maximum time allowed to ring,
@@ -165,18 +194,16 @@
 #      3 dirac delta approximation, power of sin
 #    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
 #    Split beat is the frequency through time of the oscillation of the left and right split.
-#    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
-#    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
-#    have number of steps and slide time after it.
+#    Slide must be > or no slide will occur.
 #
 #  Fade in for 10 seconds, run for 20 seconds, fade out for 10 seconds.
 #
 # Fade in
 #
 00:00:10'''<  
-  noise'''360.0'''420.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''5
+  noise'''360.0'''420.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''1'''21'''15
 #  noise'''2060.0'''2120.0'''.10'''.20'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
-#  noise'''60.0'''120.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''80
+#  noise'''60.0'''120.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''1'''21'''80
 #  noise'''120.0'''660.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
 #  noise'''220.0'''660.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''.3000'''.7000'''.10000'''.20000'''2'''4'''40
 #  noise'''440.0'''660.0'''1.20'''1.60'''-1.0'''-1.0'''.050'''.950'''2.5000'''3.0000'''.15000'''.20000'''2'''4'''20
@@ -187,9 +214,9 @@
 # Play constant
 #
 00:00:40  
-  noise'''360.0'''420.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''5
+  noise'''360.0'''420.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''1'''21'''15
 #  noise'''2060.0'''2120.0'''.10'''.20'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
-#  noise'''60.0'''120.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''80
+#  noise'''60.0'''120.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''1'''21'''80
 #  noise'''60.0'''160.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
 #  noise'''120.0'''660.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
 #  noise'''120.0'''460.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''.3000'''.7000'''.10000'''.20000'''2'''4'''40
@@ -202,9 +229,9 @@
 # Fade out
 #
 00:00:10'''>  
-  noise'''360.0'''420.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''5
+  noise'''360.0'''420.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''1'''21'''15
 #  noise'''2060.0'''2120.0'''.10'''.20'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
-#  noise'''60.0'''120.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''80
+#  noise'''60.0'''120.0'''0.50'''0.80'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''1'''21'''80
 #  noise'''120.0'''660.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''2.3000'''5.7000'''.10000'''.20000'''2'''4'''60
 #  noise'''120.0'''460.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''.3000'''.7000'''.10000'''.20000'''2'''4'''40
 #  noise'''220.0'''660.0'''1.00'''1.60'''-1.0'''-1.0'''.050'''.950'''.3000'''.7000'''.10000'''.20000'''2'''4'''40
