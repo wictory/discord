@@ -1036,8 +1036,10 @@ read_script_file (FILE * infile, char **config_options)
       else if (token[0] == '#') // line is a comment
         ;  // do nothing
       else
+      {
         if (!opt_q)  // quiet
           fprintf (stderr, "Skipped line with token %s at start of line\n", token);
+      }
     }
     memset (worklin, 0x00, 16384);
     fgets (worklin, sizeof (worklin), infile);
@@ -1160,9 +1162,11 @@ read_config_file (FILE * infile, char **config_options)
       else if (token[0] == '#') // line is a comment
         ;  // do nothing
       else
+      {
         if (!opt_q)  // quiet
           fprintf (stderr, "Skipped line %d in script file with invalid %s at start of line\n", 
                           line_count, token);
+      }
     }
     memset (worklin, 0x00, 16384);
     fgets (worklin, sizeof (worklin), infile);
@@ -1211,8 +1215,10 @@ set_options (saved_option *SO)
         if (sow->option_string != NULL)
           opt_a_plughw = StrDup(sow->option_string);
         else
+        {
           if (!opt_q)  // quiet
             fprintf (stderr, "No plughw set for --audip_device/-a.  Will use alsa default device.\n");
+        }
         break;
       case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f
         opt_b = 1;
@@ -1227,9 +1233,11 @@ set_options (saved_option *SO)
         else if (strcmp(sow->option_string, "64f") == 0)
           bit_accuracy = SF_FORMAT_DOUBLE;
         else // default to 16 bit sound
+        {
           if (!opt_q)  // quiet
             fprintf (stderr, "Unrecognized format for --bit_accuracy/-b %s.  Setting to 16 bit.\n", sow->option_string);
           bit_accuracy = SF_FORMAT_PCM_16;
+        }
         break;
       case 'c':  // compensate for human hearing, edge freqs need to be louder
         opt_c = 1;
@@ -1297,16 +1305,18 @@ set_options (saved_option *SO)
         opt_o = 1;
         if (sow->option_string != NULL)
         {
-          if (sow->option_string[0] == 'f')
+          if (sow->option_string[0] == 'f' || sow->option_string[0] == 'F')
             outfile_format = SF_FORMAT_FLAC;
-          else if (sow->option_string[0] == 'r')
+          else if (sow->option_string[0] == 'r' || sow->option_string[0] == 'R')
             outfile_format = SF_FORMAT_RAW;
-          else if (sow->option_string[0] == 'w')
+          else if (sow->option_string[0] == 'w' || sow->option_string[0] == 'W')
             outfile_format = SF_FORMAT_WAV;
           else  // default to flac
+          {
             if (!opt_q)  // quiet
               fprintf (stderr, "Unrecognized format for --output/-o %c.  Setting to flac.\n", sow->option_string[0]);
             outfile_format = SF_FORMAT_FLAC;
+          }
         }
         else  // default to flac
           outfile_format = SF_FORMAT_FLAC;
@@ -1326,7 +1336,7 @@ set_options (saved_option *SO)
         if (sow->option_string != NULL)
           out_filename = StrDup(sow->option_string);
         else  // default to generic name
-          out_filename = "discord_save_file.flac";
+          out_filename = "discord_saved_output_file";
         break;
       default:
         error ("Option -%c not known; run 'discord -h' for help", c);
@@ -1500,6 +1510,7 @@ help ()
 
           "Usage: dischord [options] seq-file ..." NL NL
           "Options:  -h --help         Display this help-text" NL
+          "          -a --audio_device Alsa plug device to use.  When not specified, uses default device"NL
           "          -b --bit_accuracy Number of bits to use to represent each sound: integer or float"NL
           "          -c --compensate   Compensate for human hearing perceptual differences: see docs"NL
           "          -d --display      Display the full interpreted sequence instead of playing it"NL
