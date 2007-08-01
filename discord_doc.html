@@ -1,15 +1,23 @@
-  NAME
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+"http://www.w3.org/TR/html4/strict.dtd">
+<HTML>
+<HEAD>
+<TITLE></TITLE>
+<META NAME="generator" CONTENT="HTML::TextToHTML v2.45">
+</HEAD>
+<BODY>
+<P><STRONG><FONT COLOR="NAVY">NAME</FONT></STRONG>
 
-  discord - Generate binaural and chronaural tones to soundcard or
+<P>  discord - Generate binaural and chronaural tones to soundcard or
   file for use in brain wave entrainment.
 
-  SYNOPSIS
+<P><STRONG><FONT COLOR="NAVY">SYNOPSIS</FONT></STRONG>
 
-  discord [flags] filename
+<P><STRONG><FONT COLOR=#B87333>discord</FONT></STRONG> [flags] <STRONG><FONT COLOR=#B87333>filename</FONT></STRONG>
 
-  DESCRIPTION
+<P><STRONG><FONT COLOR="NAVY">DESCRIPTION</FONT></STRONG>
 
-  discord is a command line program used to generate binaural and
+<P>  discord is a command line program used to generate binaural and
   chronaural beats mixed with tones, noise, or sound files of the
   users choice.  The default is to play the files via the computer's
   sound card, but they can be written to output files instead.  Only
@@ -25,7 +33,7 @@
   file types are limited to wav, flac, and raw; these are all lossless
   formats.
 
-  While all of the options below can be used on the command line, the
+<P>  While all of the options below can be used on the command line, the
   sequences to play must be defined in a script file.  Options on the command
   line override options in a script file.  Script files are named with a
   .discord extension by convention.  You can, however, use whatever name you
@@ -36,81 +44,81 @@
   either a script file or the command line.  There is a sample .discordrc
   included, so you can move it to your $HOME directory if you want.
 
-  There are eight voice types in discord.  These are binaural,
+<P>  There are eight voice types in discord.  These are binaural,
   chronaural, bell, noise, stoch (stands for stochastic), sample,
   repeat, and once.
 
-  Voice type description
+<P>  Voice type description
 
-  binaural
+<P><STRONG><FONT COLOR=#FF7F00>binaural</FONT></STRONG>
 
-  Generate a pair of tones separated by a beat frequency at a specific
+<P>  Generate a pair of tones separated by a beat frequency at a specific
   carrier frequency and amplitude.  Optionally vary the amplitude of
   the left and right channels at a specified frequency and by a
   specified percent.  Binaural tones are allowed to slide into the
   next binaural on carrier, beat, amplitude, amplitude beat, and
   amplitude amount.
 
-  chronaural
+<P><STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG>
 
-  Generate a periodic tone at a specified frequency and amplitude.
+<P>  Generate a periodic tone at a specified frequency and amplitude.
   The period is the beat in this case.  In addition, the split or pan
   of the tone can be specified to vary between set values at a rate
   specified.  Chronaural tones are allowed to slide into the next
   chronaural on carrier, beat, amplitude, and split beat.
 
-  bell
+<P><STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG>
 
-  Generate a tone at a specified frequency and amplitude.  The tone
+<P>  Generate a tone at a specified frequency and amplitude.  The tone
   may be fixed periodic or occur at randomly generated times between
   selected upper and lower limits.  Decay or enhance for the tone can
   also be set.  Bells can interrupt each other before they are
   finished playing.  No slide is available for bell.
 
-  noise
+<P><STRONG><FONT COLOR=#FF7F00>noise</FONT></STRONG>
 
-  Generate a group of tones within a specified frequency and amplitude
+<P>  Generate a group of tones within a specified frequency and amplitude
   range.  The tones may be fixed periodic or occur at randomly
   generated times between selected upper and lower limits.  Decay or
   enhance for the tone can also be set.  Noise tones don't interrupt
   each other before they are finished playing.  No slide is available
   for noise.
 
-  stoch
+<P><STRONG><FONT COLOR=#FF7F00>stoch</FONT></STRONG>
 
-  Play a user supplied sound file at either fixed intervals or random
+<P>  Play a user supplied sound file at either fixed intervals or random
   intervals within specified times.  Pan and amplitude can vary for
   each play, or remain fixed depending on options specified.
 
-  sample
+<P><STRONG><FONT COLOR=#FF7F00>sample</FONT></STRONG>
 
-  Play a randomly selected fixed time slices of a user supplied sound
+<P>  Play a randomly selected fixed time slices of a user supplied sound
   file continuously.  Pan and amplitude can vary with each sample or
   remain fixed, depending on the options specified.
 
-  repeat
+<P><STRONG><FONT COLOR=#FF7F00>repeat</FONT></STRONG>
 
-  Play a user supplied sound file continuously.  Pan and amplitude can
+<P>  Play a user supplied sound file continuously.  Pan and amplitude can
   vary with each repeat or remain fixed, depending on the options
   specified.
 
-  once
+<P><STRONG><FONT COLOR=#FF7F00>once</FONT></STRONG>
 
-  Play a user supplied sound file once at a specified time.  Pan and
+<P>  Play a user supplied sound file once at a specified time.  Pan and
   amplitude can be randomly chosen or be fixed, depending on the
   options specified.
 
-  All internal processing is done in double format so the tones are
+<P>  All internal processing is done in double format so the tones are
   very precise. The user specified sound files are stored in memory,
   so you should have lots of memory or use small sound files.  They
   are stored only once, no matter how many times they occur in the 
   sequence file.
 
-  OPTIONS
+<P><STRONG><FONT COLOR="NAVY">OPTIONS</FONT></STRONG>
+<DL>
+<P><DT><STRONG><FONT COLOR=#DB9370>-a, --audio_device</FONT></STRONG><DD>
 
-  -a, --audio_device
-
-    Specify the audio device to use for playback in alsa plug format.
+<P>    Specify the audio device to use for playback in alsa plug format.
     Discord will automatically create a plughw alsa plugin from the
     default audio device if this is not specified.  Discord uses alsa to
     do format conversion from internal program representation to what the
@@ -121,25 +129,27 @@
     direct hardware writing discord would have to incorporate all of the
     format conversion.  This seems counterproductive.  The first number is
     the card number, the second is the device number, both starting at 0.
-    See the alsa documentation at www.alsa-project.org for a fuller
+    See the alsa documentation at <A HREF="http://www.alsa-project.org/">www.alsa-project.org</A> for a fuller
     explanation.
     
-    Examples
+<P>    Examples
+<PRE>
       --audio_device=plughw:0,0  
       -a plughw:0,2
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-b, --bit_accuracy</FONT></STRONG><DD>
 
-  -b, --bit_accuracy
-
-    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
+<P>    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
     f=float.  Only applies if you are sending to a file.
     
-    Examples
+<P>    Examples
+<PRE>
       --bit_accuracy=16i
       -b 24i
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-c, --compensate</FONT></STRONG><DD>
 
-  -c, --compensate
-
-    compensate for human hearing, low and high freqs need to be
+<P>    compensate for human hearing, low and high freqs need to be
     louder, max 32 adjustment points are allowed.  The compensation
     points can all be on the same line or on multiple lines, but each
     line must start with the option name.  If this is correct, a sound
@@ -157,112 +167,116 @@
     to have, as if linear.  The stoch, sample, repeat, and once voices
     are not compensated so should be set at the amplitude you want.
 
-    Examples  (see also the test script files)
+<P>    Examples  (see also the test script files)
+<PRE>
       --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0
       -c 5=10'''2530=1''',13128=3.5,,,,20000=10.0
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-d, --display_only</FONT></STRONG><DD>
 
-  -d, --display_only
+<P>    display only, don't actually play any sequences
 
-    display only, don't actually play any sequences
+<P><DT><STRONG><FONT COLOR=#DB9370>-e, --every</FONT></STRONG><DD>
 
-  -e, --every
+<P>    display status every x seconds, integer &gt;= 1.
 
-    display status every x seconds, integer >= 1.
-
-    Examples
+<P>    Examples
+<PRE>
       --every=10   
       -e 5
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-f, --fast</FONT></STRONG><DD>
 
-  -f, --fast
-
-    fast, move through at multiple of time, 60 ==> 1min becomes 1 sec
+<P>    fast, move through at multiple of time, 60 ==&gt; 1min becomes 1 sec
     so a 1 hour play sequence will play in 1 minute.  Good for
     testing a new sequence for correctness, though obviously the
     effect won't be the same.  Bell has been tweaked so that the pitch
     doesn't change while using this.
 
-    Examples
+<P>    Examples
+<PRE>
       --fast=60
       -f 10
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-h, --help</FONT></STRONG><DD>
 
-  -h, --help
+<P>    help
 
-    help
+<P><DT><STRONG><FONT COLOR=#DB9370>-k, --keep</FONT></STRONG><DD>
 
-  -k, --keep
-
-    keep any files generated by resampling.  Default is to delete the
+<P>    keep any files generated by resampling.  Default is to delete the
     files when they are no longer needed.
 
-  -o, --out_format
+<P><DT><STRONG><FONT COLOR=#DB9370>-o, --out_format</FONT></STRONG><DD>
 
-    output file format, w:wav, f:flac, r:raw
+<P>    output file format, w:wav, f:flac, r:raw
 
-    Examples
+<P>    Examples
+<PRE>
       --out_format=w
       -o w
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-q, --quiet</FONT></STRONG><DD>
 
-  -q, --quiet
+<P>    quiet, don't display status or any other output while running
 
-    quiet, don't display status or any other output while running
+<P><DT><STRONG><FONT COLOR=#DB9370>-r, --rate</FONT></STRONG><DD>
 
-  -r, --rate
-
-    frame rate per second, whatever your card can do, 44100 is CD
+<P>    frame rate per second, whatever your card can do, 44100 is CD
     quality.  Higher rates are beneficial on binaurals at high
-    frequencies, say 15000 Hz and above, or very low beats, < 0.1.
+    frequencies, say 15000 Hz and above, or very low beats, &lt; 0.1.
     For normal frequencies, 44100 will be just fine.  
     
-    Examples 
+<P>    Examples 
+<PRE>
       --rate=44100 
       -r 96000
+</PRE>
+<P><DT><STRONG><FONT COLOR=#DB9370>-w, --write</FONT></STRONG><DD>
 
-
-  -w, --write
-
-    write to this file instead of the default, playing via the sound
+<P>    write to this file instead of the default, playing via the sound
     card
 
-    Examples
+<P>    Examples
+<PRE>
       --write=/home/xkdi/mindblowing.flac
       -w  /home/xkdi/mindblowing.wav
+</PRE>
+</DL>
+<P><STRONG><FONT COLOR="NAVY">CONFIGURATION</FONT> FILE</STRONG>
 
-
-  CONFIGURATION FILE
-
-  You may optionally place a configuration file called .discordrc in
+<P>  You may optionally place a configuration file called .discordrc in
   your $HOME directory.  It may contain only options, in the same
   format as in a script file or on the command line.  These options
   will be overridden by a script file or the command line.  A sample
   is provided.
 
+<P><STRONG><FONT COLOR="NAVY">SCRIPT</FONT> FILE</STRONG>
 
-  SCRIPT FILE
-
-  Any text after a # is disregarded, whether at the start of a line or
+<P>  Any text after a # is disregarded, whether at the start of a line or
   after meaningful text.
 
-  Options may be set in a script file, in fact it is easier to
+<P>  Options may be set in a script file, in fact it is easier to
   do so, but they must be before any time sequences in that file.
 
-  A time sequence may span multiple lines, but a voice (binaural,
+<P>  A time sequence may span multiple lines, but a voice (binaural,
   bell, noise, etc.)  cannot be split across lines.
 
-  Time Sequences
+<P><STRONG>Time Sequences</STRONG>
 
-  A time sequence always starts with a duration in the format
+<P>  A time sequence always starts with a duration in the format
   hh:mm:ss.  This may be followed with a fade indicator of less than
-  sign "<" for fade in or greater than sign ">" for fade out. e.g.
-  00:02:03''''< means to fade in for 2 minutes and 3 seconds.  The
+  sign "&lt;" for fade in or greater than sign "&gt;" for fade out. e.g.
+  00:02:03''''&lt; means to fade in for 2 minutes and 3 seconds.  The
   duration is followed by the voices that will play during that time
   period.
 
-  Separators allowed are | , ; ' =, multiples are allowed mixed with
+<P>  Separators allowed are | , ; ' =, multiples are allowed mixed with
   singles, any combination of separators even within a voice.
   However, every voice must be joined by separators.  No white space
   is allowed.
   
-  The greater than sign ">" after a binaural or chronaural voice is a
+<P>  The greater than sign "&gt;" after a binaural or chronaural voice is a
   slide, and will continuously adjust carrier, beat, amplitude,
   amplitude beat and amplitude variation to be the next binaural or
   chronaural at the end of the time period.  For slides to work, the
@@ -272,8 +286,8 @@
   always look to the first voice in the next sequence to slide to,
   etc.
 
-  One alternative slide format is the step slide.  Instead of using a
-  greater than sign ">" to indicate a slide, use an ampersand "&".
+<P>  One alternative slide format is the step slide.  Instead of using a
+  greater than sign "&gt;" to indicate a slide, use an ampersand "&amp;".
   Instead of sliding smoothly to the next time sequence, the slide
   will occur in a series of steps with slides between them.  The
   ampersand is followed by three fields separated by separators:
@@ -290,8 +304,8 @@
   is above this for you.  For some, this will work better than a
   continuous slide.
 
-  Another alternative slide format is the vary slide.  Instead of
-  using a greater than sign ">" to indicate a slide, use a tilde "~".
+<P>  Another alternative slide format is the vary slide.  Instead of
+  using a greater than sign "&gt;" to indicate a slide, use a tilde "~".
   Instead of sliding smoothly to the next time sequence, the slide
   will occur in a series of steps with slides between them.  The tilde
   is followed by two fields separated by separators:  number of steps
@@ -309,19 +323,19 @@
   corresponding voice of the next time sequence.  This is a great way
   to experience a lot of frequencies in a range.
 
-  All amplitudes are in percentages, 0 is none, 100 is max.  
+<P>  All amplitudes are in percentages, 0 is none, 100 is max.  
 
-  All splits are expressed as fraction for left channel.  e.g. .3
+<P>  All splits are expressed as fraction for left channel.  e.g. .3
   means .3 left channel, .7 right channel 
   
-  All durations in voices are expressed as seconds.  e.g. .3 = .3
+<P>  All durations in voices are expressed as seconds.  e.g. .3 = .3
   second, 20 = 20 seconds, 1200 = 20 minutes 
 
-  For any fields with a minimum and maximum range, setting them the
+<P>  For any fields with a minimum and maximum range, setting them the
   same makes it a constant value.  Any time they are different, a
   random selection in the range will be made.
 
-  Fields for binaural are name, carrier frequency, beat frequency, and
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>binaural</FONT></STRONG> are name, carrier frequency, beat frequency, and
   amplitude.  Optional fields are a left and right amplitude frequency
   variation and a left and right percentage to vary.  Optional fields
   must be at the end, before the slide indicator if they are present.
@@ -329,87 +343,90 @@
   higher + or lower -.  The beat is centered on the carrier frequency,
   so 200  +4 results in L 202 and R 198.
 
-  Examples
-
+<P>  Examples
+<P><PRE>
     binaural''''400.0''''+10.01''''2.9
       |          |         |        |
     name        carrier  beat     amplitude  right left percent vary
       |          |         |       |            |       |
-    binaural''''60.0''''+10.01''''1.0''''0.5''''0.5''''10.0''''10.0'>
+    binaural''''60.0''''+10.01''''1.0''''0.5''''0.5''''10.0''''10.0'&gt;
              |                            |                    |    |
          field separators            left amplitude beat     right  |
-          |     |                                               slide
-    &''''8''''30'''',,,,10  (slide with & instead of >)
+          |     |                                               slide<BR>
+    &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
     |    |    |         |
     | steps slide time  fuzz percent
-    step slide
-    ~,,,,5''''20  (slide with ~ instead of >)
+    step slide<BR>
+    ~,,,,5''''20  (slide with ~ instead of &gt;)
     |    |    |
     | steps slide time
     vary slide
+</PRE>
 
-  Fields for chronaural are name, carrier, amplitude, amplitude beat,
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG> are name, carrier, amplitude, amplitude beat,
   amplitude fraction, amplitude behave, beginning split, ending split,
   lowest split allowed, highest split allowed, split beat, and slide.
   Amplitude beat is the frequency through time of the carrier tone.
   Amplitude fraction is the value the sin function has to have before
   the tone is played.  Behavior for amp beat is as follows:
 
-  1 sin wave  tone is adjusted by sin value 
-  2 square wave  tone is either on or off 
+<P>  1 sin wave  tone is adjusted by sin value <BR>
+  2 square wave  tone is either on or off <BR>
   3 dirac delta approximation  power of sin 
 
-  If beginning split or ending split are -1, they are set randomly
+<P>  If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.  Split beat is the frequency
   through time of the oscillation of the left and right split.  Slide
   indicator must be present or no slide will occur.
 
-  Example
+<P>  Example
+<P><PRE>
              carrier                begin split                 slide
                |                       |                            |
-  chronaural''145.0''1.0''4.0''.00''3''0.0''0.5''.050''.950''1.200''>
+  chronaural''145.0''1.0''4.0''.00''3''0.0''0.5''.050''.950''1.200''&gt;
     |       |        |     |    |   |        |    |      |     |
    name     |        | amp beat | amp behave | low split |  split beat
         separators amplitude  amp fraction  end split  high split
-          |     |
-  &''''8''''30'''',,,,10  (slide with & instead of >)
+          |     |<BR>
+  &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
   |    |    |         |
   | steps slide time  fuzz percent
-  step slide
-  ~,,,,5''''20  (slide with ~ instead of >)
+  step slide<BR>
+  ~,,,,5''''20  (slide with ~ instead of &gt;)
   |    |    |
   | steps slide time
   vary slide
+</PRE>
 
-
-  Fields for bell are name, frequency, minimum start amplitude, maximum
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG> are name, frequency, minimum start amplitude, maximum
   start amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, minimum time allowed to ring, maximum time
   allowed to ring, minimum time till next ring, maximum time till next
   ring, and decay pattern for the ring, 1 through 5.  
 
-  1 decrease linearly to 0 
-  2 decrease linearly to .5, 
-  3 constant, 
-  4 increase linearly to 1.1 
+<P>  1 decrease linearly to 0 <BR>
+  2 decrease linearly to .5, <BR>
+  3 constant, <BR>
+  4 increase linearly to 1.1 <BR>
   5 decrease quadratically to 0  (this is the most natural sounding) 
 
-  The minimum and maximum time till next play are relative to the
+<P>  The minimum and maximum time till next play are relative to the
   beginning of the last play. i.e. unlike noise, bell will interrupt
   itself.  The bell can start ringing again before the current ring
   has finished.  It displaces the currently ringing bell.  If
   beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.
 
-  Example
+<P>  Example
+<PRE>
       frequency        begin split   high split  max time        decay
         |                  |              |         |                |
   bell'900.0'0.153'1.063'-1.0'-1.0'.050'.950'1.300'3.500'1.800'4.800'5
     | |     |  |     |          |   |          |         |     |
   name|     |min amp |          | low split    |    min next  max next 
       separators   max amp   end split     min time             
-
-  Fields for noise are name, minimum start frequency, maximum start
+</PRE>
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>noise</FONT></STRONG> are name, minimum start frequency, maximum start
   frequency, minimum start amplitude, maximum start amplitude, beginning
   split, ending split, lowest split allowed, highest split allowed,
   minimum time allowed to play, maximum time allowed to play, minimum
@@ -417,17 +434,17 @@
   pattern for the play, 1 through 21.  maximum decay pattern for the
   play, 1 through 21, and the number of repeats.  
 
-  1 decrease linearly to 0 
-  2 decrease linearly to .5, 
-  3 constant, 
-  4 increase linearly to 1.1 
-  5 decrease linearly  to 1.25 
-  6 increase sinusoidally from .25 to 1.25 and back down to .25
-  7 decrease sinusoidally from 1.0 to 0.5 and back up to 1.0
-  8-14 same as above with 10% drop in carrier frequency during each play
+<P>  1 decrease linearly to 0 <BR>
+  2 decrease linearly to .5, <BR>
+  3 constant, <BR>
+  4 increase linearly to 1.1 <BR>
+  5 decrease linearly  to 1.25 <BR>
+  6 increase sinusoidally from .25 to 1.25 and back down to .25 <BR>
+  7 decrease sinusoidally from 1.0 to 0.5 and back up to 1.0 <BR>
+  8-14 same as above with 10% drop in carrier frequency during each play <BR>
   15-21 same as above with 10% rise in carrier frequency during each play
   
-  If beginning split or ending split are -1, they are set randomly between
+<P>  If beginning split or ending split are -1, they are set randomly between
   lowest split and highest split.  Minimum decay has to be less than maximum
   decay or unpredicable behavior results.  The minimum and maximum time till
   next play are relative to the end of the last play. i.e. unlike bell, noise
@@ -436,7 +453,8 @@
   on the end, 1 is the default.  To reduce crackle there is a 25 frame fade in
   and fade out on the noise voice.
 
-  Example - line split for expository reasons, has to be single in script
+<P>  Example - line split for expository reasons, has to be single in script
+<P><PRE>
   separators  max frequency  max amplitude    end split
         |             |                |              | 
   noise''''360.0''''420.0''''0.50''''0.80''''-1.0''''-1.0''''.050''
@@ -449,13 +467,15 @@
               |                    |                |    |    |
     min time to play  min time to next play  min decay   | repeats
                                                    max decay   
+</PRE>
 
-  Fields for stoch are name, file name, minimum amplitude, maximum
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>stoch</FONT></STRONG> are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, minimum time till next play, maximum time till
   next play.  If beginning split or ending split are -1, they are set
   randomly between lowest split and highest split.
   Example
+<PRE>
                                                 max time to next play
       file to play  max amplitude  end split  max allowed split   |
                |              |           |             |         |
@@ -463,114 +483,116 @@
    |                  |              |           |            |
   name     min amplitude    begin split  min allowed split    |
                                                 min time to next play
-
-  Fields for sample are name, file name, minimum amplitude, maximum
+</PRE>
+<P>  Fields for sample are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, and length of the sample (constant in seconds).
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.
 
-  Example
+<P>  Example
+<PRE>
       file to play  max amplitude  end split  max allowed split
                |              |           |             |
   sample'''trig.aiff'''1.20'''2.30'''-1'''-1'''.050'''.950'''1.0
    |                  |              |           |            |
   name     min amplitude    begin split  min allowed split    |
                                                 length of sample
-
-  Fields for repeat are name, file name, minimum amplitude, maximum
+</PRE>
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>repeat</FONT></STRONG> are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed.  If beginning split or ending split are -1,
   they are set randomly between lowest split and highest split.
 
-  Example
+<P>  Example
+<PRE>
       file to play  max amplitude  end split  max allowed split
                |              |           |             |
   repeat'''trig.aiff'''1.20'''3.30'''-1'''-1'''.050'''.950
    |                  |              |           |
   name     min amplitude    begin split  min allowed split
-
-  Fields for once are name, file name, minimum amplitude, maximum
+</PRE>
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>once</FONT></STRONG> are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
   highest split allowed, when to play.  If beginning split or ending
   split are -1, they are set randomly between lowest split and highest
   split.
   
-  Example
+<P>  Example
+<PRE>
       file to play  max amplitude  end split  max allowed split
                |              |         |            |
   once'''trig.aiff'''1.20'''3.30'''-1'''-1'''.050'''.950'''20.8
    |                  |            |           |            |
   name     min amplitude    begin split  min allowed split  |
                                                    when to play
-
-  There are test script files called binaural_test.discord,
+</PRE>
+<P>  There are test script files called binaural_test.discord,
   chronaural_test.discord, bell_test.discord, noise_test.discord,
   stoch_test.discord, sample_test.discord, repeat_test.discord,
   once_test.discord, and frequency_loudness_test.discord and several script
   files for actual usage.
 
+<P><STRONG><FONT COLOR="NAVY">QUESTIONS AND ANSWERS</FONT></STRONG>
+<DL>
+<DT>  <STRONG>Q</STRONG> Why is the program called discord?</DT>
+<P>
+<DD>  <STRONG>A</STRONG>  Because binaural beats are mental artifacts created by a
+  discordancy between what the left and right ears hear.</DD>
+<P>
+<DT>  <STRONG>Q</STRONG>  Why do I call it chronaural beat?</DT>
+<P>
+<DD>  <STRONG>A</STRONG>  Chron for time and aural for sound.  The beat comes via sounds
+  distributed in the time dimension, thus chronaural.</DD>
 
-QUESTIONS AND ANSWERS
+<P><DT>  <STRONG>Q</STRONG>  Do the exact frequencies matter?</DT>
 
-  Q Why is the program called discord?
-
-  A  Because binaural beats are mental artifacts created by a
-  discordancy between what the left and right ears hear.
-
-  Q  Why do I call it chronaural beat?
-
-  A  Chron for time and aural for sound.  The beat comes via sounds
-  distributed in the time dimension, thus chronaural.
-
-  Q  Do the exact frequencies matter?
-
-  A  In my opinion they do not.  Because everyone is unique, the
+<P><DD>  <STRONG>A</STRONG>  In my opinion they do not.  Because everyone is unique, the
   specific frequencies that give someone else an effect might not have
   the same effect for you.  General frequency ranges do correspond
   with similar effects in different people, so I think it is better to
   experience many different frequencies in a range.  That is why there
   is randomness available in the voices.  You never have to listen to
-  the same sequence twice, though you can.
+  the same sequence twice, though you can.</DD>
 
-  Q  Does it matter when you listen to the beats?
+<P><DT>  <STRONG>Q</STRONG>  Does it matter when you listen to the beats?</DT>
 
-  A  No.  However, it is easiest to listen for longer periods of time
+<P><DD>  <STRONG>A</STRONG>  No.  However, it is easiest to listen for longer periods of time
   in the evening as entrainment tends to relax you and this is a time
   when there aren't any urgent matters pending.  It also gives you the
-  rest of the night to process.
+  rest of the night to process.</DD>
 
-  Q  Does the loudness of the beats matter?
+<P><DT>  <STRONG>Q</STRONG>  Does the loudness of the beats matter?</DT>
 
-  A  Not really.  Some like them below the threshold of noticeable
+<P><DD>  <STRONG>A</STRONG>  Not really.  Some like them below the threshold of noticeable
   hearing, some like them just audible, some like them loud.  Whatever
-  you feel comfortable with is the right loudness.
+  you feel comfortable with is the right loudness.</DD>
 
-  Q  Are beats better with or without accompaniment?
+<P><DT>  <STRONG>Q</STRONG>  Are beats better with or without accompaniment?</DT>
 
-  A  Again, this is a matter of personal taste.  However you feel
-  comfortable listening is the right way.
+<P><DD>  <STRONG>A</STRONG>  Again, this is a matter of personal taste.  However you feel
+  comfortable listening is the right way.</DD>
 
-  Q  Which is better, binaural or chronaural beats?
+<P><DT>  <STRONG>Q</STRONG>  Which is better, binaural or chronaural beats?</DT>
 
-  A  Research I've seen on the internet suggests that chronaural beats
+<P><DD>  <STRONG>A</STRONG>  Research I've seen on the internet suggests that chronaural beats
   are much more effective than binaural beats.  Personally, I like
   mixing them and find both effective with a preference for binaural.
-  Try for yourself.
+  Try for yourself.</DD>
 
-  Q  What is the maximum amount you should listen per day?
+<P><DT>  <STRONG>Q</STRONG>  What is the maximum amount you should listen per day?</DT>
 
-  A  This is individual.  For some, an hour a day will bring on
+<P><DD>  <STRONG>A</STRONG>  This is individual.  For some, an hour a day will bring on
   overwhelm.  For others, two hours a day will be just fine.  Start
   with half an hour to an hour.  Then if you want to listen more,
   adjust by a half hour a day.  Because listening makes you feel good,
   you will want to listen as much as possible.  And this is OK as long
   as it doesn't lead to overwhelm.  I find that if I listen too much I
-  stop wanting to listen at all.
+  stop wanting to listen at all.</DD>
 
-  Q  How does this work?
+<P><DT>  <STRONG>Q</STRONG>  How does this work?</DT>
 
-  A  I'll give you my opinion, but you should search the web and come
+<P><DD>  <STRONG>A</STRONG>  I'll give you my opinion, but you should search the web and come
   to your own conclusions.  I think that by triggering waves of
   neurons firing in the brain you do two things: stimulate stored
   memories that haven't been accessed recently and trigger the brain
@@ -578,39 +600,41 @@ QUESTIONS AND ANSWERS
   pathways and creating new pathways for processing you alter the
   emotional content of memories and allow your brain to integrate
   those memories differently.  This also increases the processing
-  power of your brain and makes it/you more flexible.
+  power of your brain and makes it/you more flexible.</DD>
 
-  Q  Is there a best way to do this?
+<P><DT>  <STRONG>Q</STRONG>  Is there a best way to do this?</DT>
 
-  A  Remember, this is all my opinion.  I think two general rules
-  apply.  If you are less experienced it will take you longer to
-  entrain with any given beat, and slides have to be slower for your
-  brain to follow along.  If you are less experienced it is easier for
-  you to entrain with higher carriers and higher beats.  As you gain
-  experience you are able to utilize lower carriers and lower beats,
-  and use faster slides.  These are general rules and might not apply
-  to you.  Experiment.  It is good to mix it up, entrain with lots of
-  different frequencies rather than any specific frequency.  It is the
-  repetition and the beat range that matter and every little bit of
-  listening adds to your skill.  Lots of people seem to gain benefit
-  from listening to the same sequence for long periods of time,
-  though, so I could be wrong.  This is a new frontier with lots of
-  exploration yet to be done, and all of the above could just be part
-  of a larger picture not yet discovered.
+<P><DD>  <STRONG>A</STRONG>  Remember, this is all my opinion.  I
+  think two general rules apply.  If you are less experienced it will
+  take you longer to entrain with any given beat, and slides have to be
+  slower for your brain to follow along.  If you are less experienced it
+  is easier for you to entrain with higher carriers and higher beats.
+  As you gain experience you are able to utilize lower carriers and
+  lower beats, and use faster slides.  These are general rules and might
+  not apply to you.  Experiment.  It is good to mix it up, entrain with
+  lots of different frequencies rather than any specific frequency.  It
+  is the repetition and the beat range that matter and every little bit
+  of listening adds to your skill.  Lots of people seem to gain benefit
+  from listening to the same sequence for long periods of time, though,
+  so I could be wrong.  This is a new frontier with lots of exploration
+  yet to be done, and all of the above could just be part of a larger
+  picture not yet discovered.</DD>
+</DL>
+<P><STRONG><FONT COLOR="NAVY">BUGS</FONT></STRONG>
 
-BUGS
-
-  Error checking is not robust on the input parameters in the
+<P>  Error checking is not robust on the input parameters in the
   script file.
   
-  Doesn't follow standard ./configure, make, make install format.
+<P>  Doesn't follow standard ./configure, make, make install format.
 
-  Have to use Control-C to end the program while it is running.
+<P>  Have to use Control-C to end the program while it is running.
 
-AUTHOR
-  discord is by Stan Lysiak <stanlk@users.sourceforge.net>
-  This document is by Stan Lysiak <stanlk@users.sourceforge.net>
+<P><STRONG><FONT COLOR="NAVY">AUTHOR</FONT></STRONG><BR>
+  discord is by Stan Lysiak &lt;<A HREF="mailto:stanlk@users.sourceforge.net">stanlk@users.sourceforge.net</A>&gt;
+  This document is by Stan Lysiak &lt;<A HREF="mailto:stanlk@users.sourceforge.net">stanlk@users.sourceforge.net</A>&gt;
 
-COPYRIGHT
+<P><STRONG><FONT COLOR="NAVY">COPYRIGHT</FONT></STRONG><BR>
   Discord is copyright (C) 2007 by Stan Lysiak 
-  <stanlk@users.sourceforge.net>
+  &lt;<A HREF="mailto:stanlk@users.sourceforge.net">stanlk@users.sourceforge.net</A>&gt;
+</BODY>
+</HTML>
