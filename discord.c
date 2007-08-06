@@ -20,7 +20,7 @@
 // 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA,
 // or visit http://www.fsf.org/licensing/licenses/gpl.html (might change).
 //
-// The following gpl licensed programs were utilized for discord.
+// The following GPL licensed programs were utilized for discord.
 //
 // SBaGen - Sequenced Binaural Beat Generator
 //
@@ -515,8 +515,8 @@ void sprintVoiceAll (char **p, void *this);
 int fprint_voice_all (FILE *fp, void *this);
 void sprintVoice (char **p, void *this);
 int fprint_voice (FILE *fp, void *this);
+void alsa_validate_device_and_rate ();
 static snd_pcm_t *alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime);
-//static int alsa_write_int32 (snd_pcm_t *alsa_dev, int *data, int frames, int channels);
 static int alsa_write_double (snd_pcm_t *alsa_dev, double *data, int frames, int channels) ;
 void *alsa_write (void *call_parms); // version for threading
 static sf_count_t sample_rate_convert (SNDFILE *infile, SNDFILE *outfile, int converter, 
@@ -537,12 +537,12 @@ void
 usage ()
 {
   error ("discord - Create and mix binaural and chronaural beats, version " VERSION NL
-         "Copyright (c) 2007 Stan Lysiak, all rights " NL
-         "  reserved, released under the GNU GPL v2.  See file COPYING." NL NL
-         "Usage: discord [options] seq-file ..." NL NL
+         "Copyright (c) 2007 Stan Lysiak, all rights reserved," NL
+         "released under the GNU GPL v2.  See file COPYING." NL NL
+         "Usage: discord [options] sequence-file" NL NL
+         "Control-C to quit while running" NL NL
          "For full usage help, type 'discord -h'.  For latest version see" NL
-         "http://discord.sourceforge.net/"
-         NL);
+         "http://sourceforge.net/projects/discord/"NL);
 }
 
 char buf[32768];                 // Buffer for space holder
@@ -572,6 +572,10 @@ main (int argc, char **argv)
   set_options (CONFIG_OPTIONS);  // set the configuration options, lowest priority
   set_options (SCRIPT_OPTIONS);  // set the script file options, next priority
   set_options (ARGV_OPTIONS);  // reset the command line options, highest priority
+  /* validate device and hardware rate 
+   * before sin table size, frame rate 
+   * and any resample are set */
+  alsa_validate_device_and_rate ();
   init_sin_table ();  // now that rate is known, create lookup sin table
   setup_play_seq ();  // set the voices now that options complete
   if (opt_w)  // write a file
@@ -1488,16 +1492,12 @@ amp_comp (double freq)
 void
 help ()
 {
-  printf ("dischord - Create mental dischordancy, version " VERSION NL
-          "Copyright (c) 2007 Stan Lysiak, all rights " NL
-          "  reserved, released under the GNU GPL v2.  See file COPYING." NL NL
-          "Derived from sbagen" NL
-          "Copyright (c) 1999-2005 Jim Peters, http://uazu.net/, all rights " NL
-          "  reserved, released under the GNU GPL v2.  See file COPYING." NL NL
-          "Using libsndfile" NL
-          "Copyright (C) 1999-2005 Erik de Castro Lopo <erikd@mega-nerd.com>"NL
+  printf ("discord - Create binaural and chronaural beats, version " VERSION NL
+          "Copyright (c) 2007 Stan Lysiak, all rights reserved," NL
+          "released under the GNU GPL v2.  See file COPYING." NL NL
+          "http://sourceforge.net/projects/discord/"NL
           "** This program is free software; you can redistribute it and/or modify"NL
-          "** it under the terms of the GNU Lesser General Public License as published by"NL
+          "** it under the terms of the GNU General Public License as published by"NL
           "** the Free Software Foundation; either version 2.1 of the License, or"NL
           "** (at your option) any later version."NL
           "This program is distributed in the hope that it will be useful,"NL
@@ -1508,9 +1508,10 @@ help ()
           "along with this program; if not, write to the Free Software"NL
           "Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA."NL
 
-          "Usage: dischord [options] seq-file ..." NL NL
+          "Usage: discord [options] sequence-file" NL NL
+          "Control-C to quit while running" NL NL
           "Options:  -h --help         Display this help-text" NL
-          "          -a --audio_device Alsa plug device to use.  When not specified, uses default device"NL
+          "          -a --audio_device Alsa plug device to use.  When not specified, uses default as plughw device"NL
           "          -b --bit_accuracy Number of bits to use to represent each sound: integer or float"NL
           "          -c --compensate   Compensate for human hearing perceptual differences: see docs"NL
           "          -d --display      Display the full interpreted sequence instead of playing it"NL
@@ -1518,10 +1519,10 @@ help ()
           "          -f --fast         Fast.  Run through quickly (real time x 'mult')"NL
           "                              rather than wait for real time to pass"NL
           "          -k --keep         Keep the resampled input sound files"NL
-          "          -o --outfile      Output raw data to the given file instead of playing"NL
+          "          -o --outfile      Output data to the given file instead of playing"NL
           "          -q --quiet        Don't display running status"NL
-          "          -r --rate         Select the output rate (default is 44100 Hz, or from -m)"NL
-          "          -w --write        Output a format file instead of raw data"NL);
+          "          -r --rate         Select the output rate (default is 44100 Hz)"NL
+          "          -w --write        Write an output file instead of playing through sound card"NL);
   exit (0);
 }
 
@@ -3839,7 +3840,7 @@ play_loop ()
       /* open alsa default via libsndfile */
   alsa_dev = alsa_open (alsa_dev, channels, (unsigned) out_rate, SF_FALSE); 
   if (alsa_dev == NULL)
-    error("Could not open the default sound device\n");
+    error("Could not open the sound device\n");
       /* set up the slice structure that will be passed to alsa_play_* */
   sound_slice = (slice *) Alloc (sizeof (slice) * 1);
   sound_slice->alsa_dev = alsa_dev;  // sound device
@@ -5874,6 +5875,174 @@ StrDup (char *str)
   return rv;
 }
 
+/*
+*	Determine whether the audio_device supports the requested rate in hardware.
+* If it doesn't, set the rate to nearest hardware rate supported.  This will 
+* allow the generate_frames and resample function to use the correct
+* rate before we open the sound card.
+*/
+
+void
+alsa_validate_device_and_rate ()
+{	
+  char *default_device = "default" ;
+  //char *device = "plughw:0,0" ;
+  char *device_to_use = NULL;
+  unsigned val;
+  unsigned samplerate = (unsigned) out_rate;
+  int dir = 0;
+	int err ;
+  snd_pcm_t *alsa_dev;
+	snd_pcm_info_t *info_params ;
+	snd_pcm_hw_params_t *hw_params ;
+
+  if (opt_b || opt_o || opt_w)  // writing to file, don't bother checking device and rate
+    return;
+  if (opt_a)  // audio device in options or configuration
+    device_to_use = opt_a_plughw;
+  else  // use default device
+    device_to_use = default_device;
+
+  err = snd_pcm_open (&alsa_dev, device_to_use, SND_PCM_STREAM_PLAYBACK, 0);
+	if (err < 0)
+	{	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  if (!opt_a)  // no option or configuration audio plughw, have to create it from default
+  {
+    err = snd_pcm_info_malloc (&info_params);
+    if (err < 0)
+    {	fprintf (stderr, "cannot allocate information parameter structure (%s)\n", snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+
+    err = snd_pcm_info (alsa_dev, info_params);  // get info on the default card
+    if (err < 0)
+    {	fprintf (stderr, "cannot get information for the default card (%s)\n", snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+    if (!opt_q)  // not quiet
+    {
+          /* RO/WR (control): device number */
+      fprintf (stderr, "Default device number (%u)\n", snd_pcm_info_get_device (info_params));
+         /* RO/WR (control): subdevice number */
+      fprintf (stderr, "Default subdevice number (%u)\n", snd_pcm_info_get_subdevice (info_params));
+            /* RO/WR (control): stream number */
+      fprintf (stderr, "Default stream number (%d)\n", snd_pcm_info_get_stream (info_params));
+           /* R: card number */
+      fprintf (stderr, "Default card number (%d)\n", snd_pcm_info_get_card (info_params));
+         /* ID (user selectable) */
+      fprintf (stderr, "Default id (%s)\n", snd_pcm_info_get_id (info_params));
+         /* name of this device */
+      fprintf (stderr, "Default name (%s)\n", snd_pcm_info_get_name (info_params));
+        /* subdevice name */
+      fprintf (stderr, "Default subname (%s)\n", snd_pcm_info_get_subdevice_name (info_params));
+            /* SNDRV_PCM_CLASS_* */
+      fprintf (stderr, "Default dev_class (%d)\n", snd_pcm_info_get_class (info_params));
+         /* SNDRV_PCM_SUBCLASS_* */
+      fprintf (stderr, "Default dev_subclass (%d)\n", snd_pcm_info_get_subclass (info_params));
+      fprintf (stderr, "Default subdevices_count (%u)\n", snd_pcm_info_get_subdevices_count (info_params));
+      fprintf (stderr, "Default subdevices_avail (%u)\n", snd_pcm_info_get_subdevices_avail (info_params));
+    }
+    err = snd_pcm_close (alsa_dev) ;  // close the device so we can create new direct plughw plugin
+    if (err < 0)
+    {	fprintf (stderr, "Could not close audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+
+    char hw_from_default [32];
+    int cardno = snd_pcm_info_get_card (info_params); 
+    if (cardno < 0)  // If default is user defined, this is set to actual card.
+      cardno = 0;  //  If not, dmix leaves as -1 and defaults to card 0 (look at id in info).
+    int devno = snd_pcm_info_get_device (info_params);
+    if (devno < 0)  // This appears to always be set, just here as insurance.
+      devno = 0;
+    int numchars = snprintf (hw_from_default, sizeof (hw_from_default), 
+                                  "plughw:%d,%d", cardno, devno); 
+    if (!opt_q)  // not quiet
+      fprintf (stderr, "Plughw  %s  numchars %d\n", hw_from_default, numchars);
+    /*  Now reopen and get feasible hardware parameters with plughw instead of default.
+     *  This will allow bypassing dmix in order to set higher rates than 48000.
+     */
+    err = snd_pcm_open (&alsa_dev, hw_from_default, SND_PCM_STREAM_PLAYBACK, 0);
+    if (err < 0)
+    {	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", hw_from_default, snd_strerror (err)) ;
+      goto catch_error ;
+      } ;
+
+    //snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock, 0 is default
+    snd_pcm_info_free (info_params) ;  // done with info
+    /* Now that the default plughw device opened successfully,
+     * pretend that the default plughw device was given 
+     * as -a / --audio_device option so alsa_open can use it directly
+     * and opens the same device that the rate came from */
+    opt_a = 1;
+    opt_a_plughw = StrDup (hw_from_default);
+  }
+  err = snd_pcm_hw_params_malloc (&hw_params);
+	if (err < 0)
+	{	fprintf (stderr, "cannot allocate hardware parameter structure (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  err = snd_pcm_hw_params_any (alsa_dev, hw_params);
+	if (err < 0)
+	{	fprintf (stderr, "cannot initialize hardware parameter structure (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  err = snd_pcm_hw_params_set_access (alsa_dev, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED);
+	if (err < 0)
+	{	fprintf (stderr, "cannot set access type (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  err = snd_pcm_hw_params_set_format (alsa_dev, hw_params, SND_PCM_FORMAT_FLOAT64);
+	if (err < 0)
+	{	fprintf (stderr, "cannot set sample format (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  /* lock the sample rate to use only hardware
+   * supported rates, avoid resampling
+   */
+  err = snd_pcm_hw_params_set_rate_resample (alsa_dev, hw_params, 0);
+	if (err < 0)
+	{	fprintf (stderr, "cannot block resample of sample rates (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  err = snd_pcm_hw_params_set_rate_near (alsa_dev, hw_params, &samplerate, 0);
+	if (err < 0)
+	{	fprintf (stderr, "cannot set sample rate (%s)\n", snd_strerror (err)) ;
+		goto catch_error ;
+		} ;
+
+  err = snd_pcm_hw_params_get_rate (hw_params, &val, &dir);
+	if (err < 0)
+  { fprintf (stderr, "cannot get nearest sample rate (%s)\n", snd_strerror (err));
+		goto catch_error ;
+		} ;
+  
+  if (out_rate != (int) val)  // if requested rate different than nearest hardware rate
+    out_rate = (int) val;  // set the rate to the nearest hardware supported rate
+
+	snd_pcm_hw_params_free (hw_params) ;
+
+  err = snd_pcm_close (alsa_dev) ;  // close the device now that the correct plughw plugin and rate determined
+  if (err < 0)
+  {	fprintf (stderr, "Could not close audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
+    goto catch_error ;
+    } ;
+
+catch_error :
+
+	if (err < 0 && alsa_dev != NULL)
+	{	snd_pcm_close (alsa_dev) ;
+		} ;
+} /* alsa_validate_device_and_rate */
+
 /*------------------------------------------------------------------------------
 **	Linux alsa functions for playing a sound.
 */
@@ -5970,13 +6139,13 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
     /*  Now reopen and get feasible hardware parameters with plughw instead of default.
      *  This will allow bypassing dmix in order to set higher rates than 48000.
      */
+    // snd_pcm_nonblock (alsa_dev, 1) ;  // 0 means block, 1 means nonblock, 0 is default
     err = snd_pcm_open (&alsa_dev, hw_from_default, SND_PCM_STREAM_PLAYBACK, 0);
     if (err < 0)
     {	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", hw_from_default, snd_strerror (err)) ;
       goto catch_error ;
       } ;
 
-    //snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock, 0 is default
     snd_pcm_info_free (info_params) ;  // done with info
   }
   err = snd_pcm_hw_params_malloc (&hw_params);
@@ -6034,11 +6203,34 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 		goto catch_error ;
 		} ;
 
+#if NOTDEFINED
+  int iformat;
+  fprintf (stderr, "Value of last format %lu\n", 
+                          (unsigned long) SND_PCM_FORMAT_LAST) ;
+  for (iformat = 0; iformat <= SND_PCM_FORMAT_LAST; iformat++)
+  {
+    err = snd_pcm_hw_params_test_format (alsa_dev, hw_params, iformat);
+    if (err < 0)
+      fprintf (stderr, "test of sample format %lu failed (%s)\n", 
+                          (unsigned long) iformat, snd_strerror (err)) ;
+  }
+#endif  // NOTDEFINED
+
   err = snd_pcm_hw_params_set_format (alsa_dev, hw_params, SND_PCM_FORMAT_FLOAT64);
 	if (err < 0)
-	{	fprintf (stderr, "cannot set sample format (%s)\n", snd_strerror (err)) ;
+	{	fprintf (stderr, "cannot set sample format %lu (%s)\n", 
+                        (unsigned long) SND_PCM_FORMAT_FLOAT64, snd_strerror (err)) ;
 		goto catch_error ;
 		} ;
+
+#if NOTDEFINED
+  snd_pcm_format_t fval;
+  snd_pcm_hw_params_get_format (hw_params, &fval);
+  fprintf (stderr, "Format (%lu)\n", (unsigned long) fval);
+  if ((unsigned long) fval != (unsigned long) SND_PCM_FORMAT_FLOAT64)
+    fprintf (stderr, "Format (%lu) differs from requested (%lu)\n", 
+              (unsigned long) fval, (unsigned long) SND_PCM_FORMAT_FLOAT64);
+#endif  // NOTDEFINED
 
   /* lock the sample rate to use only hardware
    * supported rates, avoid resampling
@@ -6331,89 +6523,6 @@ alsa_write_double (snd_pcm_t *alsa_dev, double *data, int frames, int channels)
   } ; /* while */
 	return total ;
 } /* alsa_write_double */
-
-#ifdef NOTDEFINED  /* code not used */
-static int
-alsa_write_int32 (snd_pcm_t *alsa_dev, int *data, int frames, int channels)
-{	static	int epipe_count = 0 ;
-
-	snd_pcm_status_t *status ;
-	int total = 0 ;
-	int retval ;
-
-	if (epipe_count > 0)
-		epipe_count -- ;
-
-	while (total < frames)
-  {	
-    retval = snd_pcm_writei (alsa_dev, data + (total * channels), (frames - total)) ;
-
-		if (retval >= 0)
-		{	total += retval ;
-			if (total == frames)
-				return total ;
-			continue ;
-    } ;
-
-		switch (retval)
-		{	case -EAGAIN :
-					puts ("alsa_write_int32: EAGAIN") ;
-					continue ;
-					break ;
-
-			case -EPIPE :
-					if (epipe_count > 0)
-					{	printf ("alsa_write_int32: EPIPE %d\n", epipe_count) ;
-						if (epipe_count > 140)
-							return retval ;
-						} ;
-					epipe_count += 100 ;
-
-					if (0)
-					{	snd_pcm_status_alloca (&status) ;
-						if ((retval = snd_pcm_status (alsa_dev, status)) < 0)
-							fprintf (stderr, "alsa_out: xrun. can't determine length\n") ;
-						else if (snd_pcm_status_get_state (status) == SND_PCM_STATE_XRUN)
-						{	struct timeval now, diff, tstamp ;
-
-							gettimeofday (&now, 0) ;
-							snd_pcm_status_get_trigger_tstamp (status, &tstamp) ;
-							timersub (&now, &tstamp, &diff) ;
-
-							fprintf (stderr, "alsa_write_int32 xrun: of at least %.3f msecs. resetting stream\n",
-									diff.tv_sec * 1000 + diff.tv_usec / 1000.0) ;
-							}
-						else
-							fprintf (stderr, "alsa_write_int32: xrun. can't determine length\n") ;
-						} ;
-
-					snd_pcm_prepare (alsa_dev) ;
-					break ;
-
-			case -EBADFD :
-					fprintf (stderr, "alsa_write_int32: Bad PCM state.n") ;
-					return 0 ;
-					break ;
-
-			case -ESTRPIPE :
-					fprintf (stderr, "alsa_write_int32: Suspend event.n") ;
-					return 0 ;
-					break ;
-
-			case -EIO :
-					puts ("alsa_write_int32: EIO") ;
-					return 0 ;
-
-			default :
-					fprintf (stderr, "alsa_write_int32: retval = %d\n", retval) ;
-					return 0 ;
-					break ;
-    } ; /* switch */
-  } ; /* while */
-	return total ;
-} /* alsa_write_int32 */
-
-#endif /* NOTDEFINED */
 
 long
 check_samplerate (char *inname)

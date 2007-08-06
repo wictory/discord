@@ -23,6 +23,13 @@ $HOME directory.  It allows you to have minimal script files, just the
 sequences, if you want, using the options from the configuration file
 to play.  
 
+If discord compiles fine but won't run, look at one of the alsa-lib
+workaround files included.  The html version is also available on the
+discord project web site at sourceforge.net.  The short explanation is
+that the alsa-lib version 1.0.14 final does not support floating point
+formats.  As that is the format that discord uses, discord will not work
+with alsa-lib 1.0.14.
+
 If you want to port to another architecture, the engine should work
 just fine.  However the dependencies on the sound system alsa will
 have to be replaced and the pthread calls will have to be changed to
