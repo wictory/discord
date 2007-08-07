@@ -12,6 +12,11 @@ libFLAC must be present for libsndfile to have FLAC capability.  If it
 was compiled without the library present and you try to use FLAC, it
 will abort with no indication of why. 
 
+To unpack:
+tar -jxvf discord-1.#.#.tar.bz2
+
+Change to the directory discord-1.#.#.
+
 To compile:
 ./mkd
 
