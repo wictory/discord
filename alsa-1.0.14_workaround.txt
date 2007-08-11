@@ -18,16 +18,16 @@ I have put the commands on a line by themselves to avoid delimiters.
 WORKAROUND PROCESS 
 
 1.  Go to ftp://ftp.suse.com/pub/projects/alsa/snapshot/lib/ and download the
-file alsa-lib-hg20070714.tar.bz2.  This is the version I tested with, so I
+file alsa-lib-hg20070807.tar.bz2.  This is the version I tested with, so I
 know it works.  If you feel adventurous, you can try the latest file.  Right
-now, alsa-lib-hg20070714.tar.bz2 is the latest file.
+now, alsa-lib-hg20070807.tar.bz2 is the latest file.
 
 2.  Run the command
-tar -jxvf alsa-lib-hg20070714.tar.bz2  
-This will create a directory named alsa-lib-hg20070714.  
+tar -jxvf alsa-lib-hg20070807.tar.bz2  
+This will create a directory named alsa-lib-hg20070807.  
 
 3.  Go into the directory.  
-cd alsa-lib-hg20070714
+cd alsa-lib-hg20070807
 
 4.  Type command
 ./configure
@@ -43,7 +43,7 @@ ls -d python*
 ln -s python2.5 python
 
 6.  From this point on you have to be root as you are altering system
-files.  As root, go into the directory alsa-lib-hg20070714/src/.libs/.
+files.  As root, go into the directory alsa-lib-hg20070807/src/.libs/.
 Copy the file libasound.so.2.0.0 to /usr/local/lib.  
 cd src/.libs
 cp libasound.so.2.0.0 /usr/local/lib/
@@ -68,38 +68,38 @@ ls -l libasound*
 12.  Create a new symbolic link to the shared library you just moved.
 ln -s libasound.so.2.0.0 libasound.so.2
 
-10.  Check that the link is there.
+13.  Check that the link is there.
 ls -l libasound*
 lrwxrwxrwx 1 root root      18 2007-08-06 08:28 libasound.so.2 -> libasound.so.2.0.0
 -rwxr-xr-x 1 root root 2786874 2007-08-06 08:24 libasound.so.2.0.0
 
-11.  Change to the /usr/lib directory.
+14.  Change to the /usr/lib directory.
 cd /usr/lib
 
-12.  Find the setup for the libasound library.
+15.  Find the setup for the libasound library.
 ls -l libasound*
 -rw-r--r-- 1 root root 1458654 2007-08-01 01:45 libasound.a
 lrwxrwxrwx 1 root root      29 2007-08-06 08:31 libasound.so -> /lib/libasound.so.2
 
-13.  Remove the current link to the package library in /lib.
+16.  Remove the current link to the package library in /lib.
 rm libasound.so
 
-14.  Check that it is gone.
+17.  Check that it is gone.
 ls -l libasound*
 -rw-r--r-- 1 root root 1458654 2007-08-01 01:45 libasound.a
 
-15.  Create a new symbolic link here to the symbolic link you created in /usr/local/lib/alsa.
+18.  Create a new symbolic link here to the symbolic link you created in /usr/local/lib/alsa.
 ln -s /usr/local/lib/alsa/libasound.so.2 libasound.so
 
-16.  Check that the link was created.
+19.  Check that the link was created.
 ls -l libasound*
 -rw-r--r-- 1 root root 1458654 2007-08-01 01:45 libasound.a
 lrwxrwxrwx 1 root root      29 2007-08-06 08:31 libasound.so -> /usr/local/lib/alsa/libasound.so.2
 
-17.  Change to the /etc/ld.so.conf.d directory.
+20.  Change to the /etc/ld.so.conf.d directory.
 cd /etc/ld.so.conf.d
 
-18.  Use a text editor to create a file called alsa.conf.  I use vim with the
+21.  Use a text editor to create a file called alsa.conf.  I use vim with the
 following commands.
 vim alsa.conf
 i to put it into insert mode
@@ -109,20 +109,50 @@ Type  :wq
 If you get in trouble with vim's modes, hit escape a few times, then type :q
 to quit.
 
-19.  Check that the file is there and has /usr/local/lib/alsa in it.
+22.  Check that the file is there and has /usr/local/lib/alsa in it.
 less alsa.conf
 Type a q to exit less.
 
-20.  Run the ldconfig command to recreate the dynamic library cache in order
+23.  Run the ldconfig command to recreate the dynamic library cache in order
 to pick up the new libasound we have just configured.
 /sbin/ldconfig
 
-21.  From here on you do not have to be the superuser, root.  Change to
+24.  Change to directory /usr/share/alsa in order to check whether the alsa
+configuration files are in the default location.  If they are, you have nothing to do.
+If they aren't, as on Fedora 7, you have to provide links to their location or
+discord will fail because it can't resolve any devices.
+cd /usr/share/alsa
+ls -l
+-rw-r--r-- 1 root root 8611 2007-07-13 17:55 alsa.conf
+drwxr-xr-x 3 root root 4096 2007-07-13 17:55 cards
+drwxr-xr-x 2 root root 4096 2007-07-13 17:55 pcm
+-rw-r--r-- 1 root root  132 2007-07-13 17:55 smixer.conf
+-rw-r--r-- 1 root root 3205 2007-07-13 17:55 sndo-mixer.alisp
+drwxr-xr-x 2 root root 4096 2007-08-03 07:37 speaker-test
+
+25.  Create the links to the alsa configuration files in /etc/alsa if
+necessary.  It is necessary if the ls gave only the speaker-test entry.
+ln -s /etc/alsa/alsa.conf alsa.conf
+ln -s /etc/alsa/cards cards
+ln -s /etc/alsa/pcm pcm
+ln -s /etc/alsa/smixer.conf smixer.conf
+ln -s /etc/alsa/sndo-mixer.alisp sndo-mixer.alisp
+
+26.  Check that the links are all there and correct.
+ls -l
+lrwxrwxrwx 1 root root   19 2007-08-11 13:40 alsa.conf -> /etc/alsa/alsa.conf
+lrwxrwxrwx 1 root root   15 2007-08-11 13:40 cards -> /etc/alsa/cards
+lrwxrwxrwx 1 root root   13 2007-08-11 13:40 pcm -> /etc/alsa/pcm
+lrwxrwxrwx 1 root root   21 2007-08-11 13:40 smixer.conf -> /etc/alsa/smixer.conf
+lrwxrwxrwx 1 root root   26 2007-08-11 13:40 sndo-mixer.alisp -> /etc/alsa/sndo-mixer.alisp
+drwxr-xr-x 2 root root 4096 2007-08-09 16:17 speaker-test
+
+27.  From here on you do not have to be the superuser, root.  Change to
 your discord directory and recompile.
 cd <your directory here>
 ./mkd
 
-22.  Check that the new library was used in the load module.
+28.  Check that the load module resolves to the new library.
 ldd discord
 It should look like
 $ ldd discord
@@ -148,3 +178,6 @@ new version.  If it does, you can remove the link and library in
 /usr/local/lib/alsa and forget about alsa-lib again.  If it doesn't, put the file
 alsa.conf back into ld.so.conf.d, rerun /sbin/ldconfig, recompile discord
 and you are back to operational status.
+
+Actually, you don't really need to recompile discord.  Because these are dynamic
+links they will pick up whichever library is in the cache.

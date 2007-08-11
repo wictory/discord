@@ -28,14 +28,14 @@ it without being root.  I won't be covering that option here, though.
 
 <OL>
   <LI>Go to <A HREF="ftp://ftp.suse.com/pub/projects/alsa/snapshot/lib/">ftp://ftp.suse.com/pub/projects/alsa/snapshot/lib/</A> and
-download the file alsa-lib-hg20070714.tar.bz2.  This is the version I
+download the file alsa-lib-hg20070807.tar.bz2.  This is the version I
 tested with, so I know it works.  If you feel adventurous, you can try
-the latest file.  Right now, alsa-lib-hg20070714.tar.bz2 is the latest file.
+the latest file.  Right now, alsa-lib-hg20070807.tar.bz2 is the latest file.
   <LI>Run the command <BR>
-<STRONG><FONT COLOR=MAROON>tar -jxvf alsa-lib-hg20070714.tar.bz2</FONT></STRONG>   <BR>
+<STRONG><FONT COLOR=MAROON>tar -jxvf alsa-lib-hg20070807.tar.bz2</FONT></STRONG>   <BR>
 This will create a directory named alsa-lib-hg20070714.  
   <LI>Go into the directory.   <BR>
-<STRONG><FONT COLOR=MAROON>cd alsa-lib-hg20070714</FONT></STRONG>
+<STRONG><FONT COLOR=MAROON>cd alsa-lib-hg20070807</FONT></STRONG>
   <LI>Type command <BR>
 <STRONG><FONT COLOR=MAROON>./configure</FONT></STRONG>
   <LI>Type command <BR>
@@ -48,7 +48,7 @@ headers.  You will need to be root to do this. <BR>
 <STRONG><FONT COLOR=MAROON>ls -d python*</FONT></STRONG> <BR>
 <STRONG><FONT COLOR=MAROON>ln -s python2.5 python</FONT></STRONG>
   <LI>From this point on you have to be root as you are altering system
-files.  As root, go into the directory alsa-lib-hg20070714/src/.libs/.
+files.  As root, go into the directory alsa-lib-hg20070807/src/.libs/.
 Copy the file libasound.so.2.0.0 to /usr/local/lib.   <BR>
 <STRONG><FONT COLOR=MAROON>cd src/.libs</FONT></STRONG> <BR>
 <STRONG><FONT COLOR=MAROON>cp libasound.so.2.0.0 /usr/local/lib/</FONT></STRONG>
@@ -103,11 +103,38 @@ If you get in trouble with vim's modes, hit escape a few times, then type :q to 
   <LI>Run the ldconfig command to recreate the dynamic library cache in order
 to pick up the new libasound we have just configured. <BR>
 <STRONG><FONT COLOR=MAROON>/sbin/ldconfig</FONT></STRONG>
+  <LI>Change to directory /usr/share/alsa in order to check whether the alsa
+configuration files are in the default location.  If they are, you have nothing to do.
+If they aren't, as on Fedora 7, you have to provide links to their location or
+discord will fail because it can't resolve any devices. <BR>
+<STRONG><FONT COLOR=MAROON>cd /usr/share/alsa</FONT></STRONG> <BR>
+<STRONG><FONT COLOR=MAROON>ls -l</FONT></STRONG> <BR>
+-rw-r--r-- 1 root root 8611 2007-07-13 17:55 alsa.conf <BR>
+drwxr-xr-x 3 root root 4096 2007-07-13 17:55 cards <BR>
+drwxr-xr-x 2 root root 4096 2007-07-13 17:55 pcm <BR>
+-rw-r--r-- 1 root root  132 2007-07-13 17:55 smixer.conf <BR>
+-rw-r--r-- 1 root root 3205 2007-07-13 17:55 sndo-mixer.alisp <BR>
+drwxr-xr-x 2 root root 4096 2007-08-03 07:37 speaker-test
+  <LI>Create the links to the alsa configuration files in /etc/alsa if
+necessary.  It is necessary if the ls gave only the speaker-test entry. <BR>
+<STRONG><FONT COLOR=MAROON>ln -s /etc/alsa/alsa.conf alsa.conf</FONT></STRONG> <BR>
+<STRONG><FONT COLOR=MAROON>ln -s /etc/alsa/cards cards</FONT></STRONG> <BR>
+<STRONG><FONT COLOR=MAROON>ln -s /etc/alsa/pcm pcm</FONT></STRONG> <BR>
+<STRONG><FONT COLOR=MAROON>ln -s /etc/alsa/smixer.conf smixer.conf</FONT></STRONG> <BR>
+<STRONG><FONT COLOR=MAROON>ln -s /etc/alsa/sndo-mixer.alisp sndo-mixer.alisp</FONT></STRONG>
+<LI>Check that the links are all there and correct. <BR>
+<STRONG><FONT COLOR=MAROON>ls -l</FONT></STRONG> <BR>
+lrwxrwxrwx 1 root root   19 2007-08-11 13:40 alsa.conf -&gt; /etc/alsa/alsa.conf <BR>
+lrwxrwxrwx 1 root root   15 2007-08-11 13:40 cards -&gt; /etc/alsa/cards <BR>
+lrwxrwxrwx 1 root root   13 2007-08-11 13:40 pcm -&gt; /etc/alsa/pcm <BR>
+lrwxrwxrwx 1 root root   21 2007-08-11 13:40 smixer.conf -&gt; /etc/alsa/smixer.conf <BR>
+lrwxrwxrwx 1 root root   26 2007-08-11 13:40 sndo-mixer.alisp -&gt; /etc/alsa/sndo-mixer.alisp <BR>
+drwxr-xr-x 2 root root 4096 2007-08-09 16:17 speaker-test
   <LI>From here on you do not have to be the superuser, root.  Change to
 your discord directory and recompile. <BR>
 <STRONG><FONT COLOR=MAROON>cd &lt;your directory here&gt;</FONT></STRONG> <BR>
 <STRONG><FONT COLOR=MAROON>./mkd</FONT></STRONG>
-  <LI>Check that the new library was used in the load module. <BR>
+  <LI>Check that the load module resolves to the new library. <BR>
 <STRONG><FONT COLOR=MAROON>ldd discord</FONT></STRONG> <BR>
 It should look like <BR>
 $ ldd discord <BR>
@@ -128,11 +155,13 @@ $ ldd discord <BR>
 
 <P>That's it, you're done.  Discord will now work properly.  When your package
 manager updates your system to the next version of alsa-lib, you can remove
-the file alsa.conf in ld.so.conf.d and run /sbin/ldconfig to enable the
+the file alsa.conf in /etc/ld.so.conf.d/ and run /sbin/ldconfig to enable the
 package version.  Then recompile and test discord to see if it works with the
 new version.  If it does, you can remove the link and library in
 /usr/local/lib/alsa and forget about alsa-lib again.  If it doesn't, put the file
 alsa.conf back into ld.so.conf.d, rerun /sbin/ldconfig, recompile discord
-and you are back to operational status.
+and you are back to operational status. <BR>
+Actually, you don't really need to recompile discord.  Because these are dynamic
+links they will pick up whichever library is in the cache.
 </BODY>
 </HTML>
