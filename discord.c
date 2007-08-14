@@ -3050,32 +3050,28 @@ init_binaural ()
               { 
                 chronaural2 = (chronaural *) work2;
                 /* Set the pointers to the previous voice's offsets here so it can be used while running.
-                   Need to do this even when there is no slide.  Some duplication with below. */
+                   Need to do this even when there is no slide. */
                 chronaural2->last_off1 = &(chronaural1->off1);
                 chronaural2->last_off2 = &(chronaural1->off2);
-              } 
-            } 
-            if (chronaural1->slide == 0)
-              chronaural1->carr_adj = chronaural1->amp_beat_adj = chronaural1->amp_adj = 0.0;
-            else  // slide to next chronaural in stream
-            {
-              if (work2 != NULL)
-              {
-                if (chronaural2 != NULL)  // set above if also chronaural, NULL means not chronaural
+                if (chronaural1->slide == 0)
+                  (chronaural1->carr_adj = chronaural1->amp_beat_adj 
+                                      = chronaural1->amp_adj = chronaural1->split_beat_adj = 0.0);
+                else  // slide to next chronaural in stream
                 {
                   chronaural1->carr_adj = (chronaural2->carrier - chronaural1->carrier)/ (double) snd1->tot_frames;
                   chronaural1->amp_beat_adj = (chronaural2->amp_beat - chronaural1->amp_beat)/ (double) snd1->tot_frames;
                   chronaural1->amp_adj = (chronaural2->amp - chronaural1->amp)/ (double) snd1->tot_frames;
-                  /* Set the pointers to the previous voice's offsets here so it can be used while running */
-                  chronaural2->last_off1 = &(chronaural1->off1);
-                  chronaural2->last_off2 = &(chronaural1->off2);
+                  chronaural1->split_beat_adj = (chronaural2->split_beat - chronaural1->split_beat) 
+                                                                                            / (double) snd1->tot_frames;
                 }
-                else
-                  error ("Slide called for, voice to slide to is not chronaural.  Position matters!\n");
-              }
-              else
-                error ("Slide called for, no next chronaural in time sequence!\n");
-            }
+              } 
+              else if (chronaural1->slide != 0)
+                error ("Slide called for, voice to slide to is not chronaural.  Position matters!\n");
+            } 
+            else if (chronaural1->slide != 0)
+              error ("Slide called for, no next chronaural in time sequence!\n");
+            else
+              chronaural1->split_beat_adj = 0.0;
               /* set up the split logic here as it applies throughout the voice period.
                  don't need to worry about overwriting begin and end splits as they are only used once */
             if (chronaural1->split_begin == -1.0)  // chronaural split start random
@@ -3089,13 +3085,11 @@ init_binaural ()
               double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
               chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
             }
-            if (chronaural1->split_beat == 0.0)  // no split beat
-            {
+            if (chronaural1->split_beat == 0.0 && chronaural1->split_beat_adj == 0.0)
+                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
               chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
-                                        / (double) snd1->tot_frames);  // adjust per frame
-              chronaural1->split_beat_adj = 0.0;  // no split beat, no split beat adjust
-            }
-            else
+                                                              / (double) snd1->tot_frames);  // adjust per frame
+            else  // is split beat
             {
               if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
               {
@@ -3103,10 +3097,13 @@ init_binaural ()
                 chronaural1->split_begin = chronaural1->split_end;
                 chronaural1->split_end = split_hold;
               }
-              chronaural1->split_adj = 0.0;  // don't adjust split when there is a split beat
-              double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-              chronaural1->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
-                                          / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+              double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do that cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              chronaural1->split_adj = ((2.*(chronaural1->split_end - chronaural1->split_begin)) / frames_per_cycle);  
             }
             break;
           }
@@ -3155,16 +3152,16 @@ init_binaural ()
             double next_amp_pct1 = 0.0;
             double next_amp_pct2 = 0.0;
             binaural4 = binaural1;  // set last node processed
-            int total_steps = (2 * binaural1->steps);
+            int total_nodes = (2 * binaural1->steps);
             int ii;
-            for (ii = 1; ii < total_steps; ii++)  // create rest of step list nodes
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of step list nodes
             {
               binaural3 = (binaural *) Alloc ((sizeof (binaural)) * 1);  // create next node of step list
               if (ii % 2 == 1)  // a slide
               {
                 memcpy ((void *) binaural3, (void *) binaural4, sizeof (binaural)); // copy last step
                 binaural3->tot_frames = slide_frames;
-                if (ii == total_steps - 1)  // last slide, to next time sequence voice binaural2
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice binaural2
                 {
                   binaural2->last_off1 = &(binaural3->off1);
                   binaural2->last_off2 = &(binaural3->off2);
@@ -3179,7 +3176,7 @@ init_binaural ()
                 }
                 else  // internal slide
                 {
-                  double fraction = ((double) (ii+1)/(double) total_steps);  // fraction of interval
+                  double fraction = ((double) (ii+1)/(double) total_nodes);  // fraction of interval
                   next_carrier = binaural1->carrier + (carr_diff * fraction);
                   next_beat = binaural1->beat + (beat_diff * fraction);
                   next_amp = binaural1->amp + (amp_diff * fraction);
@@ -3224,7 +3221,7 @@ init_binaural ()
               else  // a step
               {
                 memcpy ((void *) binaural3, (void *) binaural1, sizeof (binaural)); // copy first in list to it
-                if (ii == (total_steps - 2))
+                if (ii == (total_nodes - 2))
                   binaural3->tot_frames += frame_residue;  // use up leftover frames in last step
                 /* Set values used for calculation in last slide */
                 binaural3->carrier = next_carrier;
@@ -3253,7 +3250,7 @@ init_binaural ()
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide time
+            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide frames
             int_64 step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last step. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
@@ -3273,20 +3270,22 @@ init_binaural ()
             double carr_diff = (chronaural2->carrier - chronaural1->carrier);
             double amp_beat_diff = (chronaural2->amp_beat - chronaural1->amp_beat);
             double amp_diff = (chronaural2->amp - chronaural1->amp);
+            double split_beat_diff = (chronaural2->split_beat - chronaural1->split_beat);
             double next_carrier = 0.0;
             double next_amp_beat = 0.0;
             double next_amp = 0.0;
+            double next_split_beat = 0.0;
             chronaural4 = chronaural1;  // set last node processed
-            int total_steps = (2 * chronaural1->steps);
+            int total_nodes = (2 * chronaural1->steps);
             int ii;
-            for (ii = 1; ii < total_steps; ii++)  // create rest of step list nodes
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of step list nodes
             {
               chronaural3 = (chronaural *) Alloc ((sizeof (chronaural)) * 1);  // create next node of step list
               if (ii % 2 == 1)  // a slide
               {
                 memcpy ((void *) chronaural3, (void *) chronaural4, sizeof (chronaural)); // copy last step
                 chronaural3->tot_frames = slide_frames;
-                if (ii == total_steps - 1)  // last slide, to next time sequence voice chronaural2
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
                 {
                   chronaural2->last_off1 = &(chronaural3->off1);
                   chronaural2->last_off2 = &(chronaural3->off2);
@@ -3297,10 +3296,11 @@ init_binaural ()
                 }
                 else  // internal slide
                 {
-                  double fraction = ((double) (ii+1)/(double) total_steps);  // fraction of interval
+                  double fraction = ((double) (ii+1)/(double) total_nodes);  // fraction of interval
                   next_carrier = chronaural1->carrier + (carr_diff * fraction);
                   next_amp_beat = chronaural1->amp_beat + (amp_beat_diff * fraction);
                   next_amp = chronaural1->amp + (amp_diff * fraction);
+                  next_split_beat = chronaural1->split_beat + (split_beat_diff * fraction);
                   if (chronaural1->fuzz > 0.0)  // fuzz the interval
                   {
                     double adjust = drand48() - 0.5;  // fuzz adjustment between -.5 and +.5 of fuzz
@@ -3312,16 +3312,20 @@ init_binaural ()
                 chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
                 chronaural3->amp_beat_adj = (next_amp_beat - chronaural4->amp_beat)/ chronaural3->tot_frames;
                 chronaural3->amp_adj = (next_amp - chronaural4->amp)/ chronaural3->tot_frames;
+                   /* change split beat only in slides */
+                chronaural3->split_beat_adj = (next_split_beat - chronaural4->split_beat)/ chronaural3->tot_frames;
               } 
               else  // a step
               {
                 memcpy ((void *) chronaural3, (void *) chronaural1, sizeof (chronaural)); // copy first in list to it
-                if (ii == (total_steps - 2))
+                if (ii == (total_nodes - 2))
                   chronaural3->tot_frames += frame_residue;  // use up leftover frames in last step
                 /* Set values used for calculation in last slide */
                 chronaural3->carrier = next_carrier;
                 chronaural3->amp_beat = next_amp_beat;
                 chronaural3->amp = next_amp;
+                chronaural3->split_beat = next_split_beat;
+                chronaural3->split_beat_adj = 0.0;  //steps are constant
               }
                 /* Set up the split logic here as it applies throughout the voice period.
                  * Use chronaural1 to determine branching as it won't be changed until list is complete.
@@ -3329,33 +3333,53 @@ init_binaural ()
                    Same logic for slides and steps */
               if (chronaural1->split_begin == -1.0)  // chronaural split start random
               {
-                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                chronaural3->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
+                if (chronaural4 != chronaural1)  // previous node not first node in chain
+                  chronaural3->split_begin = chronaural4->split_end; // begin split is previous node end split
+                else  // first node after start of chain
+                {  /* begin split is random and will become first nodes end split below */
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural3->split_begin = chronaural1->split_low + delta;
+                }
               }
               chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
               if (chronaural1->split_end == -1.0)  // chronaural split end random
               {
-                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
+                {
+                  if (chronaural2->split_begin == -1.0)  //random
+                  {
+                    double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural3->split_end = chronaural1->split_low + delta; // end split for this chronaural
+                    chronaural2->split_begin = chronaural3->split_end;  // set this as begin split for next voice
+                  }
+                  else  // fixed split in next voice
+                    chronaural3->split_end = chronaural2->split_begin; // ending split is next voice begin split
+                }
+                else  // internal 
+                {
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                }
               }
-              if (chronaural1->split_beat == 0.0)  // no split beat
-              {
-                chronaural3->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
-                                          / (double) chronaural3->tot_frames);  // adjust per frame
-                chronaural3->split_beat_adj = 0.0;  // no split beat, no split beat adjust
-              }
+              if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
+                                                        / (double) chronaural3->tot_frames);  // adjust per frame
               else
               {
-                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                if (chronaural3->split_end < chronaural3->split_begin)  // end always larger for split beat, swap if not
                 {
-                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  double split_hold = chronaural3->split_begin;  // swap begin and end
                   chronaural3->split_begin = chronaural3->split_end;
                   chronaural3->split_end = split_hold;
                 }
-                chronaural3->split_adj = 0.0;  // don't adjust split when there is a split beat
-                double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-                chronaural3->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
-                                            / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+                double frames_per_cycle = ((double) out_rate / chronaural3->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than above, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                chronaural3->split_adj = ((2.*(chronaural3->split_end - chronaural3->split_begin)) / frames_per_cycle);  
               }
               chronaural4->step_next = chronaural3;  // set list pointer for previous node
               chronaural3->last_off1 = &(chronaural4->off1);  // each node starts where last left off as offset
@@ -3372,17 +3396,13 @@ init_binaural ()
             }
             chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
             if (chronaural1->split_end == -1.0)  // chronaural split end random
-            {
-              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-              chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
-            }
-            if (chronaural1->split_beat == 0.0)  // no split beat
-            {
+                /* end split for this chronaural is begin split from next chronaural in chain set above */
+              chronaural1->split_end = chronaural1->step_next->split_begin;
+            if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
               chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                         / (double) chronaural1->tot_frames);  // adjust per frame
-              chronaural1->split_beat_adj = 0.0;  // no split beat, no split beat adjust
-            }
-            else
+            else  // split beat
             {
               if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
               {
@@ -3390,10 +3410,13 @@ init_binaural ()
                 chronaural1->split_begin = chronaural1->split_end;
                 chronaural1->split_end = split_hold;
               }
-              chronaural1->split_adj = 0.0;  // don't adjust split when there is a split beat
-              double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-              chronaural1->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
-                                          / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+              double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do the cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              chronaural1->split_adj = (2. * (chronaural1->split_end - chronaural1->split_begin) / frames_per_cycle);  
             }
             break;
           }
@@ -3442,16 +3465,16 @@ init_binaural ()
             double next_amp_pct1 = 0.0;
             double next_amp_pct2 = 0.0;
             binaural4 = binaural1;  // set last node processed
-            int total_steps = (2 * binaural1->steps);
+            int total_nodes = (2 * binaural1->steps);
             int ii;
-            for (ii = 1; ii < total_steps; ii++)  // create rest of vary list nodes
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of vary list nodes
             {
               binaural3 = (binaural *) Alloc ((sizeof (binaural)) * 1);  // create next node of vary list
               if (ii % 2 == 1)  // a slide
               {
                 memcpy ((void *) binaural3, (void *) binaural4, sizeof (binaural)); // copy last step
                 binaural3->tot_frames = slide_frames;
-                if (ii == total_steps - 1)  // last slide, to next time sequence voice binaural2
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice binaural2
                 {
                   binaural2->last_off1 = &(binaural3->off1);  // binaural2 will start from these offsets
                   binaural2->last_off2 = &(binaural3->off2);
@@ -3528,7 +3551,7 @@ init_binaural ()
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide time
+            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide frames
             int_64 step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last slide. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
@@ -3548,27 +3571,28 @@ init_binaural ()
             double carr_diff = (chronaural2->carrier - chronaural1->carrier);
             double amp_beat_diff = (chronaural2->amp_beat - chronaural1->amp_beat);
             double amp_diff = (chronaural2->amp - chronaural1->amp);
+            double split_beat_diff = (chronaural2->split_beat - chronaural1->split_beat);
             double next_carrier = 0.0;
             double next_amp_beat = 0.0;
             double next_amp = 0.0;
+            double next_split_beat = 0.0;
             chronaural4 = chronaural1;  // set last node processed
-            int total_steps = (2 * chronaural1->steps);
+            int total_nodes = (2 * chronaural1->steps);
             int ii;
-            for (ii = 1; ii < total_steps; ii++)  // create rest of step list nodes
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of step list nodes
             {
               chronaural3 = (chronaural *) Alloc ((sizeof (chronaural)) * 1);  // create next node of step list
               if (ii % 2 == 1)  // a slide
               {
                 memcpy ((void *) chronaural3, (void *) chronaural4, sizeof (chronaural)); // copy last step
                 chronaural3->tot_frames = slide_frames;
-                if (ii == total_steps - 1)  // last slide, to next time sequence voice chronaural2
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
                 {
                   chronaural2->last_off1 = &(chronaural3->off1);
                   chronaural2->last_off2 = &(chronaural3->off2);
                   next_carrier = chronaural2->carrier;
                   next_amp_beat = chronaural2->amp_beat;
                   next_amp = chronaural2->amp;
-                  chronaural3->tot_frames += frame_residue;  // use up leftover frames in last slide
                   chronaural3->step_next = NULL;  // last node, no next node
                 }
                 else  // internal slide
@@ -3577,52 +3601,79 @@ init_binaural ()
                   next_carrier = chronaural1->carrier + (carr_diff * fraction);
                   next_amp_beat = chronaural1->amp_beat + (amp_beat_diff * fraction);
                   next_amp = chronaural1->amp + (amp_diff * fraction);
+                  next_split_beat = chronaural1->split_beat + (split_beat_diff * fraction);
                 }
                 chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
                 chronaural3->amp_beat_adj = (next_amp_beat - chronaural4->amp_beat)/ chronaural3->tot_frames;
                 chronaural3->amp_adj = (next_amp - chronaural4->amp)/ chronaural3->tot_frames;
+                   /* change split beat only in slides */
+                chronaural3->split_beat_adj = (next_split_beat - chronaural4->split_beat)/ chronaural3->tot_frames;
               } 
               else  // a step
               {
                 memcpy ((void *) chronaural3, (void *) chronaural1, sizeof (chronaural)); // copy first in list to it
+                if (ii == (total_nodes - 2))
+                  chronaural3->tot_frames += frame_residue;  // use up leftover frames in last step
                 /* Set values used for calculation in last slide */
                 chronaural3->carrier = next_carrier;
                 chronaural3->amp_beat = next_amp_beat;
                 chronaural3->amp = next_amp;
+                chronaural3->split_beat = next_split_beat;
+                chronaural3->split_beat_adj = 0.0;  //steps are constant
               }
-                /* Set up the split logic here as it applies throughout the voice period and to slide or step.
+                /* Set up the split logic here as it applies throughout the voice period for both slide and step.
                  * Use chronaural1 to determine branching as it won't be changed until list is complete.
                    Don't need to worry about overwriting begin and end splits as they are only used once
                    Same logic for slides and steps */
               if (chronaural1->split_begin == -1.0)  // chronaural split start random
               {
-                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                chronaural3->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
+                if (chronaural4 != chronaural1)  // previous node not first node in chain
+                  chronaural3->split_begin = chronaural4->split_end; // begin split is previous node end split
+                else  // first node after start of chain
+                {  /* begin split is random and will become first nodes end split below */
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural3->split_begin = chronaural1->split_low + delta;
+                }
               }
               chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
               if (chronaural1->split_end == -1.0)  // chronaural split end random
               {
-                double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
+                {
+                  if (chronaural2->split_begin == -1.0)  //random
+                  {
+                    double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural3->split_end = chronaural1->split_low + delta; // end split for this chronaural
+                    chronaural2->split_begin = chronaural3->split_end;  // set this as begin split for next voice
+                  }
+                  else  // fixed split in next voice
+                    chronaural3->split_end = chronaural2->split_begin; // ending split is next voice begin split
+                }
+                else  // internal 
+                {
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                }
               }
-              if (chronaural1->split_beat == 0.0)  // no split beat
-              {
-                chronaural3->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
-                                          / (double) chronaural3->tot_frames);  // adjust per frame
-                chronaural3->split_beat_adj = 0.0;  // no split beat, no split beat adjust
-              }
+              if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+                  /* no split beat in this voice and not sliding to split beat in next voice, so pan */
+                chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
+                                                        / (double) chronaural3->tot_frames);  // adjust per frame
               else
               {
-                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                if (chronaural3->split_end < chronaural3->split_begin)  // end always larger for split beat, swap if not
                 {
-                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  double split_hold = chronaural3->split_begin;  // swap begin and end
                   chronaural3->split_begin = chronaural3->split_end;
                   chronaural3->split_end = split_hold;
                 }
-                chronaural3->split_adj = 0.0;  // don't adjust split when there is a split beat
-                double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-                chronaural3->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
-                                            / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+                double frames_per_cycle = ((double) out_rate / chronaural3->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than above, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                chronaural3->split_adj = ((2.*(chronaural3->split_end - chronaural3->split_begin)) / frames_per_cycle);  
               }
               chronaural4->step_next = chronaural3;  // set list pointer for previous node
               chronaural3->last_off1 = &(chronaural4->off1);  // each node starts where last left off as offset
@@ -3639,17 +3690,13 @@ init_binaural ()
             }
             chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
             if (chronaural1->split_end == -1.0)  // chronaural split end random
-            {
-              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-              chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
-            }
-            if (chronaural1->split_beat == 0.0)  // no split beat
-            {
+                /* end split for this chronaural is begin split from next chronaural in chain set above */
+              chronaural1->split_end = chronaural1->step_next->split_begin;
+            if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
               chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                         / (double) chronaural1->tot_frames);  // adjust per frame
-              chronaural1->split_beat_adj = 0.0;  // no split beat, no split beat adjust
-            }
-            else
+            else  // split beat
             {
               if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
               {
@@ -3657,10 +3704,13 @@ init_binaural ()
                 chronaural1->split_begin = chronaural1->split_end;
                 chronaural1->split_end = split_hold;
               }
-              chronaural1->split_adj = 0.0;  // don't adjust split when there is a split beat
-              double cycle_frames = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-              chronaural1->split_beat_adj = ((chronaural1->split_end - chronaural1->split_now) 
-                                          / cycle_frames);  // adjust to do that cycle, sign oscillates in generate_frames
+              double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do the cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              chronaural1->split_adj = (2. * (chronaural1->split_end - chronaural1->split_begin) / frames_per_cycle);  
             }
             break;
           }
@@ -4806,37 +4856,42 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * sin_table[chronaural1->off1]);
               }
             }
-            if (chronaural1->split_beat == 0.0)  // no split beat, adjust split towards split_end
-            {
-              chronaural1->split_now += (chronaural1->split_adj * fast_mult);
+            chronaural1->split_now += chronaural1->split_adj * fast_mult;
+            if (chronaural1->split_beat == 0.0 && chronaural1->split_beat_adj == 0.0)
+            {  // no split beat adjust, adjust split towards split_end
               if (chronaural1->split_now < 0.0)
                 chronaural1->split_now = 0.0;
               else if (chronaural1->split_now > 1.0)
                 chronaural1->split_now = 1.0;
             }
-            else // split beat so no split adjust, split beat adjust instead, oscillates between begin and end
+            else // split beat so oscillates between begin and end
             {
-              chronaural1->split_now += chronaural1->split_beat_adj * fast_mult;
               double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
                 /* assumes split_end > split_begin, this is done in init_binaural */
-              if (chronaural1->split_now > chronaural1->split_end)  // larger than end
+              if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
               {
                 double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
                 if (delta > split_dist) // overshoot too large, set to end
                   chronaural1->split_now = chronaural1->split_end;
                 else // overshoot smaller than overall split, reflect from end
                   chronaural1->split_now = chronaural1->split_end - delta;
-                chronaural1->split_beat_adj *= -1.;  // swap direction
+                chronaural1->split_adj *= -1.;  // swap direction
               }
-              else if (chronaural1->split_now < chronaural1->split_begin)  // smaller than begin
+              else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
               {
                 double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
                 if (delta > split_dist) // overshoot too large, set to begin
                   chronaural1->split_now = chronaural1->split_begin;
                 else // overshoot smaller than overall split, reflect from begin
                   chronaural1->split_now = chronaural1->split_begin + delta;
-                chronaural1->split_beat_adj *= -1.;  // swap direction
+                chronaural1->split_adj *= -1.;  // swap direction
               }
+              /* Adjust the split beat and split adjust.  Second difference equation. */
+              chronaural1->split_beat += (chronaural1->split_beat_adj * fast_mult);
+              double sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
+              chronaural1->split_adj = fabs(chronaural1->split_adj) 
+                                            + (chronaural1->split_beat_adj * (2.* split_dist) / (double) out_rate);  
+              chronaural1->split_adj *= sign_adjust;
             }  
             chronaural1->carrier += (chronaural1->carr_adj * fast_mult);  // tone to sound if time
             chronaural1->amp_beat += (chronaural1->amp_beat_adj * fast_mult);  // beat of the amplitude
@@ -4995,17 +5050,16 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * sin_table[chronaural1->off1]);
               }
             }
+            chronaural1->split_now += chronaural1->split_adj * fast_mult;
             if (chronaural1->split_beat == 0.0)  // no split beat, adjust split towards split_end
             {
-              chronaural1->split_now += (chronaural1->split_adj * fast_mult);
               if (chronaural1->split_now < 0.0)
                 chronaural1->split_now = 0.0;
               else if (chronaural1->split_now > 1.0)
                 chronaural1->split_now = 1.0;
             }
-            else // split beat so no split adjust, split beat adjust instead, oscillates between begin and end
+            else // split beat so oscillates between begin and end
             {
-              chronaural1->split_now += chronaural1->split_beat_adj * fast_mult;
               double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
                 /* assumes split_end > split_begin, this is done in init_binaural */
               if (chronaural1->split_now > chronaural1->split_end)  // larger than end
@@ -5015,7 +5069,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   chronaural1->split_now = chronaural1->split_end;
                 else // overshoot smaller than overall split, reflect from end
                   chronaural1->split_now = chronaural1->split_end - delta;
-                chronaural1->split_beat_adj *= -1.;  // swap direction
+                chronaural1->split_adj *= -1.;  // swap direction
               }
               else if (chronaural1->split_now < chronaural1->split_begin)  // smaller than begin
               {
@@ -5024,8 +5078,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   chronaural1->split_now = chronaural1->split_begin;
                 else // overshoot smaller than overall split, reflect from begin
                   chronaural1->split_now = chronaural1->split_begin + delta;
-                chronaural1->split_beat_adj *= -1.;  // swap direction
+                chronaural1->split_adj *= -1.;  // swap direction
               }
+              /* Adjust the split beat and split adjust.  Second difference equation. */
+              chronaural1->split_beat += (chronaural1->split_beat_adj * fast_mult);
+              double sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
+              chronaural1->split_adj = fabs(chronaural1->split_adj) 
+                                            + ((chronaural1->split_beat_adj * (2. * split_dist)) / (double) out_rate);  
+              chronaural1->split_adj *= sign_adjust;
             }  
             chronaural1->carrier += (chronaural1->carr_adj * fast_mult);  // tone to sound if time
             chronaural1->amp_beat += (chronaural1->amp_beat_adj * fast_mult);  // beat of the amplitude
@@ -5439,7 +5499,8 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
         char_count += fprintf (fp, "   %.3f", chronaural1->amp_beat);
         char_count += fprintf (fp, "   %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
-        char_count += fprintf (fp, "   %.3f\n", chronaural1->split_now );
+        char_count += fprintf (fp, "   %.3f", chronaural1->split_now);
+        char_count += fprintf (fp, "   %.3e  %.3f\n", chronaural1->split_adj, chronaural1->split_beat); 
         break;
       }
     default:  // not known, do nothing

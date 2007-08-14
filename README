@@ -20,6 +20,16 @@ Change to the directory discord-1.#.#.
 To compile:
 ./mkd
 
+Output should look like:
+
+discord.c: In function ‘set_options':
+discord.c:1258: warning: ignoring return value of ‘realloc', declared with attribute warn_unused_result
+discord.c: In function ‘play_loop':
+discord.c:3887: warning: unused variable ‘pth_play'
+discord.c: In function ‘save_loop':
+discord.c:4020: warning: unused variable ‘checkval'
+discord.c:4014: warning: unused variable ‘pth_write'
+
 Install manually wherever you want it.  Single executable, discord.
 Alternatively, just run as ./discord.
 
