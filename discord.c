@@ -241,12 +241,13 @@ struct binaural
   int amp_inc1, amp_off1;       // sin table ofset and increment for left amp
   int amp_inc2, amp_off2;       // sin table ofset and increment for right amp
   double carr_adj, beat_adj, amp_adj;   // continuous adjustment if desired
-  double amp_beat1_adj, amp_beat2_adj, amp_pct1_adj, amp_pct2_adj;   // continuous adjustment if desired
+  double amp_beat1_adj, amp_beat2_adj, amp_pct1_adj, amp_pct2_adj;   // amp pulse continuous adjustment if desired
   int slide;     // 1 if this sequence slides into the next (only binaurals slide)
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
         starting offset for this voice.  Store a pointer to it during setup.
     */
   int *last_off1, *last_off2;   
+  int *last_amp_off1, *last_amp_off2;   
   int first_pass;  // is this voice inactive?
   /* used for step and vary */
   binaural *step_next;  // point to linked list of binaural voices for steps and vary
@@ -1467,7 +1468,7 @@ amp_comp (double freq)
   if (freq >= compensate[opt_c_points - 1].freq)
     return compensate[opt_c_points - 1].adj;
   point = opt_c_points / 2;  // begin near middle
-  adjust = point / 2;  // begin near middle
+  adjust = point / 2;  // adjustment step size
   while (1)  // binary search
   {
     if (compensate[point].freq > freq)
@@ -1703,6 +1704,7 @@ setup_binaural (char *token, void **work)
   binaural1->slide = 0;  // default to not slide
   binaural1->off1 = binaural1->off2 = 0;  // begin at 0 degrees
   binaural1->last_off1 = binaural1->last_off2 = NULL;  // no previous voice offsets yet
+  binaural1->last_amp_off1 = binaural1->last_amp_off2 = NULL;  // no previous voice offsets yet
   binaural1->first_pass = 1;  // inactive
   /* used for step and vary */
   binaural1->step_next = NULL;  // default no steps
@@ -2986,6 +2988,8 @@ init_binaural ()
                    Need to do this even when there is no slide.  Some duplication with below. */
                 binaural2->last_off1 = &(binaural1->off1);
                 binaural2->last_off2 = &(binaural1->off2);
+                binaural2->last_amp_off1 = &(binaural1->amp_off1);
+                binaural2->last_amp_off2 = &(binaural1->amp_off2);
               } 
             } 
             if (binaural1->slide == 0)
@@ -3165,6 +3169,8 @@ init_binaural ()
                 {
                   binaural2->last_off1 = &(binaural3->off1);
                   binaural2->last_off2 = &(binaural3->off2);
+                  binaural2->last_amp_off1 = &(binaural3->amp_off1);
+                  binaural2->last_amp_off2 = &(binaural3->amp_off2);
                   next_carrier = binaural2->carrier;
                   next_beat = binaural2->beat;
                   next_amp = binaural2->amp;
@@ -3235,6 +3241,8 @@ init_binaural ()
               binaural4->step_next = binaural3;  // set list pointer for previous node
               binaural3->last_off1 = &(binaural4->off1);  // each node starts where last left off as offset
               binaural3->last_off2 = &(binaural4->off2);
+              binaural3->last_amp_off1 = &(binaural4->amp_off1);  // each node starts where last left off as amp_offset
+              binaural3->last_amp_off2 = &(binaural4->amp_off2);
               binaural4 = binaural3;  // make current node previous node
             }
             break;
@@ -3478,6 +3486,8 @@ init_binaural ()
                 {
                   binaural2->last_off1 = &(binaural3->off1);  // binaural2 will start from these offsets
                   binaural2->last_off2 = &(binaural3->off2);
+                  binaural2->last_amp_off1 = &(binaural3->amp_off1);  // binaural2 will start from these amp_offsets
+                  binaural2->last_amp_off2 = &(binaural3->amp_off2);
                   next_carrier = binaural2->carrier;
                   next_beat = binaural2->beat;
                   next_amp = binaural2->amp;
@@ -3536,6 +3546,8 @@ init_binaural ()
               binaural4->step_next = binaural3;  // set list pointer for previous node
               binaural3->last_off1 = &(binaural4->off1);  // each node starts where last left off as offset
               binaural3->last_off2 = &(binaural4->off2);
+              binaural3->last_amp_off1 = &(binaural4->amp_off1);  // each node starts where last left off as amp_offset
+              binaural3->last_amp_off2 = &(binaural4->amp_off2);
               binaural4 = binaural3;  // make current node previous node
             }
             break;
@@ -4157,6 +4169,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               binaural1->off1 = *binaural1->last_off1;  // to eliminate crackle from discontinuity in wave
             if (binaural1->last_off2 != NULL)  // there *is* a previous offset to use
               binaural1->off2 = *binaural1->last_off2;
+            if (binaural1->last_amp_off1 != NULL)  // there *is* a previous amp_offset to use
+              binaural1->amp_off1 = *binaural1->last_amp_off1;  // to eliminate crackle from discontinuity in wave
+            if (binaural1->last_amp_off2 != NULL)  // there *is* a previous amp_offset to use
+              binaural1->amp_off2 = *binaural1->last_amp_off2;
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
@@ -4935,6 +4951,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 binaural1->off1 = *binaural1->last_off1;  // to eliminate crackle from discontinuity in wave
               if (binaural1->last_off2 != NULL)  // there *is* a previous offset to use
                 binaural1->off2 = *binaural1->last_off2;
+              if (binaural1->last_amp_off1 != NULL)  // there *is* a previous amp_offset to use
+                binaural1->amp_off1 = *binaural1->last_amp_off1;  // to eliminate crackle from discontinuity in wave
+              if (binaural1->last_amp_off2 != NULL)  // there *is* a previous amp_offset to use
+                binaural1->amp_off2 = *binaural1->last_amp_off2;
             }
             freq1 = binaural1->carrier + binaural1->beat / 2;
             freq2 = binaural1->carrier - binaural1->beat / 2;
