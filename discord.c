@@ -3999,6 +3999,7 @@ play_loop ()
     if (snd1 == NULL)
       break;  // finished all time periods, out of the loop
   }
+  sleep (1);  // allows playing thread to finish before shutdown
   snd_pcm_drain (alsa_dev) ;  // shutdown the alsa card
   snd_pcm_close (alsa_dev) ;
 }
