@@ -3,14 +3,14 @@ chronaural beats with great flexibility and mixed with sound files of
 your choice.  The flexibility requires some complexity.  There is a
 learning curve.  Use the test script files as templates and experiment
 with changing the variables to see the effects.  There is a help file
-in text format.
+in text and html format and a man page.
 
 This was developed on a Fedora Core 6/7 linux system.  It requires
 libsndfile and libsamplerate.  If your distro does not provide them,
 go to http://www.mega-nerd.com for the latest versions.  The library
 libFLAC must be present for libsndfile to have FLAC capability.  If it
-was compiled without the library present and you try to use FLAC, it
-will abort with no indication of why. 
+was compiled without the library present and you try to use FLAC, discord
+will abort saying unable to open file.
 
 To unpack:
 tar -jxvf discord-1.#.#.tar.bz2
@@ -20,15 +20,7 @@ Change to the directory discord-1.#.#.
 To compile:
 ./mkd
 
-Output should look like:
-
-discord.c: In function ‘set_options':
-discord.c:1258: warning: ignoring return value of ‘realloc', declared with attribute warn_unused_result
-discord.c: In function ‘play_loop':
-discord.c:3887: warning: unused variable ‘pth_play'
-discord.c: In function ‘save_loop':
-discord.c:4020: warning: unused variable ‘checkval'
-discord.c:4014: warning: unused variable ‘pth_write'
+It should be a clean compile. 
 
 Install manually wherever you want it.  Single executable, discord.
 Alternatively, just run as ./discord.
@@ -42,13 +34,13 @@ If discord compiles fine but won't run, look at one of the alsa-lib
 workaround files included.  The html version is also available on the
 discord project web site at sourceforge.net.  The short explanation is
 that the alsa-lib version 1.0.14 final does not support floating point
-formats.  As that is the format that discord uses, discord will not work
-with alsa-lib 1.0.14.
+formats.  As doubles are the format that discord uses, discord will
+not work with alsa-lib 1.0.14.
 
 If you want to port to another architecture, the engine should work
 just fine.  However the dependencies on the sound system alsa will
 have to be replaced and the pthread calls will have to be changed to
-the threading model on the new platform.  They can optionally be
-removed as they are only scavenging a few cycles for sound creation,
-and under light usage will make no difference.  libsndfile and
-libsamplerate are compatible across multiple platforms.
+the threading model on the new platform.  Eliminating threading
+completely should also work under light usage (< 10 voices?) if your
+system is fast enough (> 500 MHz?).  libsndfile and libsamplerate are
+compatible across multiple platforms.

@@ -519,7 +519,8 @@ int fprint_voice (FILE *fp, void *this);
 void alsa_validate_device_and_rate ();
 static snd_pcm_t *alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime);
 static int alsa_write_double (snd_pcm_t *alsa_dev, double *data, int frames, int channels) ;
-void *alsa_write (void *call_parms); // version for threading
+void alsa_write (void *call_parms); // version for threading
+void file_write (void *call_parms); // version for threading
 static sf_count_t sample_rate_convert (SNDFILE *infile, SNDFILE *outfile, int converter, 
                                         double src_ratio, int channels, double * gain) ;
 static double apply_gain (float * data, long frames, int channels, double max, double gain) ;
@@ -1256,7 +1257,9 @@ set_options (saved_option *SO)
         else
         {
           size_t needbytes = strlen(compvals) + strlen(sow->option_string) + 2;
-          realloc(compvals, needbytes);
+          void *newmem = realloc(compvals, needbytes);
+          if (newmem == NULL)
+            error ("Unable to extend the compensate options string");
           strcat (compvals, sow->option_string);
           strcat (compvals, "'");  // ensure following separator
         }
@@ -3890,7 +3893,7 @@ play_loop ()
   int_64 remaining_frames = 0;
  	static double buffer [BUFFER_LEN] ;
  	//static int int_buffer [BUFFER_LEN] ;
- 	static double play_buffer [BUFFER_LEN] ;
+	static double play_buffer [BUFFER_LEN] ;
   int offset = 0, fade_start = 0, fade_length = 0;  // all in frames
 	snd_pcm_t *alsa_dev = NULL ;
   int channels = 2;  // always output stereo
@@ -3922,9 +3925,10 @@ play_loop ()
   pthread_attr_init (&attr_status);  // initialize attributes
   pthread_attr_setdetachstate (&attr_status, PTHREAD_CREATE_DETACHED);  // run detached
   snd1 = play_seq;  // start of voice sequence linked list
-  if (snd1 != NULL)
+  if (!opt_q && snd1 != NULL)  // not quiet, sound to display
   {
-    //status (snd1, stderr);
+      /* block until previous status operation complete, unlocked in status_t */
+    pthread_mutex_lock (&mtx_status);
     snd_point->snd1 = snd1;  // sound stream to status
     pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
   }
@@ -3973,21 +3977,19 @@ play_loop ()
       if (!opt_d)
       {
         sound_slice->frames = offset; // number of frames in buffer
-        pthread_mutex_lock (&mtx_play);  // block until previous play operation complete
+          /* block until previous play operation complete, unlocked in alsa_write */
+        pthread_mutex_lock (&mtx_play);  
         memcpy (play_buffer, buffer, sizeof(buffer));  // copy frames to play
             /* this create is non blocking, continue creating frames to play */
-        //pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
-        pthread_mutex_unlock (&mtx_play);  // release mutex so alsa_write can lock it
-        alsa_write_double (alsa_dev, play_buffer, offset, channels) ;
+        pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
       }
       display_frames += (fade_length * fast_mult);  // adjust display frames
-      if (display_frames >= display_count)  // time to display?
+      if (!opt_q && display_frames >= display_count)   // not quiet,  time to display
       {
-        pthread_mutex_lock (&mtx_status);  // block until previous status operation complete
+          /* block until previous status operation complete, unlocked in status_t */
+        pthread_mutex_lock (&mtx_status);
           /* this create is non blocking, continue creating frames to play */
         pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-        pthread_mutex_unlock (&mtx_status);   // release mutex so status_t can lock it
-        //status (snd1, stderr);
         display_frames = 0L;
       }
       offset = 0;
@@ -4030,6 +4032,8 @@ save_loop ()
   sfinfo.channels = 2;  // always write stereo
   sfinfo.format = outfile_format | bit_accuracy;  // e.g. flac and 32 bit
   int checkval = sf_format_check (&sfinfo);
+  if (checkval != SF_TRUE)
+    error ("Format and bit rate not supported by libsndfile");
   sndfile = sf_open (out_filename, SFM_WRITE, &sfinfo);
   if (!sndfile)
     error ("Couldn't open write file %s\n", out_filename);
@@ -4052,7 +4056,7 @@ save_loop ()
   pthread_attr_init (&attr_status);  // initialize attributes
   pthread_attr_setdetachstate (&attr_status, PTHREAD_CREATE_DETACHED);  // run detached
   snd1 = play_seq;  // start of voice sequence linked list
-  if (snd1 != NULL)
+  if (!opt_q && snd1 != NULL)  // not quiet, sound to display
   {
     //status (snd1, stderr);
     snd_point->snd1 = snd1;  // sound stream to status
@@ -4099,27 +4103,24 @@ save_loop ()
           fade_val += fade_incr * fast_mult;
         }
       }
-      display_frames += (fade_length * fast_mult);  // adjust display frames
-      if (display_frames >= display_count)  // time to display?
-      {
-        pthread_mutex_lock (&mtx_status);  // block until previous status operation complete
-          /* this create is non blocking, continue creating frames to write */
-        pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-        pthread_mutex_unlock (&mtx_status);   // release mutex so status_t can lock it
-        //status (snd1, stderr);
-        display_frames = 0L;
-      }
       snd1->cur_frames += (fade_length * fast_mult);  // adjust frames so far in this sound stream
       if (!opt_d)
       {
         sound_slice->frames = offset; // number of frames in buffer
-        pthread_mutex_lock (&mtx_write);  // block until previous write operation complete
+          /* block until previous write operation complete, released by file_write */
+        pthread_mutex_lock (&mtx_write);
         memcpy (write_buffer, buffer, sizeof(buffer));  // copy frames to write
             /* this create is non blocking, continue creating frames to write */
-        //pthread_create (&pth_write, &attr_write, (void *) &file_write, (void *) sound_slice);
-        pthread_mutex_unlock (&mtx_write);  // release mutex so file_write can lock it
-        /* writing from a double */
-        offset = sf_writef_double (sndfile, write_buffer, offset);
+        pthread_create (&pth_write, &attr_write, (void *) &file_write, (void *) sound_slice);
+      }
+      display_frames += (fade_length * fast_mult);  // adjust display frames
+      if (!opt_q && display_frames >= display_count)  // not quiet and time to display
+      {
+          /* block until previous status operation complete, released by status_t */
+        pthread_mutex_lock (&mtx_status);
+          /* this create is non blocking, continue creating frames to write */
+        pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
+        display_frames = 0L;
       }
       offset = 0;
     }
@@ -5144,12 +5145,7 @@ status_t (void *call_parms)
   void *this, *next;
   stub *stub1;
   static sndstream *prev = NULL;
-
   status_t_retval = 0;
-  if (opt_q)  // quiet
-    return &status_t_retval;
-
-  pthread_mutex_lock (&mtx_status);  // prevent main from calling while processing
 
   /* extract calling parameters from passed in structure */
   point_in_time *snd_point = (point_in_time *) call_parms;
@@ -5170,7 +5166,8 @@ status_t (void *call_parms)
   }
   prev = snd1;
   fflush (fp);
-  pthread_mutex_unlock (&mtx_status);  // allow main to call again
+  // allow main to call again, locked by caller
+  pthread_mutex_unlock (&mtx_status);
   return &status_t_retval;
 }
 
@@ -5528,377 +5525,6 @@ fprint_voice (FILE *fp, void *this)
   }
   return char_count;
 }
-
-//
-// Update a status line
-//
-
-void
-status (struct sndstream * snd1, FILE * fp)
-{
-  void *this, *next;
-  char buffer[8192];
-  char *p = buffer, *p0, *p1;
-  static sndstream *prev = NULL;
-  stub *stub1;
-
-  if (opt_q)  // quiet
-    return;
-
-  memset (buffer, 0x00, 8192);  // zero the buffer
-
-  p0 = p;                       // Start of line
-  sprintTime (&p);  // add the time
-  this = snd1->voices;  // point to first voice
-  while (this != NULL)
-  {
-    if (snd1 == prev)  // already seen
-      sprintVoice (&p, this);  // add each voice
-    else  // first time
-      sprintVoiceAll (&p, this);  // add each voice
-    stub1 = (stub *) this;
-    next = stub1->next;
-    this = next;
-  }
-  prev = snd1;
-  p1 = p;                       // End of line
-
-  fprintf (fp, "%s\n", buffer);
-  fflush (fp);
-}
-
-void
-sprintTime (char **p)
-{
-  time_t time_now, utc_secs;
-  struct tm *broken_time;
-
-  time_now = time(&utc_secs);  // seconds since Jan 1 1970 UTC
-#ifdef NOTDEFINED
-  char time_str[30];
-  ctime_r (&time_now, time_str);
-  *p += sprintf (*p, "%s", time_str);
-#endif
-  broken_time = localtime(&time_now);  // seconds broken into components
-  *p += sprintf (*p, "%02d:%02d:%02d\n", 
-                  broken_time->tm_hour, broken_time->tm_min, broken_time->tm_sec);
-}
-
-/* Print all the information from a voice to a string */
-void
-sprintVoiceAll (char **p, void *this)
-{
-  stub *stub1;
-
-  stub1 = (stub *) this;
-  switch (stub1->type)
-  {
-    case 0:
-      ;
-      break;
-    case 1:  // binaural
-      {
-        binaural *binaural1;
-
-        binaural1 = (binaural *) this;
-        *p += sprintf (*p, "   bin %.3f %+.3f %.3f", binaural1->carrier, binaural1->beat, AMP_DA (binaural1->amp));
-        *p += sprintf (*p, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
-        *p += sprintf (*p, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
-        *p += sprintf (*p, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
-        *p += sprintf (*p, " %d %d %d %d", binaural1->amp_inc1, binaural1->amp_off1, binaural1->amp_inc2, binaural1->amp_off2);
-        *p += sprintf (*p, " %.3e% .3e %.3e", binaural1->carr_adj, binaural1->beat_adj, binaural1->amp_adj);
-        *p += sprintf (*p, " %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
-        *p += sprintf (*p, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
-        *p += sprintf (*p, " %d\n", binaural1->slide);
-      }
-      break;
-    case 2:  // bell
-      {
-        bell *bell1;
-
-        bell1 = (bell *) this;
-        *p += sprintf (*p, "   bell %.3f %.3e %.3f", 
-                        bell1->carrier, AMP_DA (bell1->amp), bell1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
-                        bell1->split_begin, bell1->split_end, bell1->split_low, bell1->split_high);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (bell1->amp_min), AMP_DA (bell1->amp_max));
-        *p += sprintf (*p, " %lld %lld %lld %lld",
-                        bell1->length_min, bell1->length_max, bell1->repeat_min, bell1->repeat_max);
-        *p += sprintf (*p, " %d\n", bell1->behave);
-        *p += sprintf (*p, "        %d %d %lld %lld %lld",
-                        bell1->inc1, bell1->off1, bell1->next_play,
-                        bell1->sofar, bell1->ring);
-        *p += sprintf (*p, " %.3e %.3e\n",
-                        bell1->amp_adj, bell1->split_adj);
-        break;
-      }
-    case 3:  // noise
-      {
-        noise *noise1;
-
-        noise1 = (noise *) this;
-        *p += sprintf (*p, "   noise %.3f %.3e %.3f", 
-                        noise1->carrier, AMP_DA (noise1->amp), noise1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
-                        noise1->split_begin, noise1->split_end, noise1->split_low, noise1->split_high);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        noise1->carrier_min, noise1->carrier_max);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (noise1->amp_min), AMP_DA (noise1->amp_max));
-        *p += sprintf (*p, " %lld %lld %lld %lld ",
-                        noise1->length_min, noise1->length_max, noise1->repeat_min, noise1->repeat_max);
-        *p += sprintf (*p, " %d %d %d %lld %lld %lld",
-                        noise1->behave, noise1->behave_low, noise1->behave_high, noise1->next_play,
-                        noise1->sofar, noise1->play);
-        *p += sprintf (*p, " %.3e %.3e\n",
-                        noise1->amp_adj, noise1->split_adj);
-        break;
-      }
-    case 4:  // random
-      {
-        stoch *stoch1;
-
-        stoch1 = (stoch *) this;
-        *p += sprintf (*p, "   stoch %lld %d",
-                        stoch1->frames, stoch1->channels);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (stoch1->amp), stoch1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
-                        stoch1->split_begin, stoch1->split_end, stoch1->split_low, stoch1->split_high);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (stoch1->amp_min), AMP_DA (stoch1->amp_max));
-        *p += sprintf (*p, " %lld %lld",
-                        stoch1->repeat_min, stoch1->repeat_max);
-        *p += sprintf (*p, " %lld %lld %lld %lld",
-                        stoch1->next_play, stoch1->sofar, stoch1->off1, stoch1->play);
-        *p += sprintf (*p, " %.3e %d\n",
-                        stoch1->split_adj, stoch1->mono);
-        break;
-      }
-    case 5:  // sample
-      {
-        sample *sample1;
-
-        sample1 = (sample *) this;
-        *p += sprintf (*p, "   sample %lld %d",
-                        sample1->frames, sample1->channels);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (sample1->amp), sample1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
-                        sample1->split_begin, sample1->split_end, sample1->split_low, sample1->split_high);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (sample1->amp_min), AMP_DA (sample1->amp_max));
-        *p += sprintf (*p, " %lld %lld %lld %lld",
-                        sample1->size, sample1->sofar, sample1->off1, sample1->play);
-        *p += sprintf (*p, " %.3e %d\n",
-                        sample1->split_adj, sample1->mono);
-        break;
-      }
-    case 6:  // repeat
-      {
-        repeat *repeat1;
-
-        repeat1 = (repeat *) this;
-        *p += sprintf (*p, "   repeat %lld %d",
-                        repeat1->frames, repeat1->channels);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (repeat1->amp), repeat1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
-                        repeat1->split_begin, repeat1->split_end, repeat1->split_low, repeat1->split_high);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (repeat1->amp_min), AMP_DA (repeat1->amp_max));
-        *p += sprintf (*p, " %lld %lld %lld",
-                        repeat1->sofar, repeat1->off1, repeat1->play);
-        *p += sprintf (*p, " %.3e, %d\n",
-                        repeat1->split_adj, repeat1->mono);
-        break;
-      }
-    case 7:  // once
-      {
-        once *once1;
-
-        once1 = (once *) this;
-        *p += sprintf (*p, "   once %lld %d",
-                        once1->frames, once1->channels);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (once1->amp), once1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f",
-                        once1->split_begin, once1->split_end, once1->split_low, once1->split_high);
-        *p += sprintf (*p, " %.3f %.3f", 
-                        AMP_DA (once1->amp_min), AMP_DA (once1->amp_max));
-        *p += sprintf (*p, " %lld",
-                        once1->play_when);
-        *p += sprintf (*p, " %lld %lld %lld %lld",
-                        once1->next_play, once1->sofar, once1->off1, once1->play);
-        *p += sprintf (*p, " %.3e %d\n",
-                        once1->split_adj, once1->mono);
-        break;
-      }
-    case 8:  // chronaural
-      {
-        chronaural *chronaural1;
-
-        chronaural1 = (chronaural *) this;
-        *p += sprintf (*p, "   chron %.3f", chronaural1->carrier);
-        *p += sprintf (*p, " %.3f", chronaural1->amp_beat);
-        *p += sprintf (*p, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
-        *p += sprintf (*p, " %d", chronaural1->amp_behave);
-        *p += sprintf (*p, " %d %d", chronaural1->inc1, chronaural1->off1);
-        *p += sprintf (*p, " %d %d", chronaural1->inc2, chronaural1->off2);
-        *p += sprintf (*p, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
-        *p += sprintf (*p, " %.3f", chronaural1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f\n",
-                        chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        *p += sprintf (*p, "         %.3e", chronaural1->split_beat);
-        *p += sprintf (*p, " %.3e %.3e",
-                        chronaural1->split_beat_adj, chronaural1->split_adj);
-        *p += sprintf (*p, " %d\n", chronaural1->slide);
-        break;
-      }
-    case 9:  // binaural step slide
-    case 11:  // binaural step slide, even though doesn't have fuzz
-      {
-        binaural *binaural1;
-
-        binaural1 = (binaural *) this;
-        *p += sprintf (*p, "   bin %.3f %+.3f %.3f", binaural1->carrier, binaural1->beat, AMP_DA (binaural1->amp));
-        *p += sprintf (*p, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
-        *p += sprintf (*p, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
-        *p += sprintf (*p, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
-        *p += sprintf (*p, " %d %d %d %d", binaural1->amp_inc1, binaural1->amp_off1, binaural1->amp_inc2, binaural1->amp_off2);
-        *p += sprintf (*p, " %.3e% .3e %.3e\n", binaural1->carr_adj, binaural1->beat_adj, binaural1->amp_adj);
-        *p += sprintf (*p, "       %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
-        *p += sprintf (*p, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
-        *p += sprintf (*p, " %d", binaural1->slide);
-        *p += sprintf (*p, " %lld %lld", binaural1->tot_frames, binaural1->cur_frames);
-        *p += sprintf (*p, " %d %.2f %.1f\n", binaural1->steps, binaural1->slide_time, binaural1->fuzz);
-      }
-      break;
-    case 10:  // chronaural step slide
-    case 12:  // chronaural step slide, even though doesn't have fuzz
-      {
-        chronaural *chronaural1;
-
-        chronaural1 = (chronaural *) this;
-        *p += sprintf (*p, "   chron %.3f", chronaural1->carrier);
-        *p += sprintf (*p, " %.3f", chronaural1->amp_beat);
-        *p += sprintf (*p, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
-        *p += sprintf (*p, " %d", chronaural1->amp_behave);
-        *p += sprintf (*p, " %d %d", chronaural1->inc1, chronaural1->off1);
-        *p += sprintf (*p, " %d %d", chronaural1->inc2, chronaural1->off2);
-        *p += sprintf (*p, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
-        *p += sprintf (*p, " %.3f", chronaural1->split_now );
-        *p += sprintf (*p, " %.3f %.3f %.3f %.3f\n",
-                        chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        *p += sprintf (*p, "         %.3e", chronaural1->split_beat);
-        *p += sprintf (*p, " %.3e %.3e",
-                        chronaural1->split_beat_adj, chronaural1->split_adj);
-        *p += sprintf (*p, " %d", chronaural1->slide);
-        *p += sprintf (*p, " %lld %lld", chronaural1->tot_frames, chronaural1->cur_frames);
-        *p += sprintf (*p, " %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
-        break;
-      }
-    default:  // not known, do nothing
-      ;
-  }
-}
-
-/* Print selected information from a voice to a string */
-void
-sprintVoice (char **p, void *this)
-{
-  stub *stub1;
-
-  stub1 = (stub *) this;
-  switch (stub1->type)
-  {
-    case 0:
-      ;
-      break;
-    case 1:  // binaural
-    case 9:  // binaural step slide
-    case 11:  // binaural vary slide
-      {
-        binaural *binaural1;
-
-        binaural1 = (binaural *) this;
-        *p += sprintf (*p, "   bin %.3f   %+.3f   %.3f\n", 
-                      binaural1->carrier, binaural1->beat, AMP_DA (binaural1->amp * amp_comp (binaural1->carrier)));
-      }
-      break;
-    case 2:  // bell
-      {
-        bell *bell1;
-
-        bell1 = (bell *) this;
-        *p += sprintf (*p, "   bell %.3f   %.3e   %.3f\n", 
-                      bell1->carrier, AMP_DA (bell1->amp), bell1->split_now );
-        break;
-      }
-    case 3:  // noise
-      {
-        noise *noise1;
-
-        noise1 = (noise *) this;
-        *p += sprintf (*p, "   noise %.3f   %.3e   %.3f\n", 
-                      noise1->carrier, AMP_DA (noise1->amp * amp_comp (noise1->carrier)), noise1->split_now );
-        break;
-      }
-    case 4:  // random
-      {
-        stoch *stoch1;
-
-        stoch1 = (stoch *) this;
-        *p += sprintf (*p, "   stoch %lld   %lld   %.3f   %.3f\n", 
-                      stoch1->off1, stoch1->play, AMP_DA (stoch1->amp), stoch1->split_now );
-        break;
-      }
-    case 5:  // sample
-      {
-        sample *sample1;
-
-        sample1 = (sample *) this;
-        *p += sprintf (*p, "   sample %lld   %lld   %.3f   %.3f\n", 
-                      sample1->off1, sample1->play, AMP_DA (sample1->amp), sample1->split_now );
-        break;
-      }
-    case 6:  // repeat
-      {
-        repeat *repeat1;
-
-        repeat1 = (repeat *) this;
-        *p += sprintf (*p, "   repeat %lld   %lld   %.3f   %.3f\n", 
-                      repeat1->off1, repeat1->play, AMP_DA (repeat1->amp), repeat1->split_now );
-        break;
-      }
-    case 7:  // once
-      {
-        once *once1;
-
-        once1 = (once *) this;
-        *p += sprintf (*p, "   once %lld   %lld   %.3f   %.3f\n", 
-                      once1->off1, once1->play, AMP_DA (once1->amp), once1->split_now );
-        break;
-      }
-    case 8:  // chronaural
-    case 10:  // chronaural step slide
-    case 12:  // chronaural vary slide
-      {
-        chronaural *chronaural1;
-
-        chronaural1 = (chronaural *) this;
-        *p += sprintf (*p, "   chron %.3f", chronaural1->carrier);
-        *p += sprintf (*p, " %.3e", chronaural1->amp_beat);
-        *p += sprintf (*p, " %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
-        *p += sprintf (*p, " %.3f\n", chronaural1->split_now );
-        break;
-      }
-    default:  // not known, do nothing
-      ;
-  }
-}
-
 
 void
 error (char *fmt, ...)
@@ -6418,16 +6044,12 @@ catch_error :
 	return alsa_dev ;
 } /* alsa_open */
 
-/* Threaded version of alsa write function, args in passed structure */
-void *
+/* Threaded version of alsa write function, args in passed structure.
+ * Try to eliminate problem with alsa blocking failing using threads
+ * by calling an intermediate function. */
+void
 alsa_write (void *call_parms)
 {	
-  int epipe_count = 0 ;
-	snd_pcm_status_t *status ;
-	int total = 0 ;
-	int retval = 0 ;
-
-  pthread_mutex_lock (&mtx_play);  // prevent main from calling while processing
   /* extract calling parameters from passed structure */
   slice *sound_slice = (slice *) call_parms;
   snd_pcm_t *alsa_dev = sound_slice->alsa_dev;
@@ -6435,94 +6057,10 @@ alsa_write (void *call_parms)
   int frames = sound_slice->frames;
   int channels = sound_slice->channels;
 
-	if (epipe_count > 0)
-		epipe_count -- ;
+    /* send doubles to alsa-lib to translate to sound card format and play */
+  alsa_write_retval = alsa_write_double (alsa_dev, data, frames, channels) ;
 
-	while (total < frames)
-  {	
-    retval = snd_pcm_writei (alsa_dev, data + total * channels, frames - total) ;
-
-		if (retval >= 0)
-		{	total += retval ;
-			if (total == frames)
-      {
-        pthread_mutex_unlock (&mtx_play);  // allow main to call again
-        alsa_write_retval = total;
-				return &alsa_write_retval ;
-      }
-      printf ("alsa_write: partial write %d\n", retval) ;
-			continue ;
-    } ;
-
-		switch (retval)
-		{	case -EAGAIN :
-					puts ("alsa_write: EAGAIN  - buffer full") ;
-					continue ;
-					break ;
-
-			case -EPIPE :
-					if (epipe_count > 0)
-					{	printf ("alsa_write: EPIPE xrun %d\n", epipe_count) ;
-						if (epipe_count > 140)
-            {
-              pthread_mutex_unlock (&mtx_play);  // allow main to call again
-              return &alsa_write_retval ;
-            }
-          } ;
-					epipe_count += 100 ;
-
-					if (0)
-					{	snd_pcm_status_alloca (&status) ;
-						if ((retval = snd_pcm_status (alsa_dev, status)) < 0)
-							fprintf (stderr, "alsa_out: xrun. can't determine length\n") ;
-						else if (snd_pcm_status_get_state (status) == SND_PCM_STATE_XRUN)
-						{	struct timeval now, diff, tstamp ;
-
-							gettimeofday (&now, 0) ;
-							snd_pcm_status_get_trigger_tstamp (status, &tstamp) ;
-							timersub (&now, &tstamp, &diff) ;
-
-							fprintf (stderr, "alsa_write xrun: of at least %.3f msecs. resetting stream\n",
-									diff.tv_sec * 1000 + diff.tv_usec / 1000.0) ;
-            }
-						else
-							fprintf (stderr, "alsa_write: xrun. can't determine length\n") ;
-          } ;
-
-					snd_pcm_prepare (alsa_dev) ;
-					break ;
-
-			case -EBADFD :
-					fprintf (stderr, "alsa_write: Bad PCM state.n") ;
-          pthread_mutex_unlock (&mtx_play);  // allow main to call again
-					alsa_write_retval = 0;
-          return &alsa_write_retval ;
-					break ;
-
-			case -ESTRPIPE :
-					fprintf (stderr, "alsa_write: Suspend event.n") ;
-          pthread_mutex_unlock (&mtx_play);  // allow main to call again
-					alsa_write_retval = 0;
-          return &alsa_write_retval ;
-					break ;
-
-			case -EIO :
-					puts ("alsa_write: EIO") ;
-          pthread_mutex_unlock (&mtx_play);  // allow main to call again
-					alsa_write_retval = 0;
-          return &alsa_write_retval ;
-
-			default :
-					fprintf (stderr, "alsa_write: retval = %d\n", retval) ;
-          pthread_mutex_unlock (&mtx_play);  // allow main to call again
-					alsa_write_retval = 0;
-          return &alsa_write_retval ;
-					break ;
-    } ; /* switch */
-  } ; /* while */
-  pthread_mutex_unlock (&mtx_play);  // allow main to call again
-	alsa_write_retval = total ;
-  return &alsa_write_retval ;
+  pthread_mutex_unlock (&mtx_play);  // allow main to call again, locked in play_loop
 } /* alsa_write */
 
 static int
@@ -6604,6 +6142,25 @@ alsa_write_double (snd_pcm_t *alsa_dev, double *data, int frames, int channels)
   } ; /* while */
 	return total ;
 } /* alsa_write_double */
+
+/* Simpler threaded version of file write function, args in passed structure.
+ * Try to eliminate problem with alsa blocking failing using threads
+ * by calling an intermediate function. */
+void
+file_write (void *call_parms)
+{	
+  /* extract calling parameters from passed structure */
+  slice *sound_slice = (slice *) call_parms;
+  SNDFILE * sndfile = sound_slice->sndfile;
+  double *write_buffer = sound_slice->buffer;
+  int offset = sound_slice->frames;
+
+        /* writing from a double */
+  offset = sf_writef_double (sndfile, write_buffer, offset);
+
+  // allow main to call again, locked by save_loop
+  pthread_mutex_unlock (&mtx_write);
+} /* alsa_write */
 
 long
 check_samplerate (char *inname)
