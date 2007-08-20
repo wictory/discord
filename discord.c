@@ -4130,6 +4130,7 @@ save_loop ()
     if (snd1 == NULL)
       break;  // finished all time periods, out of the loop
   }
+  sleep (1);  // allows writing thread to finish before shutdown
   sf_close (sndfile);
 }
 
@@ -4142,6 +4143,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
   int channels = 2;  // always output stereo
   stub *stub1;
   void *this, *next;
+  int_64 remaining_frames = snd1->tot_frames - snd1->cur_frames;
 
   for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
   {  // zero out the sound to be in the buffer
@@ -4248,6 +4250,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
 //                           (bell1->repeat_max - bell1->repeat_min));
                 bell1->next_play = bell1->repeat_min + delta;      // frames to next bell
               }
+              if ((remaining_frames - bell1->next_play) < bell1->length_min )  // never run past end of voice
+              {
+                bell1->next_play = remaining_frames + 1;
+              }
               if (bell1->length_max == bell1->length_min)
               {                   // fixed ring time
                 bell1->ring = bell1->length_min;
@@ -4257,6 +4263,13 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 long delta =
                   (long) ( (drand48 ()) * (bell1->length_max - bell1->length_min));
                 bell1->ring = bell1->length_min + delta;      // frames to ring
+              }
+              if (bell1->ring > remaining_frames)  // never run past end of voice
+              {
+                if (bell1->ring > bell1->length_min)
+                  bell1->ring = remaining_frames;
+                else
+                  bell1->ring = 0LL;
               }
               if (bell1->amp_max == bell1->amp_min)
               {                   // fixed amp
@@ -4296,7 +4309,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 split_end = bell1->split_end;      // fixed ending split
               bell1->split_adj = (split_end - bell1->split_now) / bell1->ring;  // adjust per frame
             }
-            if (bell1->ring > 0L)
+            if (bell1->ring > 0LL)
             {
               bell1->inc1 = (int) round( bell1->carrier * 2.);
               //bell1->inc1 = (int) round(( (bell1->carrier * (out_rate * 2)) / out_rate) * fast_mult);
