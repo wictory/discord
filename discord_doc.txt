@@ -217,6 +217,15 @@
       --rate=44100 
       -r 96000
 
+  -t, --thread
+
+    use nonblocking thread to play sound instead of a blocking
+    function call.  This allows more throughput, but because the
+    thread runs with user priority, during heavy cpu usage it can
+    result in breaks in the sound while other tasks block it.  The
+    blocking function call is more robust in this situation.  Under
+    light usage, either is fine.  This does not affect the threads
+    used for writing a file or displaying the status while running.
 
   -w, --write
 
@@ -525,17 +534,13 @@ QUESTIONS AND ANSWERS
 
   Q  Do the exact frequencies matter?
 
-  A  In my opinion they do not.  To put the question another way, is
-  there a beat frequency, say 3.14159, that if anyone entrains to it
-  they will instantly be transported to the Thetan home world
-  Calandus, occupying the body of a Botak fighting dragon?  I don't
-  think so.  Because everyone is unique, the specific frequencies that
-  give someone else an effect might not have the same effect for you.
-  General frequency ranges do correspond with similar effects in
-  different people, so I think it is better to experience many
-  different frequencies in a range.  That is why there is randomness
-  available in the voices.  You never have to listen to the same
-  sequence twice, though you can.
+  A  In my opinion they do not.  Because everyone is unique, the
+  specific frequencies that give someone else an effect might not have
+  the same effect for you.  General frequency ranges do correspond
+  with similar effects in different people, so I think it is better to
+  experience many different frequencies in a range.  That is why there
+  is randomness available in the voices.  You never have to listen to
+  the same sequence twice, though you can.
 
   Q  Does it matter when you listen to the beats?
 
@@ -580,9 +585,9 @@ QUESTIONS AND ANSWERS
   memories that haven't been accessed recently and trigger the brain
   to create new neuronal links.  By accessing old memories through new
   pathways and creating new pathways for processing you alter the
-  emotional content and perceived meaning of memories and allow your
-  brain to integrate those memories differently.  This also increases
-  the processing power of your brain and makes it/you more flexible.
+  emotional content of memories and allow your brain to integrate
+  those memories differently.  This also increases the processing
+  power of your brain and makes it/you more flexible.
 
   Q  Is there a best way to do this?
 

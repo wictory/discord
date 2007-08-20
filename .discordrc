@@ -116,6 +116,13 @@
 #-r 96000
 #-r 192000
 #
+#      case 't':                // thread, use thread to play sound instead of a blocking function call
+#                                  This allows slightly more throughput but is more susceptible to 
+#                                  sound breakage under heavy cpu use.  Does not affect file write
+#                                  or status display threads.
+#--thread
+#-t
+#
 #      case 'w':  // write to file instead of the default, playing via the sound card
 #--write=mindblowing.wav  # same as ./mindblowing.wav, will write in current directory
 #-w  /home/clover/discord/mindblowing.flac

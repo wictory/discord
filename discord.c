@@ -140,6 +140,7 @@ int outfile_format = SF_FORMAT_FLAC; // default to flac if not specified otherwi
 int opt_q;                      // quiet run, no display of sequence
 int opt_r;                      // samples per second requested
 int out_rate = 44100;           // samples per second, default to cd standard
+int opt_t;                      // use thread to play sound instead of blocking function call
 int opt_w;                      // write file instead of sound
 char *out_filename;           // write file instead of sound
 const char *separators = "='|,;";  // separators for time sequences, mix and match, multiples ok
@@ -637,7 +638,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "a:b:c:de:f:hko:qr:w:";
+  const char *ostr = "a:b:c:de:f:hko:qr:tw:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -654,6 +655,7 @@ parse_argv_options (int argc, char **argv)
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
+      {"thread", 0, 0, 't'},
       {"write", 1, 0, 'w'},
       {0, 0, 0, 0}
     };
@@ -687,6 +689,7 @@ parse_argv_options (int argc, char **argv)
       case 'o':
       case 'q':
       case 'r':
+      case 't':
       case 'w':
         soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
         soh->next = NULL;
@@ -758,7 +761,7 @@ parse_argv_configs (int argc, char **argv)
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hko:qr:w:";
+  const char *ostr = "a:b:c:de:f:hko:qr:tw:";
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -778,6 +781,7 @@ append_options (saved_option **SO, char *config_options)
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
+      {"thread", 0, 0, 't'},
       {"write", 1, 0, 'w'},
       {0, 0, 0, 0}
     };
@@ -820,9 +824,9 @@ append_options (saved_option **SO, char *config_options)
       {
         if (strcasecmp (long_options[long_idx].name, subtoken) == 0)
         {
+          sow->option = long_options[long_idx].val;    // assign short option
           if (long_options[long_idx].has_arg == 1)      // has argument
           {
-            sow->option = long_options[long_idx].val;    // assign short option
             subtoken = strtok_r (str2, "=", &saveptr2);
             if (subtoken != NULL)       // = form of arg assignment
               sow->option_string = StrDup (subtoken);
@@ -1339,6 +1343,9 @@ set_options (saved_option *SO)
         if (errno != 0)
           error ("Expecting an integer after --rate/-r");
         break;
+      case 't':                // thread sound play
+        opt_t = 1;
+        break;
       case 'w':  // write to file
         opt_w = 1;
         if (sow->option_string != NULL)
@@ -1526,6 +1533,7 @@ help ()
           "          -o --outfile      Output data to the given file instead of playing"NL
           "          -q --quiet        Don't display running status"NL
           "          -r --rate         Select the output rate (default is 44100 Hz)"NL
+          "          -t --thread       Use thread to play sound instead of blocking function call"NL
           "          -w --write        Write an output file instead of playing through sound card"NL);
   exit (0);
 }
@@ -3976,12 +3984,18 @@ play_loop ()
       snd1->cur_frames += (fade_length * fast_mult);  // adjust frames so far in this sound stream
       if (!opt_d)
       {
-        sound_slice->frames = offset; // number of frames in buffer
-          /* block until previous play operation complete, unlocked in alsa_write */
-        pthread_mutex_lock (&mtx_play);  
-        memcpy (play_buffer, buffer, sizeof(buffer));  // copy frames to play
-            /* this create is non blocking, continue creating frames to play */
-        pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
+        if (opt_t)  // use thread to play
+        {
+          sound_slice->frames = offset; // number of frames in buffer
+            /* block until previous play operation complete, unlocked in alsa_write */
+          pthread_mutex_lock (&mtx_play);  
+          memcpy (play_buffer, buffer, sizeof(buffer));  // copy frames to play
+              /* this create is non blocking, continue creating frames to play */
+          pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
+        }
+        else  // blocking function call
+            /* send doubles to alsa-lib to translate to sound card format and play */
+          alsa_write_retval = alsa_write_double (alsa_dev, buffer, offset, channels) ;
       }
       display_frames += (fade_length * fast_mult);  // adjust display frames
       if (!opt_q && display_frames >= display_count)   // not quiet,  time to display
