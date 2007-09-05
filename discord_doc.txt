@@ -612,8 +612,6 @@ BUGS
   Error checking is not robust on the input parameters in the
   script file.
   
-  Doesn't follow standard ./configure, make, make install format.
-
   Have to use Control-C to end the program while it is running.
 
 AUTHOR

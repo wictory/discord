@@ -6,11 +6,18 @@ with changing the variables to see the effects.  There is a help file
 in text and html format and a man page.
 
 This was developed on a Fedora Core 6/7 linux system.  It requires
-libsndfile and libsamplerate.  If your distro does not provide them,
-go to http://www.mega-nerd.com for the latest versions.  The library
-libFLAC must be present for libsndfile to have FLAC capability.  If it
-was compiled without the library present and you try to use FLAC, discord
-will abort saying unable to open file.
+libsndfile and libsamplerate.  Both the library and the development
+package that includes the header files have to be installed.  If your
+distro does not provide them, go to http://www.mega-nerd.com for the
+latest versions.  The library libFLAC must be present for libsndfile
+to have FLAC capability.  If it was compiled without the library
+present and you try to use FLAC, discord will abort saying unable to
+open file.  The beta of libsndfile 1.0.18 provides built in FLAC
+support, but you will need Octave installed to run it.  If you 
+cannot get FLAC to work you can always use wav and then convert it 
+to FLAC using sox or audacity.
+
+discord now uses the standard GNU autotools mechanism to install.
 
 To unpack:
 tar -jxvf discord-1.#.#.tar.bz2
@@ -18,29 +25,34 @@ tar -jxvf discord-1.#.#.tar.bz2
 Change to the directory discord-1.#.#.
 
 To compile:
-./mkd
+
+./configure
+
+make
+
+su make install
+
+exit
 
 It should be a clean compile. 
 
-Install manually wherever you want it.  Single executable, discord.
-Alternatively, just run as ./discord.
+If you install with the default prefix, all of the discord information
+will be in directory /usr/local/share/discord.  The binary will be in
+/usr/local/bin and the man page in /usr/local/share/man/man1.
 
-A sample configuration file called .discordrc is provided for your
+A sample configuration file called discordrc is provided for your
 $HOME directory.  It allows you to have minimal script files, just the
 sequences, if you want, using the options from the configuration file
-to play.  
+to play. Copy it to your home directory as .discordrc and tune to your
+satisfaction. 
 
 If discord compiles fine but won't run, look at one of the alsa-lib
 workaround files included.  The html version is also available on the
 discord project web site at sourceforge.net.  The short explanation is
 that the alsa-lib version 1.0.14 final does not support floating point
 formats.  As doubles are the format that discord uses, discord will
-not work with alsa-lib 1.0.14.
+not work with alsa-lib 1.0.14.  
 
-If you want to port to another architecture, the engine should work
-just fine.  However the dependencies on the sound system alsa will
-have to be replaced and the pthread calls will have to be changed to
-the threading model on the new platform.  Eliminating threading
-completely should also work under light usage (< 10 voices?) if your
-system is fast enough (> 500 MHz?).  libsndfile and libsamplerate are
-compatible across multiple platforms.
+There can also be issues with OSS based sound servers as they don't
+allow other applications to run.  In this case discord will fall
+back to the default plugin using its fixed frame rate of 48000.

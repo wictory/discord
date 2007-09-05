@@ -77,11 +77,6 @@
 ** Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
 */
 
-
-
-#define VERSION "1.0.5"
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5614,7 +5609,8 @@ StrDup (char *str)
 *	Determine whether the audio_device supports the requested rate in hardware.
 * If it doesn't, set the rate to nearest hardware rate supported.  This will 
 * allow the generate_frames and resample function to use the correct
-* rate before we open the sound card.
+* rate before we open the sound card.  If plughw cannot be opened use the
+* default device at a frame rate of 48000, the fixed rate of dmix.
 */
 
 void
@@ -5698,18 +5694,25 @@ alsa_validate_device_and_rate ()
     if (!opt_q)  // not quiet
       fprintf (stderr, "Plughw  %s  numchars %d\n", hw_from_default, numchars);
     /*  Now reopen and get feasible hardware parameters with plughw instead of default.
-     *  This will allow bypassing dmix in order to set higher rates than 48000.
+     *  This will allow bypassing dmix in order to set rates other than 48000.
      */
     err = snd_pcm_open (&alsa_dev, hw_from_default, SND_PCM_STREAM_PLAYBACK, 0);
     if (err < 0)
     {	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", hw_from_default, snd_strerror (err)) ;
-      goto catch_error ;
+      fprintf (stderr, "Using default device at 48000 frame rate\n") ;
+      samplerate = out_rate = 48000;  // set rate to dmix rate
+      strcpy (hw_from_default, default_device);  // set the device to default
+      err = snd_pcm_open (&alsa_dev, default_device, SND_PCM_STREAM_PLAYBACK, 0);  // open default device
+      if (err < 0)
+      {	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", device_to_use, snd_strerror (err)) ;
+        goto catch_error ;
       } ;
+    } ;
 
     //snd_pcm_nonblock (alsa_dev, 0) ;  // 0 means block, 1 means nonblock, 0 is default
     snd_pcm_info_free (info_params) ;  // done with info
-    /* Now that the default plughw device opened successfully,
-     * pretend that the default plughw device was given 
+    /* Now that the default or plughw device opened successfully,
+     * pretend that the default or plughw device was given 
      * as -a / --audio_device option so alsa_open can use it directly
      * and opens the same device that the rate came from */
     opt_a = 1;
