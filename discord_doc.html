@@ -399,16 +399,22 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
     vary slide
 </PRE>
 
-<P>  Fields for <STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG> are name, carrier, amplitude, amplitude beat,
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG> 
+  are name, carrier, amplitude, amplitude beat,
   amplitude fraction, amplitude behave, beginning split, ending split,
   lowest split allowed, highest split allowed, split beat, and slide.
   Amplitude beat is the frequency through time of the carrier tone.
-  Amplitude fraction is the value the sin function has to have before
-  the tone is played.  Behavior for amp beat is as follows:
+  Amplitude fraction is the value the sin function has to have
+  before the tone is played, [0.0, 1.0).  The closer this is to 1.0, the
+  shorter the tone will be.  There is a twenty-five frame fade in and
+  fade out on all chronaural tones to prevent crackle in the sound
+  stream so you cannot use an amplitude fraction such that the length of
+  the tone is less than fifty frames or it will not sound. .e.g 1.0
+  Behavior for amp beat is as follows:
 
-<P>  1 sin wave  tone is adjusted by sin value <BR>
-  2 square wave  tone is either on or off <BR>
-  3 dirac delta approximation  power of sin 
+<P>  1 sin wave - tone is multiplied by sin value <BR>
+  2 square wave - tone is either on or off <BR>
+  3 dirac delta approximation - tone is multiplied by fifth power of sin 
 
 <P>  If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.  Split beat is the frequency

@@ -1,4 +1,4 @@
-.TH DISCORD 1 "05 Sept 2007"
+.TH DISCORD 1 "22 October 2007"
 .SH NAME
 discord \- Generate binaural and chronaural tones to soundcard or
 file for use in brain wave entrainment.
@@ -354,16 +354,23 @@ Examples
 .br        
   vary slide
 
-Fields for \fBchronaural\fP are name, carrier, amplitude, amplitude beat,
-amplitude fraction, amplitude behave, beginning split, ending split,
-lowest split allowed, highest split allowed, split beat, and slide.
-Amplitude beat is the frequency through time of the carrier tone.
-Amplitude fraction is the value the sin function has to have before
-the tone is played.  Behavior for amp beat is as follows:
+Fields for \fBchronaural\fP are name, carrier, amplitude, amplitude
+beat, amplitude fraction, amplitude behave, beginning split, ending
+split, lowest split allowed, highest split allowed, split beat, and
+slide.  Amplitude beat is the frequency through time of the carrier
+tone.  Amplitude fraction is the value the sin function has to have
+before the tone is played, [0.0, 1.0).  The closer this is to 1.0, the
+shorter the tone will be.  There is a twenty-five frame fade in and
+fade out on all chronaural tones to prevent crackle in the sound
+stream so you cannot use an amplitude fraction such that the length of
+the tone is less than fifty frames or it will not sound. .e.g 1.0
+Behavior for amp beat is as follows:
 
-1 sin wave  tone is adjusted by sin value 
-2 square wave  tone is either on or off 
-3 dirac delta approximation  power of sin 
+1 sin wave - tone is multiplied by sin value
+.br
+2 square wave - tone is either on or off
+.br
+3 dirac delta approximation - tone is multiplied by fifth power of sin 
 
 If beginning split or ending split are -1, they are set randomly
 between lowest split and highest split.  Split beat is the frequency
@@ -397,9 +404,13 @@ allowed to ring, minimum time till next ring, maximum time till next
 ring, and decay pattern for the ring, 1 through 5.  
 
 1 decrease linearly to 0 
+.br
 2 decrease linearly to .5, 
+.br
 3 constant, 
+.br
 4 increase linearly to 1.1 
+.br
 5 decrease quadratically to 0  (this is the most natural sounding)
 
 The minimum and maximum time till next play are relative to the
@@ -426,13 +437,21 @@ pattern for the play, 1 through 5.  maximum decay pattern for the
 play, 1 through 5, and the number of repeats.  
 
 1 decrease linearly to 0 
+.br
 2 decrease linearly to .5, 
+.br
 3 constant, 
+.br
 4 increase linearly to 1.1 
+.br
 5 decrease linearly  to 1.25 
+.br
 6 increase sinusoidally from .25 to 1.25 and back down to .25
+.br
 7 decrease sinusoidally from 1.0 to 0.5 and back up to 1.0
+.br
 8-14 same as above with 10% drop in carrier frequency while playing
+.br
 15-21 same as above with 10% rise in carrier frequency while playing
 
 If beginning split or ending split are -1, they are set randomly

@@ -13,9 +13,14 @@ latest versions.  The library libFLAC must be present for libsndfile
 to have FLAC capability.  If it was compiled without the library
 present and you try to use FLAC, discord will abort saying unable to
 open file.  The beta of libsndfile 1.0.18 provides built in FLAC
-support, but you will need Octave installed to run it.  If you 
-cannot get FLAC to work you can always use wav and then convert it 
-to FLAC using sox or audacity.
+support.  If you cannot get FLAC to work you can always use wav and
+then convert it to FLAC using sox or audacity.
+
+In additon, there are API issues between libsndfile 1.0.17 and libFLAC
+>= 1.1.3.  Succinctly, the libFLAC API changed and the changes are not
+reflected in libsndfile.  Discord will still link but there will be no
+FLAC available.  On the website are links to a patch I created to make
+libsndfile work with newer versions of libFLAC.
 
 discord now uses the standard GNU autotools mechanism to install.
 
@@ -34,7 +39,8 @@ su make install
 
 exit
 
-It should be a clean compile. 
+It should be a clean compile.   If there are lots of issues, use the
+command autoreconf to rebuild the configure file and try again.
 
 If you install with the default prefix, all of the discord information
 will be in directory /usr/local/share/discord.  The binary will be in
@@ -51,8 +57,18 @@ workaround files included.  The html version is also available on the
 discord project web site at sourceforge.net.  The short explanation is
 that the alsa-lib version 1.0.14 final does not support floating point
 formats.  As doubles are the format that discord uses, discord will
-not work with alsa-lib 1.0.14.  
+not work with alsa-lib 1.0.14. This should not be an issue now that
+alsa-lib 1.0.15 has been released.
+
+If discord has to resample files you need to run it from a directory
+where you have write permission.  The resample creates a resampled
+file, reads it into memory, and then removes it unless you have 
+explicitly asked for it to be kept.  At some point I might convert 
+this to use /tmp when the -k/--keep option is not selected or do
+the conversion in memory.
 
 There can also be issues with OSS based sound servers as they don't
-allow other applications to run.  In this case discord will fall
-back to the default plugin using its fixed frame rate of 48000.
+allow other applications to run.  In this case discord will fall back
+to the default plugin using its fixed frame rate of 48000.  I have had
+problems with esd in this regard.  Try "esdctl off" if you can't get
+the hardware rate you want.

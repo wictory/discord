@@ -415,7 +415,7 @@ struct chronaural
 {
   void *prev;
   void *next;
-  int type;                 // 8 or 10 for chronaural step slide, 12 for vary
+  int type;                 // 8, or 10 for chronaural step slide, 12 for vary
   double carrier;               // Carrier freq
   double amp;   // Amplitude level 0-100%, stored as decimal. i.e. .06
   double amp_beat;   // Amplitude variation frequency
@@ -444,6 +444,9 @@ struct chronaural
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
+  double fade_factor;  // current fade in or fade out multiplier
+  double fade_sinval;  // sinval where fade in ended and at which to start fade out (sine is symmetric)
+  int fade_frame;  // frame we are at in the fade, probably use 25 frames, 4% change per frame.
 } ;
 
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
@@ -2888,7 +2891,7 @@ setup_chronaural (char *token, void **work)
   errno = 0;
   if (subtoken != NULL && strcmp (subtoken, ">") == 0)
     chronaural1->slide = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
+  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there a step slide, no amp variation
   {
     chronaural1->type = 10;  // chronaural step slide
     chronaural1->slide = 2;  // chronaural step slide
@@ -2923,7 +2926,7 @@ setup_chronaural (char *token, void **work)
     }
     chronaural1->fuzz = AMP_AD(fuzz);
   }
-  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
+  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there a vary, no amp variation
   {
     chronaural1->type = 12;  // chronaural vary slide
     chronaural1->slide = 3;  // chronaural vary slide
@@ -3835,7 +3838,7 @@ process_sound_file (char *filename)
   else
     error ("Import sound file %s has incorrect number of channels %d\n", 
             filename, sfinfo.channels);
-  num_frames = sf_seek (sndfile, 0, SEEK_END);
+  num_frames = sfinfo.frames;
   sb1->frames = num_frames;
   sb1->sound = (short *) Alloc ((sizeof (short)) * num_frames * sfinfo.channels);
   sf_seek (sndfile, 0, SEEK_SET);
@@ -4856,6 +4859,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           if (chronaural1->first_pass)
           {
             chronaural1->first_pass = 0;  // now active
+            chronaural1->fade_factor = 0.0; // set fade to start fade in
+            chronaural1->fade_frame = 0;  // ready to begin fade in 
+            chronaural1->fade_sinval = -2.0;  // negative value as flag to start fade in
             if (chronaural1->last_off1 != NULL)  // there *is* a previous offset to use
               chronaural1->off1 = *chronaural1->last_off1;  // to eliminate crackle from discontinuity in wave
             if (chronaural1->last_off2 != NULL)  // there *is* a previous offset to use
@@ -4867,7 +4873,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             chronaural1->off2 += chronaural1->inc2;  // offset for beat frequency into sin table
             chronaural1->off2 = chronaural1->off2 % (out_rate * 2);  // mod to wrap offset
             sinval = sin_table [chronaural1->off2];  // sin val at current amp_beat point
-            if (sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
+            if (sinval >= 0.0 && sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
             {
               freq1 = chronaural1->carrier;
               if (opt_c)  // compensate
@@ -4879,22 +4885,59 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               chronaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
               chronaural1->off1 += chronaural1->inc1;
               chronaural1->off1 = chronaural1->off1 % (out_rate * 2);
+              /* Set up a 25 frame fade in and fade out to stop click at start and end */
+              if (chronaural1->fade_sinval < 0.0)  // fade in
+              {
+                if (chronaural1->fade_frame < 25)  // active fade
+                {
+                  chronaural1->fade_factor += 0.04; // adjust fade up
+                  chronaural1->fade_frame += 1;
+                }
+                else  // at end of fade in
+                {
+                  chronaural1->fade_factor = 1.0; // set fade to start fade out, regular play
+                  chronaural1->fade_frame = 0;  // reset
+                  /* sin value to start fade out at, one frame more than end of fade in
+                   * to allow for fuzz in floating point arithmetic. */
+                  chronaural1->fade_sinval = sinval;  
+                }
+              }
+              else if (sinval <= chronaural1->fade_sinval)  // fade out
+              {
+                if (chronaural1->fade_frame < 25)  // active fade out
+                {
+                  chronaural1->fade_factor -= 0.04; // adjust fade down
+                  chronaural1->fade_frame += 1;
+                }
+              }
               if (chronaural1->amp_behave == 1)  // sin wave, adjust by sin value
               {
-                out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * sin_table[chronaural1->off1]);
-                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
               }
               else if (chronaural1->amp_behave == 2)      // square wave, full volume
               {
-                out_buffer[ii] += (chronaural1->split_now * amp1 * sin_table[chronaural1->off1]);
-                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
               }
               else if (chronaural1->amp_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval, 5.); // quint the sin to make pseudo dirac
-                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * sin_table[chronaural1->off1]);
-                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
               }
+            }
+            else if (sinval < chronaural1->amp_fraction && chronaural1->fade_frame != 0) 
+            { /* chronaural tone has ended for this pass, make sure ready for fade in at start of next play */
+              chronaural1->fade_factor = 0.0; // set fade to start fade in
+              chronaural1->fade_frame = 0;  // reset
+              chronaural1->fade_sinval = -2.0;  // negative value as flag to start fade in
             }
             chronaural1->split_now += chronaural1->split_adj * fast_mult;
             if (chronaural1->split_beat == 0.0 && chronaural1->split_beat_adj == 0.0)
@@ -4928,7 +4971,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               /* Adjust the split beat and split adjust.  Second difference equation. */
               chronaural1->split_beat += (chronaural1->split_beat_adj * fast_mult);
-              double sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
+              double sign_adjust = 1.0;  // default to positive when split_adj == 0.0
+              if (chronaural1->split_adj != 0.0)
+                sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
               chronaural1->split_adj = fabs(chronaural1->split_adj) 
                                             + (chronaural1->split_beat_adj * (2.* split_dist) / (double) out_rate);  
               chronaural1->split_adj *= sign_adjust;
@@ -5056,6 +5101,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (chronaural1->first_pass)
             {
               chronaural1->first_pass = 0;  // now active
+              chronaural1->fade_factor = 0.0; // set fade to start fade in
+              chronaural1->fade_frame = 0;  // ready to begin fade in 
+              chronaural1->fade_sinval = -2.0;  // negative value as flag to start fade in
               if (chronaural1->last_off1 != NULL)  // there *is* a previous offset to use
                 chronaural1->off1 = *chronaural1->last_off1;  // to eliminate crackle from discontinuity in wave
               if (chronaural1->last_off2 != NULL)  // there *is* a previous offset to use
@@ -5065,7 +5113,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             chronaural1->off2 += chronaural1->inc2;  // offset for beat frequency into sin table
             chronaural1->off2 = chronaural1->off2 % (out_rate * 2);  // mod to wrap offset
             sinval = sin_table [chronaural1->off2];  // sin val at current amp_beat point
-            if (sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
+            if (sinval >= 0.0 && sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
             {
               freq1 = chronaural1->carrier;
               if (opt_c)  // compensate
@@ -5077,22 +5125,59 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               chronaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
               chronaural1->off1 += chronaural1->inc1;
               chronaural1->off1 = chronaural1->off1 % (out_rate * 2);
+              /* Set up a 25 frame fade in and fade out to stop click at start and end */
+              if (chronaural1->fade_sinval < 0.0)  // in fade in
+              {
+                if (chronaural1->fade_frame < 25)  // active fade
+                {
+                  chronaural1->fade_factor += 0.04; // adjust fade up
+                  chronaural1->fade_frame += 1;
+                }
+                else  // at end of fade in
+                {
+                  chronaural1->fade_factor = 1.0; // set fade to start fade out, regular play
+                  chronaural1->fade_frame = 0;  // reset
+                  /* sin value to start fade out at, one frame more than end of fade in
+                   * to allow for fuzz in floating point arithmetic. */
+                  chronaural1->fade_sinval = sinval;  
+                }
+              }
+              else if (sinval <= chronaural1->fade_sinval)  // in fade out
+              {
+                if (chronaural1->fade_frame < 25)  // in fade out
+                {
+                  chronaural1->fade_factor -= 0.04; // adjust fade down
+                  chronaural1->fade_frame += 1;
+                }
+              }
               if (chronaural1->amp_behave == 1)  // sin wave, adjust by sin value
               {
-                out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * sin_table[chronaural1->off1]);
-                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
               }
               else if (chronaural1->amp_behave == 2)      // square wave, full volume
               {
-                out_buffer[ii] += (chronaural1->split_now * amp1 * sin_table[chronaural1->off1]);
-                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
               }
               else if (chronaural1->amp_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval, 5.); // quint the sin to make pseudo dirac
-                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * sin_table[chronaural1->off1]);
-                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * sin_table[chronaural1->off1]);
+                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
               }
+            }
+            else if (sinval < chronaural1->amp_fraction && chronaural1->fade_frame != 0) 
+            { /* chronaural tone has ended for this pass, make sure ready for fade in at start of next play */
+              chronaural1->fade_factor = 0.0; // set fade to start fade in
+              chronaural1->fade_frame = 0;  // reset
+              chronaural1->fade_sinval = -2.0;  // negative value as flag to start fade in
             }
             chronaural1->split_now += chronaural1->split_adj * fast_mult;
             if (chronaural1->split_beat == 0.0)  // no split beat, adjust split towards split_end
@@ -5126,7 +5211,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               /* Adjust the split beat and split adjust.  Second difference equation. */
               chronaural1->split_beat += (chronaural1->split_beat_adj * fast_mult);
-              double sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
+              double sign_adjust = 1.0;  // default to positive when split_adj == 0.0
+              if (chronaural1->split_adj != 0.0)
+                sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
               chronaural1->split_adj = fabs(chronaural1->split_adj) 
                                             + ((chronaural1->split_beat_adj * (2. * split_dist)) / (double) out_rate);  
               chronaural1->split_adj *= sign_adjust;
