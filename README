@@ -67,8 +67,12 @@ explicitly asked for it to be kept.  At some point I might convert
 this to use /tmp when the -k/--keep option is not selected or do
 the conversion in memory.
 
-There can also be issues with OSS based sound servers as they don't
-allow other applications to run.  In this case discord will fall back
-to the default plugin using its fixed frame rate of 48000.  I have had
-problems with esd in this regard.  Try "esdctl off" if you can't get
-the hardware rate you want.
+There can also be issues with sound servers as they don't allow other
+applications to call ALSA directly.  In this case discord will fall
+back to the default plugin using its fixed frame rate of 48000 if
+possible.  I have had problems with esound and pulseaudio in this
+regard.  Try "esdctl off" if you can't get the hardware rate you want
+and esound is running.  If it is pulseaudio causing the problem, it
+has probably replaced the default device of ALSA.  Remove the
+pulseaudio-alsa package or find the file pulseaudio-alsa.conf and move
+it to another name.

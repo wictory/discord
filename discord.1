@@ -363,7 +363,11 @@ before the tone is played, [0.0, 1.0).  The closer this is to 1.0, the
 shorter the tone will be.  There is a twenty-five frame fade in and
 fade out on all chronaural tones to prevent crackle in the sound
 stream so you cannot use an amplitude fraction such that the length of
-the tone is less than fifty frames or it will not sound. .e.g 1.0
+the tone is less than fifty frames or it will not sound.
+e.g. at a frame rate of 48000/sec and chronaural beat frequency of
+20 Hz the maximum amplitude fraction is slightly above 0.9975.
+at a frame rate of 96000/sec and chronaural beat frequency of
+5 Hz the maximum amplitude fraction is slightly above 0.9999.
 Behavior for amp beat is as follows:
 
 1 sin wave - tone is multiplied by sin value
@@ -371,6 +375,9 @@ Behavior for amp beat is as follows:
 2 square wave - tone is either on or off
 .br
 3 dirac delta approximation - tone is multiplied by fifth power of sin 
+.br
+4 extreme dirac delta approximation - tone is multiplied by fifteenth
+                                      power of sin 
 
 If beginning split or ending split are -1, they are set randomly
 between lowest split and highest split.  Split beat is the frequency

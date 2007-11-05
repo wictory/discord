@@ -424,7 +424,8 @@ struct chronaural
   /* amplitude behavior of chronaural:
      1 sine wave
      2 square wave
-     3 dirac delta approximation
+     3 dirac delta approximation, 5th power of sin value
+     4 extreme dirac delta approximation, 15th power of sin value
   */
   double split_begin, split_end, split_now;      // left fraction for chronaural, .5 means evenly split L and R
   double split_low, split_high; // range for split, .5 means evenly split L and R
@@ -4932,6 +4933,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
                                                           * sin_table[chronaural1->off1]);
               }
+              else if (chronaural1->amp_behave == 4)  // extreme dirac delta approximation
+              {
+                double filter = pow(sinval, 15.); // 15th power of the sin to make extreme pseudo dirac
+                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+              }
             }
             else if (sinval < chronaural1->amp_fraction && chronaural1->fade_frame != 0) 
             { /* chronaural tone has ended for this pass, make sure ready for fade in at start of next play */
@@ -5167,6 +5176,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               else if (chronaural1->amp_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval, 5.); // quint the sin to make pseudo dirac
+                out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+                out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
+                                                          * sin_table[chronaural1->off1]);
+              }
+              else if (chronaural1->amp_behave == 4)  // extreme dirac delta approximation
+              {
+                double filter = pow(sinval, 15.); // 15th power of the sin to make extreme pseudo dirac
                 out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
                                                           * sin_table[chronaural1->off1]);
                 out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
