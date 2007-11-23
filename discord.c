@@ -744,6 +744,8 @@ parse_argv_configs (int argc, char **argv)
       filecount++;
       filename = argv[optind++];
       infile = fopen (filename, "r");
+      if (!infile)
+        error ("Unable to open script file %s", filename);
       read_script_file (infile, &config_options);
       append_options (&SCRIPT_OPTIONS, config_options);
       fclose (infile);
@@ -1105,6 +1107,8 @@ parse_discordrc ()
       FILE *infile;
 
       infile = fopen (config_file, "r");
+      if (!infile)
+        error ("Unable to open configuration file %s", config_file);
       read_config_file (infile, &config_options);
       append_options (&CONFIG_OPTIONS, config_options);
       fclose (infile);
