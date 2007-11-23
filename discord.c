@@ -432,7 +432,8 @@ struct chronaural
   double split_beat;   // Split variation frequency, defaults to amp_beat
   int slide;     // 1 if this sequence slides into the next (binaurals and chronaurals slide)
   int inc1, off1;               // for chronaural tones, offset + increment into sine table for carrier
-  int inc2, off2;               // for chronaural tones, offset + increment into sine table for amp_beat
+  int off2;               // offset into sine table for amp_beat
+  double inc2;            // increment of offset into sine table for amp_beat
   double carr_adj, amp_beat_adj, amp_adj, split_beat_adj, split_adj;   // continuous adjustment if desired
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
         starting offset for this voice.  Store a pointer to it during setup.
@@ -3060,7 +3061,8 @@ init_binaural ()
             chronaural *chronaural1 = NULL, *chronaural2 = NULL;
 
             chronaural1 = (chronaural *) work1;
-            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = chronaural1->inc2 = 0;
+            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = 0;
+            chronaural1->inc2 = 0.0;
             if (work2 != NULL)
             { 
               stub2 = (stub *) work2;
@@ -3266,7 +3268,8 @@ init_binaural ()
             chronaural *chronaural1 = NULL, *chronaural2 = NULL, *chronaural3 = NULL, *chronaural4 = NULL;
 
             chronaural1 = (chronaural *) work1;
-            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = chronaural1->inc2 = 0;
+            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = 0;
+            chronaural1->inc2 = 0.0;
              /* First step is always the input frequency, so no adjust. */
             chronaural1->carr_adj = chronaural1->amp_beat_adj = chronaural1->amp_adj = 0.0;
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
@@ -3571,7 +3574,8 @@ init_binaural ()
             chronaural *chronaural1 = NULL, *chronaural2 = NULL, *chronaural3 = NULL, *chronaural4 = NULL;
 
             chronaural1 = (chronaural *) work1;
-            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = chronaural1->inc2 = 0;
+            chronaural1->off1 = chronaural1->inc1 = chronaural1->off2 = 0;
+            chronaural1->inc2 = 0.0;
              /* First step is always the input frequency, so no adjust. */
             chronaural1->carr_adj = chronaural1->amp_beat_adj = chronaural1->amp_adj = 0.0;
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
@@ -4874,8 +4878,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
-            chronaural1->inc2 = (int) round( chronaural1->amp_beat * 2. * fast_mult);  //inc to next sin value
-            chronaural1->off2 += chronaural1->inc2;  // offset for beat frequency into sin table
+            chronaural1->inc2 += ( chronaural1->amp_beat * 2. * fast_mult);  //inc to next sin value
+            chronaural1->off2 += (int) round(chronaural1->inc2);  // offset for beat frequency into sin table
+            chronaural1->inc2 -= round (chronaural1->inc2);  // remaining increment is only fractional part, +ve or -ve
             chronaural1->off2 = chronaural1->off2 % (out_rate * 2);  // mod to wrap offset
             sinval = sin_table [chronaural1->off2];  // sin val at current amp_beat point
             if (sinval >= 0.0 && sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
@@ -4907,7 +4912,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   chronaural1->fade_sinval = sinval;  
                 }
               }
-              else if (sinval <= chronaural1->fade_sinval)  // fade out
+              else if (sinval < chronaural1->fade_sinval)  // fade out
               {
                 if (chronaural1->fade_frame < 25)  // active fade out
                 {
@@ -5122,8 +5127,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               if (chronaural1->last_off2 != NULL)  // there *is* a previous offset to use
                 chronaural1->off2 = *chronaural1->last_off2;
             }
-            chronaural1->inc2 = (int) round( chronaural1->amp_beat * 2. * fast_mult);  //inc to next sin value
-            chronaural1->off2 += chronaural1->inc2;  // offset for beat frequency into sin table
+            chronaural1->inc2 += ( chronaural1->amp_beat * 2. * fast_mult);  //inc to next sin value
+            chronaural1->off2 += (int) round(chronaural1->inc2);  // offset for beat frequency into sin table
+            chronaural1->inc2 -= round (chronaural1->inc2);  // remaining increment is only fractional part, +ve or -ve
             chronaural1->off2 = chronaural1->off2 % (out_rate * 2);  // mod to wrap offset
             sinval = sin_table [chronaural1->off2];  // sin val at current amp_beat point
             if (sinval >= 0.0 && sinval > chronaural1->amp_fraction)  // time to play, only on positive sine
@@ -5155,7 +5161,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   chronaural1->fade_sinval = sinval;  
                 }
               }
-              else if (sinval <= chronaural1->fade_sinval)  // in fade out
+              else if (sinval < chronaural1->fade_sinval)  // in fade out
               {
                 if (chronaural1->fade_frame < 25)  // in fade out
                 {
@@ -5288,7 +5294,8 @@ status_t (void *call_parms)
   while (this != NULL)
   {
     if (snd1 == prev)  // already seen
-      fprint_voice (fp, this);  // add each voice
+      // fprint_voice (fp, this);  // add each voice
+      fprint_voice_all (fp, this);  // add each voice
     else  // first time
       fprint_voice_all (fp, this);  // add each voice
     stub1 = (stub *) this;
@@ -5479,12 +5486,14 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
         char_count += fprintf (fp, " %d", chronaural1->amp_behave);
         char_count += fprintf (fp, " %d %d", chronaural1->inc1, chronaural1->off1);
-        char_count += fprintf (fp, " %d %d", chronaural1->inc2, chronaural1->off2);
+        char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
         char_count += fprintf (fp, " %.3f", chronaural1->split_now );
         char_count += fprintf (fp, " %.3f %.3f %.3f %.3f\n",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        char_count += fprintf (fp, "         %.3e", chronaural1->split_beat);
+        char_count += fprintf (fp, "         %.3f %d %.3f",
+                        chronaural1->fade_sinval, chronaural1->fade_frame, chronaural1->fade_factor);
+        char_count += fprintf (fp, " %.3e", chronaural1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e",
                         chronaural1->split_beat_adj, chronaural1->split_adj);
         char_count += fprintf (fp, " %d\n", chronaural1->slide);
@@ -5522,12 +5531,14 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->amp_fraction);
         char_count += fprintf (fp, " %d", chronaural1->amp_behave);
         char_count += fprintf (fp, " %d %d", chronaural1->inc1, chronaural1->off1);
-        char_count += fprintf (fp, " %d %d", chronaural1->inc2, chronaural1->off2);
+        char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->amp_beat_adj, chronaural1->amp_adj);
         char_count += fprintf (fp, " %.3f", chronaural1->split_now );
         char_count += fprintf (fp, " %.3f %.3f %.3f %.3f\n",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        char_count += fprintf (fp, "         %.3e", chronaural1->split_beat);
+        char_count += fprintf (fp, "         %.3f %d %.3f",
+                        chronaural1->fade_sinval, chronaural1->fade_frame, chronaural1->fade_factor);
+        char_count += fprintf (fp, " %.3e", chronaural1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e",
                         chronaural1->split_beat_adj, chronaural1->split_adj);
         char_count += fprintf (fp, " %d", chronaural1->slide);
