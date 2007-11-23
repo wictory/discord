@@ -5294,8 +5294,7 @@ status_t (void *call_parms)
   while (this != NULL)
   {
     if (snd1 == prev)  // already seen
-      // fprint_voice (fp, this);  // add each voice
-      fprint_voice_all (fp, this);  // add each voice
+      fprint_voice (fp, this);  // add each voice
     else  // first time
       fprint_voice_all (fp, this);  // add each voice
     stub1 = (stub *) this;
