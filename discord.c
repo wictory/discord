@@ -4338,12 +4338,12 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (bell1->ring > 0LL)
             {
-              bell1->inc1 = (int) round( bell1->carrier * 2.);
-              //bell1->inc1 = (int) round(( (bell1->carrier * (out_rate * 2)) / out_rate) * fast_mult);
-              bell1->off1 += bell1->inc1;
-              bell1->off1 = bell1->off1 % (out_rate * 2);
               out_buffer[ii] += bell1->split_now * bell1->amp * sin_table[bell1->off1];
               out_buffer[ii+1] += (1.0 - bell1->split_now) * bell1->amp * sin_table[bell1->off1];
+              //bell1->inc1 = (( (bell1->carrier * (out_rate * 2)) / out_rate));  // what below actually is
+              bell1->inc1 = (int) round( bell1->carrier * 2.);
+              bell1->off1 += bell1->inc1;
+              bell1->off1 = bell1->off1 % (out_rate * 2);
               if (bell1->behave == 5)  // exponential decay
                 bell1->amp = (pow((sqrt(bell1->amp) + (bell1->amp_adj * fast_mult)), 2.0));
               else
