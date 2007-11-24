@@ -322,6 +322,7 @@ struct noise
   int_64 play;                    // number of frames to play the noise
   double carrier_adj, amp_adj, split_adj;      // adjust while noise is playing
   double behave_inc1, behave_off1;      // for adjust behavior 6 and 7, offset and inc into sine
+  double fade_factor;           // used to adjust volume when doing 1 millisec fade out at end of play.
 } ;
 
 /* structure for playing a file at random intervals with the beat */
@@ -448,9 +449,9 @@ struct chronaural
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
-  double fade_factor;  // current fade in or fade out multiplier
+  double fade_factor;  // current fade out multiplier, no fade in as always start at zero.
   double fade_sinval;  // sinval where fade in ended and at which to start fade out (sine is symmetric)
-  int fade_frame;  // frame we are at in the fade, probably use 25 frames, 4% change per frame.
+  int fade_frame;  // frame we are at in the fade, using msec_fade_count frames
 } ;
 
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
@@ -4367,7 +4368,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (noise1->sofar >= noise1->next_play)
             {                     // time to play
               noise1->sofar = 0;
-              noise1->off1 = 0;
+              noise1->off1 = 0;  // always start at 0 so sin value == 0.0, thus no fade in
+              noise1->fade_factor = 1.0;  // play at full volume until ending fade out
               /* first determine the play length for this tone.
                  has to be first as the next play depends on it. */
               if (noise1->length_max == noise1->length_min)
@@ -4518,10 +4520,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               /* adjust carrier if behave requires it before setting new sin table offset value */
               if (noise1->behave >= 8 && noise1->behave <= 21)
                 noise1->carrier += noise1->carrier_adj;
-              //noise1->inc1 = (int) (( (noise1->carrier * (out_rate * 2)) / out_rate) * fast_mult);
-              noise1->inc1 = (int) round( noise1->carrier * 2.);
-              noise1->off1 += noise1->inc1;
-              noise1->off1 = noise1->off1 % (out_rate * 2);
               double sin_factor;  // used for sinusoidal adjustment to amplitude
               /* check for sinusoidal behavior */
               if (noise1->behave == 6 || noise1->behave == 13 || noise1->behave == 20)
@@ -4530,26 +4528,24 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 sin_factor = 1.0 + (0.5 * sin_table [(int) noise1->behave_off1]);  // drop only to half amplitude as bowl
               else
                 sin_factor = 1.0;  // default to standard behavior
-              if (noise1->sofar > 25 && noise1->play  > 25)  // in middle of play range
+              if (noise1->play  > msec_fade_count)  // in play range before fade out
               {
                 out_buffer[ii] += noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1];
                 out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1];
               }
-              else  // 25 frame ramp in to reduce crackle at start
-              if (noise1->sofar <= 25)
+              else  // 1 millisec fade out to reduce crackle at end, no fade in because start at zero
               {
+                noise1->fade_factor -= msec_fade_adjust;  // ramp down from 1.0 to 0.0
                 out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
-                                   * (((double) noise1->sofar) / 25.));
+                                   * noise1->fade_factor);
                 out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
-                                   * (((double) noise1->sofar) / 25.));
+                                   * noise1->fade_factor);
               }
-              else  // 25 frame ramp out to reduce crackle at end
-              {
-                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
-                                   * (((double) noise1->play) / 25.));
-                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
-                                   * (((double) noise1->play) / 25.));
-              }
+              /* Move offset adjustment to end so always start at offset where sin == 0.0, thus no fade in */
+              //noise1->inc1 = (( (noise1->carrier * (out_rate * 2)) / out_rate));  // what below actually is
+              noise1->inc1 = (int) round( noise1->carrier * 2.);
+              noise1->off1 += noise1->inc1;
+              noise1->off1 = noise1->off1 % (out_rate * 2);
               if (noise1->behave >= 1 && noise1->behave <= 5)
                 noise1->amp += (noise1->amp_adj * fast_mult);
               else  // sinusoidal behavior, digital approximation
