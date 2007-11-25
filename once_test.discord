@@ -172,7 +172,8 @@
 #    Behavior for amp beat is below.
 #      1 sin wave  tone is adjusted by sin value
 #      2 square wave  tone is either on or off
-#      3 dirac delta approximation, power of sin
+#      3 dirac delta approximation, 5th power of sin
+#      4 extreme dirac delta approximation, 15th power of sin
 #    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
 #    Split beat is the frequency through time of the oscillation of the left and right split.
 #    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
