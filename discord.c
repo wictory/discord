@@ -1271,6 +1271,8 @@ set_options (saved_option *SO)
           void *newmem = realloc(compvals, needbytes);
           if (newmem == NULL)
             error ("Unable to extend the compensate options string");
+          else
+            compvals = (char *) newmem;
           strcat (compvals, sow->option_string);
           strcat (compvals, "'");  // ensure following separator
         }
