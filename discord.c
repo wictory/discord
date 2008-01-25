@@ -1,5 +1,5 @@
 // discord - binaural and chronaural beat generator
-// (c) 2007 Stan Lysiak <stanlk@users.sourceforge.net>.  
+// (c) 2007-2008 Stan Lysiak <stanlk@users.sourceforge.net>.  
 // All Rights Reserved.
 // For latest version see http://discord.sourceforge.net/.  
 // Released under the GNU GPL version 2.  Use at your own risk.
@@ -454,6 +454,40 @@ struct chronaural
   int fade_frame;  // frame we are at in the fade, using msec_fade_count frames
 } ;
 
+/* structure for playing a pulse, a fixed time chronaural beat 
+ * The pulse is always a square wave, on fully or off */
+typedef struct pulse pulse;
+struct pulse
+{
+  void *prev;
+  void *next;
+  int type;                 // 13, or 14 for pulse step slide, 15 for vary
+  double carrier;               // Carrier freq
+  double amp;   // Amplitude level 0-100%, stored as decimal. i.e. .06
+  double pulse_beat;   // Pulse beat frequency
+  double pulse_time;   // Duration of the pulse in seconds
+  int pulse_frames; // Number of frames that the current pulse time will take
+  double split_begin, split_end, split_now;      // left fraction for pulse, .5 means evenly split L and R
+  double split_low, split_high; // range for split, .5 means evenly split L and R
+  double split_beat;   // Split variation frequency, defaults to pulse_beat
+  int slide;     // 1 if this sequence slides into the next (binaurals and pulses slide)
+  int inc1, off1;               // for pulse tones, offset + increment into sine table for carrier
+  int off2;               // offset into sine table for pulse_beat
+  double inc2;            // increment of offset into sine table for pulse_beat
+  double carr_adj, pulse_beat_adj, pulse_time_adj, amp_adj, split_beat_adj, split_adj;   // continuous adjustment if desired
+    /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
+        starting offset for this voice.  Store a pointer to it during setup.  */
+  int *last_off1, *last_off2;   
+  int first_pass;  // is this voice inactive?
+  pulse *step_next;  // point to linked list of pulse voices for steps or vary
+  int_64 tot_frames;  // total frames for this step
+  int_64 cur_frames;  // current frames for this step
+  int steps;  // number of steps if selected
+  double slide_time;  // how many seconds to slide between steps
+  double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
+  double fade_factor;  // current fade out multiplier, no fade in as always start at zero.
+} ;
+
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
 typedef struct slice slice;
 struct slice
@@ -506,6 +540,7 @@ void setup_sample (char *token, void **work);
 void setup_repeat (char *token, void **work);
 void setup_once (char *token, void **work);
 void setup_chronaural (char *token, void **work);
+void setup_pulse (char *token, void **work);
 void init_binaural ();
 snd_buffer * process_sound_file (char *filename);
 void play_loop ();
@@ -543,7 +578,7 @@ void
 usage ()
 {
   error ("discord - Create and mix binaural and chronaural beats, version " VERSION NL
-         "Copyright (c) 2007 Stan Lysiak, all rights reserved," NL
+         "Copyright (c) 2007-2008 Stan Lysiak, all rights reserved," NL
          "released under the GNU GPL v2.  See file COPYING." NL NL
          "Usage: discord [options] sequence-file" NL NL
          "Control-C to quit while running" NL NL
@@ -1513,7 +1548,7 @@ void
 help ()
 {
   printf ("discord - Create binaural and chronaural beats, version " VERSION NL
-          "Copyright (c) 2007 Stan Lysiak, all rights reserved," NL
+          "Copyright (c) 2007-2008 Stan Lysiak, all rights reserved," NL
           "released under the GNU GPL v2.  See file COPYING." NL NL
           "http://sourceforge.net/projects/discord/"NL
           "** This program is free software; you can redistribute it and/or modify"NL
@@ -1673,6 +1708,8 @@ setup_play_seq ()
         setup_once (voice, &work);
       else if (strcasecmp (subtoken, "chronaural") == 0)
         setup_chronaural (voice, &work);
+      else if (strcasecmp (subtoken, "pulse") == 0)
+        setup_pulse (voice, &work);
       else
         error ("Unrecognized time sequence type: %s\n", subtoken);
       /* Append this voice to the rest of the voices for the period/ time sequence */
@@ -1705,7 +1742,7 @@ setup_play_seq ()
       sndstream1 = sndstream2;
     }
   }
-  init_binaural ();  // complete binaural and chronaural setup now that sequences are known
+  init_binaural ();  // complete binaural, chronaural, and pulse setup now that sequences are known
   return 0;
 }
 
@@ -2967,6 +3004,203 @@ setup_chronaural (char *token, void **work)
   }
 }
 
+/* Set up a pulse sequence */
+
+void
+setup_pulse (char *token, void **work)
+{
+  char *endptr;
+  char *subtoken;
+  char *str2 = NULL;
+  char *saveptr2;
+  pulse *pulse1 = NULL;
+
+  pulse1 = (pulse *) Alloc ((sizeof (pulse)) * 1);
+  *work = (void *) pulse1;
+  pulse1->next = NULL;
+  pulse1->type = 13;
+  pulse1->slide = 0;  // default to not slide
+  pulse1->off1 = pulse1->off2 = 0;  // begin at 0 degrees
+  pulse1->last_off1 = pulse1->last_off2 = NULL;  // no previous voice offsets yet
+  pulse1->first_pass = 1;  // inactive
+  /* used for step and vary */
+  pulse1->step_next = NULL;  // default no steps
+  pulse1->tot_frames = 0;  // total frames for this step
+  pulse1->cur_frames = 0;  // current frames for this step
+  pulse1->steps = 0;  // no steps
+  pulse1->slide_time = 0.0;  // no slide between steps
+  pulse1->fuzz = 0.0;  // no fuzziness around step frequency
+  str2 = token;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
+  str2 = NULL;
+  
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  errno = 0;
+  double carrier = strtod (subtoken, &endptr);
+  if (carrier == 0.0)
+  {
+    if (errno == 0)             // no errors
+      error ("Carrier for pulse cannot be 0.\n");
+    else                        // there was an error
+      error ("Carrier for pulse had an error.\n");
+  }
+  pulse1->carrier = carrier;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double amp = strtod (subtoken, &endptr);
+  if (amp == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Amplitude for pulse had an error.\n");
+  }
+  pulse1->amp = AMP_AD(amp);
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double pulse_beat = strtod (subtoken, &endptr);
+  if (pulse_beat == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Pulse beat for pulse had an error.\n");
+  }
+  pulse1->pulse_beat = pulse_beat;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double pulse_time = strtod (subtoken, &endptr);
+  if (pulse_time == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Pulse time for pulse had an error.\n");
+  }
+  pulse1->pulse_time = pulse_time;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_begin = strtod (subtoken, &endptr);
+  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
+  {
+    if (errno != 0)             //  error
+      error ("Split_begin for pulse had an error.\n");
+    else
+      split_begin = 0.5;
+  }
+  pulse1->split_begin = split_begin;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_end = strtod (subtoken, &endptr);
+  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
+  {
+    if (errno != 0)             //  error
+      error ("Split_end for pulse had an error.\n");
+    else
+      split_end = 0.5;
+  }
+  pulse1->split_end = split_end;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_low = strtod (subtoken, &endptr);
+  if (split_low < 0.0 || split_low > 1.0)
+  {
+    if (errno != 0)             //  error
+      error ("Split_low for pulse had an error.\n");
+    else
+      split_low = 0.5;
+  }
+  pulse1->split_low = split_low;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_high = strtod (subtoken, &endptr);
+  if (split_high < 0.0 || split_high > 1.0)
+  {
+    if (errno != 0)             //  error
+      error ("Split_high for pulse had an error.\n");
+    else
+      split_high = 0.5;
+  }
+  pulse1->split_high = split_high;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_beat = strtod (subtoken, &endptr);
+  if (split_beat == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Split beat for pulse had an error.\n");
+  }
+  pulse1->split_beat = split_beat;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // regular slide
+    pulse1->slide = 1;
+  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // a step slide
+  {
+    pulse1->type = 14;  // pulse step slide
+    pulse1->slide = 2;  // pulse step slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for pulse had an error.\n");
+    }
+    pulse1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for pulse had an error.\n");
+    }
+    pulse1->slide_time = slide_time;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double fuzz = strtod (subtoken, &endptr);
+    if (fuzz == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Fuzz for pulse had an error.\n");
+    }
+    pulse1->fuzz = AMP_AD(fuzz);
+  }
+  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // a vary slide
+  {
+    pulse1->type = 15;  // pulse vary slide
+    pulse1->slide = 3;  // pulse vary slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for pulse had an error.\n");
+    }
+    pulse1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for pulse had an error.\n");
+    }
+    pulse1->slide_time = slide_time;
+  }
+}
+
 /*  Initialize all values possible for each voice */
 
 void
@@ -3749,6 +3983,447 @@ init_binaural ()
                  * Here it is the adjustment so that the split oscillates between split_begin and split_end
                  * at the split_beat rate.  This works because the two are mutually exclusive. */
               chronaural1->split_adj = (2. * (chronaural1->split_end - chronaural1->split_begin) / frames_per_cycle);  
+            }
+            break;
+          }
+        case 13:  // pulse
+          {
+            pulse *pulse1 = NULL, *pulse2 = NULL;
+
+            pulse1 = (pulse *) work1;
+            pulse1->off1 = pulse1->inc1 = pulse1->off2 = 0;
+            pulse1->inc2 = 0.0;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 13 || stub2->type == 14 || stub2->type == 15)  // also pulse
+              { 
+                pulse2 = (pulse *) work2;
+                /* Set the pointers to the previous voice's offsets here so it can be used while running.
+                   Need to do this even when there is no slide. */
+                pulse2->last_off1 = &(pulse1->off1);
+                pulse2->last_off2 = &(pulse1->off2);
+                if (pulse1->slide == 0)
+                  (pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->pulse_time_adj
+                                      = pulse1->amp_adj = pulse1->split_beat_adj = 0.0);
+                else  // slide to next pulse in stream
+                {
+                  pulse1->carr_adj = (pulse2->carrier - pulse1->carrier)/ (double) snd1->tot_frames;
+                  pulse1->pulse_beat_adj = (pulse2->pulse_beat - pulse1->pulse_beat)/ (double) snd1->tot_frames;
+                  pulse1->pulse_time_adj = (pulse2->pulse_time - pulse1->pulse_time)/ (double) snd1->tot_frames;
+                  pulse1->amp_adj = (pulse2->amp - pulse1->amp)/ (double) snd1->tot_frames;
+                  pulse1->split_beat_adj = (pulse2->split_beat - pulse1->split_beat) / (double) snd1->tot_frames;
+                }
+              } 
+              else if (pulse1->slide != 0)
+                error ("Slide called for, voice to slide to is not pulse.  Position matters!\n");
+            } 
+            else if (pulse1->slide != 0)
+              error ("Slide called for, no next pulse in time sequence!\n");
+            else
+              pulse1->split_beat_adj = 0.0;
+              /* set up the split logic here as it applies throughout the voice period.
+                 don't need to worry about overwriting begin and end splits as they are only used once */
+            if (pulse1->split_begin == -1.0)  // pulse split start random
+            {
+              double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+              pulse1->split_begin = pulse1->split_low + delta;      // starting split for pulse
+            }
+            pulse1->split_now = pulse1->split_begin;      // set working split to begin
+            if (pulse1->split_end == -1.0)  // pulse split end random
+            {
+              double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+              pulse1->split_end = pulse1->split_low + delta;      // ending split for pulse
+            }
+            if (pulse1->split_beat == 0.0 && pulse1->split_beat_adj == 0.0)
+                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
+              pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) 
+                                                              / (double) snd1->tot_frames);  // adjust per frame
+            else  // is split beat
+            {
+              if (pulse1->split_end < pulse1->split_begin)  // end always larger for split beat, swap if not
+              {
+                double split_hold = pulse1->split_begin;  // swap begin and end
+                pulse1->split_begin = pulse1->split_end;
+                pulse1->split_end = split_hold;
+              }
+              double frames_per_cycle = ((double) out_rate / pulse1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do that cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              pulse1->split_adj = ((2.*(pulse1->split_end - pulse1->split_begin)) / frames_per_cycle);  
+            }
+            break;
+          }
+        case 14:  // pulse step slide, have to create list of steps and slides
+          { 
+            pulse *pulse1 = NULL, *pulse2 = NULL, *pulse3 = NULL, *pulse4 = NULL;
+
+            pulse1 = (pulse *) work1;
+            pulse1->off1 = pulse1->inc1 = pulse1->off2 = 0;
+            pulse1->inc2 = 0.0;
+             /* First step is always the input frequency, so no adjust. */
+            pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->pulse_time_adj = pulse1->amp_adj = 0.0;
+            pulse1->split_beat_adj = pulse1->split_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * pulse1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * pulse1->steps);  //  total slide frames
+            int_64 step_frames = (snd1->tot_frames - total_slide) / pulse1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last step. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * pulse1->steps));
+            pulse1->tot_frames = step_frames;
+            pulse1->cur_frames = 0;  // pulse1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine pulse we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 13 || stub2->type == 14 || stub2->type == 15)  // also pulse
+                pulse2 = (pulse *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not pulse.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next pulse in time sequence!\n");
+            double carr_diff = (pulse2->carrier - pulse1->carrier);
+            double pulse_beat_diff = (pulse2->pulse_beat - pulse1->pulse_beat);
+            double pulse_time_diff = (pulse2->pulse_time - pulse1->pulse_time);
+            double amp_diff = (pulse2->amp - pulse1->amp);
+            double split_beat_diff = (pulse2->split_beat - pulse1->split_beat);
+            double next_carrier = 0.0;
+            double next_pulse_beat = 0.0;
+            double next_pulse_time = 0.0;
+            double next_amp = 0.0;
+            double next_split_beat = 0.0;
+            pulse4 = pulse1;  // set last node processed
+            int total_nodes = (2 * pulse1->steps);
+            int ii;
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of step list nodes
+            {
+              pulse3 = (pulse *) Alloc ((sizeof (pulse)) * 1);  // create next node of step list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) pulse3, (void *) pulse4, sizeof (pulse)); // copy last step
+                pulse3->tot_frames = slide_frames;
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice pulse2
+                {
+                  pulse2->last_off1 = &(pulse3->off1);
+                  pulse2->last_off2 = &(pulse3->off2);
+                  next_carrier = pulse2->carrier;
+                  next_pulse_beat = pulse2->pulse_beat;
+                  next_pulse_time = pulse2->pulse_time;
+                  next_amp = pulse2->amp;
+                  pulse3->step_next = NULL;  // last node, no next node
+                }
+                else  // internal slide
+                {
+                  double fraction = ((double) (ii+1)/(double) total_nodes);  // fraction of interval
+                  next_carrier = pulse1->carrier + (carr_diff * fraction);
+                  next_pulse_beat = pulse1->pulse_beat + (pulse_beat_diff * fraction);
+                  next_pulse_time = pulse1->pulse_time + (pulse_time_diff * fraction);
+                  next_amp = pulse1->amp + (amp_diff * fraction);
+                  next_split_beat = pulse1->split_beat + (split_beat_diff * fraction);
+                  if (pulse1->fuzz > 0.0)  // fuzz the interval
+                  {
+                    double adjust = drand48() - 0.5;  // fuzz adjustment between -.5 and +.5 of fuzz
+                    next_carrier += ((carr_diff/pulse1->steps) * pulse1->fuzz * adjust);
+                    next_pulse_beat += ((pulse_beat_diff/pulse1->steps) * pulse1->fuzz * adjust);
+                    next_pulse_time += ((pulse_time_diff/pulse1->steps) * pulse1->fuzz * adjust);
+                    next_amp += ((amp_diff/pulse1->steps) * pulse1->fuzz * adjust);
+                  }
+                }
+                pulse3->carr_adj = (next_carrier - pulse4->carrier)/ pulse3->tot_frames;
+                pulse3->pulse_beat_adj = (next_pulse_beat - pulse4->pulse_beat)/ pulse3->tot_frames;
+                pulse3->pulse_time_adj = (next_pulse_time - pulse4->pulse_time)/ pulse3->tot_frames;
+                pulse3->amp_adj = (next_amp - pulse4->amp)/ pulse3->tot_frames;
+                   /* change split beat only in slides */
+                pulse3->split_beat_adj = (next_split_beat - pulse4->split_beat)/ pulse3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) pulse3, (void *) pulse1, sizeof (pulse)); // copy first in list to it
+                if (ii == (total_nodes - 2))
+                  pulse3->tot_frames += frame_residue;  // use up leftover frames in last step
+                /* Set values used for calculation in last slide */
+                pulse3->carrier = next_carrier;
+                pulse3->pulse_beat = next_pulse_beat;
+                pulse3->pulse_time = next_pulse_time;
+                pulse3->amp = next_amp;
+                pulse3->split_beat = next_split_beat;
+                pulse3->split_beat_adj = 0.0;  //steps are constant
+              }
+                /* Set up the split logic here as it applies throughout the voice period.
+                 * Use pulse1 to determine branching as it won't be changed until list is complete.
+                   Don't need to worry about overwriting begin and end splits as they are only used once
+                   Same logic for slides and steps */
+              if (pulse1->split_begin == -1.0)  // pulse split start random
+              {
+                if (pulse4 != pulse1)  // previous node not first node in chain
+                  pulse3->split_begin = pulse4->split_end; // begin split is previous node end split
+                else  // first node after start of chain
+                {  /* begin split is random and will become first nodes end split below */
+                  double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+                  pulse3->split_begin = pulse1->split_low + delta;
+                }
+              }
+              pulse3->split_now = pulse3->split_begin;      // set working split to begin
+              if (pulse1->split_end == -1.0)  // pulse split end random
+              {
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice pulse2
+                {
+                  if (pulse2->split_begin == -1.0)  //random
+                  {
+                    double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+                    pulse3->split_end = pulse1->split_low + delta; // end split for this pulse
+                    pulse2->split_begin = pulse3->split_end;  // set this as begin split for next voice
+                  }
+                  else  // fixed split in next voice
+                    pulse3->split_end = pulse2->split_begin; // ending split is next voice begin split
+                }
+                else  // internal 
+                {
+                  double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+                  pulse3->split_end = pulse1->split_low + delta;      // ending split for pulse
+                }
+              }
+              if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                pulse3->split_adj = ((pulse3->split_end - pulse3->split_begin) 
+                                                        / (double) pulse3->tot_frames);  // adjust per frame
+              else
+              {
+                if (pulse3->split_end < pulse3->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = pulse3->split_begin;  // swap begin and end
+                  pulse3->split_begin = pulse3->split_end;
+                  pulse3->split_end = split_hold;
+                }
+                double frames_per_cycle = ((double) out_rate / pulse3->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than above, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                pulse3->split_adj = ((2.*(pulse3->split_end - pulse3->split_begin)) / frames_per_cycle);  
+              }
+              pulse4->step_next = pulse3;  // set list pointer for previous node
+              pulse3->last_off1 = &(pulse4->off1);  // each node starts where last left off as offset
+              pulse3->last_off2 = &(pulse4->off2);
+              pulse4 = pulse3;  // make current node previous node
+            }
+              /* Now set up the split logic for pulse1 as it applies throughout the voice period.
+                 Don't need to worry about overwriting begin and end splits as they are only used once
+                 and the rest of the step slide list is done */
+            if (pulse1->split_begin == -1.0)  // pulse split start random
+            {
+              double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+              pulse1->split_begin = pulse1->split_low + delta;      // starting split for pulse
+            }
+            pulse1->split_now = pulse1->split_begin;      // set working split to begin
+            if (pulse1->split_end == -1.0)  // pulse split end random
+                /* end split for this pulse is begin split from next pulse in chain set above */
+              pulse1->split_end = pulse1->step_next->split_begin;
+            if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)
+                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
+              pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) 
+                                        / (double) pulse1->tot_frames);  // adjust per frame
+            else  // split beat
+            {
+              if (pulse1->split_end < pulse1->split_begin)  // end always larger for split beat, swap if not
+              {
+                double split_hold = pulse1->split_begin;  // swap begin and end
+                pulse1->split_begin = pulse1->split_end;
+                pulse1->split_end = split_hold;
+              }
+              double frames_per_cycle = ((double) out_rate / pulse1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do the cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              pulse1->split_adj = (2. * (pulse1->split_end - pulse1->split_begin) / frames_per_cycle);  
+            }
+            break;
+          }
+        case 15:  // pulse vary slide, have to create list of steps and slides
+          { 
+            pulse *pulse1 = NULL, *pulse2 = NULL, *pulse3 = NULL, *pulse4 = NULL;
+
+            pulse1 = (pulse *) work1;
+            pulse1->off1 = pulse1->inc1 = pulse1->off2 = 0;
+            pulse1->inc2 = 0.0;
+             /* First step is always the input frequency, so no adjust. */
+            pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->pulse_time_adj = pulse1->amp_adj = 0.0;
+            pulse1->split_beat_adj = pulse1->split_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * pulse1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * pulse1->steps);  //  total slide frames
+            int_64 step_frames = (snd1->tot_frames - total_slide) / pulse1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last slide. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * pulse1->steps));
+            pulse1->tot_frames = step_frames;
+            pulse1->cur_frames = 0;  // pulse1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine pulse we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 13 || stub2->type == 14 || stub2->type == 15)  // also pulse
+                pulse2 = (pulse *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not pulse.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next pulse in time sequence!\n");
+            double carr_diff = (pulse2->carrier - pulse1->carrier);
+            double pulse_beat_diff = (pulse2->pulse_beat - pulse1->pulse_beat);
+            double pulse_time_diff = (pulse2->pulse_time - pulse1->pulse_time);
+            double amp_diff = (pulse2->amp - pulse1->amp);
+            double split_beat_diff = (pulse2->split_beat - pulse1->split_beat);
+            double next_carrier = 0.0;
+            double next_pulse_beat = 0.0;
+            double next_pulse_time = 0.0;
+            double next_amp = 0.0;
+            double next_split_beat = 0.0;
+            pulse4 = pulse1;  // set last node processed
+            int total_nodes = (2 * pulse1->steps);
+            int ii;
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of step list nodes
+            {
+              pulse3 = (pulse *) Alloc ((sizeof (pulse)) * 1);  // create next node of step list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) pulse3, (void *) pulse4, sizeof (pulse)); // copy last step
+                pulse3->tot_frames = slide_frames;
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice pulse2
+                {
+                  pulse2->last_off1 = &(pulse3->off1);
+                  pulse2->last_off2 = &(pulse3->off2);
+                  next_carrier = pulse2->carrier;
+                  next_pulse_beat = pulse2->pulse_beat;
+                  next_pulse_time = pulse2->pulse_time;
+                  next_amp = pulse2->amp;
+                  pulse3->step_next = NULL;  // last node, no next node
+                }
+                else  // internal slide
+                {
+                  double fraction = drand48 ();  // random fraction of interval
+                  next_carrier = pulse1->carrier + (carr_diff * fraction);
+                  next_pulse_beat = pulse1->pulse_beat + (pulse_beat_diff * fraction);
+                  next_pulse_time = pulse1->pulse_time + (pulse_time_diff * fraction);
+                  next_amp = pulse1->amp + (amp_diff * fraction);
+                  next_split_beat = pulse1->split_beat + (split_beat_diff * fraction);
+                }
+                pulse3->carr_adj = (next_carrier - pulse4->carrier)/ pulse3->tot_frames;
+                pulse3->pulse_beat_adj = (next_pulse_beat - pulse4->pulse_beat)/ pulse3->tot_frames;
+                pulse3->pulse_time_adj = (next_pulse_time - pulse4->pulse_time)/ pulse3->tot_frames;
+                pulse3->amp_adj = (next_amp - pulse4->amp)/ pulse3->tot_frames;
+                   /* change split beat only in slides */
+                pulse3->split_beat_adj = (next_split_beat - pulse4->split_beat)/ pulse3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) pulse3, (void *) pulse1, sizeof (pulse)); // copy first in list to it
+                if (ii == (total_nodes - 2))
+                  pulse3->tot_frames += frame_residue;  // use up leftover frames in last step
+                /* Set values used for calculation in last slide */
+                pulse3->carrier = next_carrier;
+                pulse3->pulse_beat = next_pulse_beat;
+                pulse3->pulse_time = next_pulse_time;
+                pulse3->amp = next_amp;
+                pulse3->split_beat = next_split_beat;
+                pulse3->split_beat_adj = 0.0;  //steps are constant
+              }
+                /* Set up the split logic here as it applies throughout the voice period for both slide and step.
+                 * Use pulse1 to determine branching as it won't be changed until list is complete.
+                   Don't need to worry about overwriting begin and end splits as they are only used once
+                   Same logic for slides and steps */
+              if (pulse1->split_begin == -1.0)  // pulse split start random
+              {
+                if (pulse4 != pulse1)  // previous node not first node in chain
+                  pulse3->split_begin = pulse4->split_end; // begin split is previous node end split
+                else  // first node after start of chain
+                {  /* begin split is random and will become first nodes end split below */
+                  double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+                  pulse3->split_begin = pulse1->split_low + delta;
+                }
+              }
+              pulse3->split_now = pulse3->split_begin;      // set working split to begin
+              if (pulse1->split_end == -1.0)  // pulse split end random
+              {
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice pulse2
+                {
+                  if (pulse2->split_begin == -1.0)  //random
+                  {
+                    double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+                    pulse3->split_end = pulse1->split_low + delta; // end split for this pulse
+                    pulse2->split_begin = pulse3->split_end;  // set this as begin split for next voice
+                  }
+                  else  // fixed split in next voice
+                    pulse3->split_end = pulse2->split_begin; // ending split is next voice begin split
+                }
+                else  // internal 
+                {
+                  double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+                  pulse3->split_end = pulse1->split_low + delta;      // ending split for pulse
+                }
+              }
+              if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)
+                  /* no split beat in this voice and not sliding to split beat in next voice, so pan */
+                pulse3->split_adj = ((pulse3->split_end - pulse3->split_begin) 
+                                                        / (double) pulse3->tot_frames);  // adjust per frame
+              else
+              {
+                if (pulse3->split_end < pulse3->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = pulse3->split_begin;  // swap begin and end
+                  pulse3->split_begin = pulse3->split_end;
+                  pulse3->split_end = split_hold;
+                }
+                double frames_per_cycle = ((double) out_rate / pulse3->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than above, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                pulse3->split_adj = ((2.*(pulse3->split_end - pulse3->split_begin)) / frames_per_cycle);  
+              }
+              pulse4->step_next = pulse3;  // set list pointer for previous node
+              pulse3->last_off1 = &(pulse4->off1);  // each node starts where last left off as offset
+              pulse3->last_off2 = &(pulse4->off2);
+              pulse4 = pulse3;  // make current node previous node
+            }
+              /* Now set up the split logic for pulse1 as it applies throughout the voice period.
+                 Don't need to worry about overwriting begin and end splits as they are only used once
+                 and the rest of the step slide list is done */
+            if (pulse1->split_begin == -1.0)  // pulse split start random
+            {
+              double delta = ( (drand48 ()) * (pulse1->split_high - pulse1->split_low));
+              pulse1->split_begin = pulse1->split_low + delta;      // starting split for pulse
+            }
+            pulse1->split_now = pulse1->split_begin;      // set working split to begin
+            if (pulse1->split_end == -1.0)  // pulse split end random
+                /* end split for this pulse is begin split from next pulse in chain set above */
+              pulse1->split_end = pulse1->step_next->split_begin;
+            if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)
+                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
+              pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) 
+                                        / (double) pulse1->tot_frames);  // adjust per frame
+            else  // split beat
+            {
+              if (pulse1->split_end < pulse1->split_begin)  // end always larger for split beat, swap if not
+              {
+                double split_hold = pulse1->split_begin;  // swap begin and end
+                pulse1->split_begin = pulse1->split_end;
+                pulse1->split_end = split_hold;
+              }
+              double frames_per_cycle = ((double) out_rate / pulse1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do the cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              pulse1->split_adj = (2. * (pulse1->split_end - pulse1->split_begin) / frames_per_cycle);  
             }
             break;
           }
@@ -5252,6 +5927,223 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           }
         }
         break;
+      case 13:                // Pulse tones
+        {
+          double amp1;
+          int off2_prev;
+          pulse *pulse1;
+
+          pulse1 = (pulse *) this;  // reassign void pointer as pulse struct
+
+          if (pulse1->first_pass)
+          {
+            pulse1->first_pass = 0;  // now active
+            pulse1->fade_factor = 1.0; // set fade to start play
+            if (pulse1->last_off1 != NULL)  // there *is* a previous offset to use
+              pulse1->off1 = *pulse1->last_off1;  // to eliminate crackle from discontinuity in wave
+            if (pulse1->last_off2 != NULL)  // there *is* a previous offset to use
+              pulse1->off2 = *pulse1->last_off2;
+          }
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)  // fill buffer 
+          {
+            off2_prev = pulse1->off2;  // save the original offset to determine if time to play pulse
+            pulse1->inc2 += ( pulse1->pulse_beat * 2. * fast_mult);  //inc to next sin value
+            pulse1->off2 += (int) round(pulse1->inc2);  // offset for beat frequency into sin table
+            pulse1->inc2 -= round (pulse1->inc2);  // remaining increment is only fractional part, +ve or -ve
+            pulse1->off2 = pulse1->off2 % (out_rate * 2);  // mod with sin table size, to wrap offset
+            if (off2_prev > pulse1->off2)  // time to play, beat offset just wrapped to start of sin table
+              pulse1->pulse_frames = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+            /* fade out begins one millisecond from end  */
+            if (pulse1->pulse_frames > 0 && pulse1->pulse_frames <= msec_fade_count)  
+              pulse1->fade_factor -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+            if (pulse1->pulse_frames <= 0 && pulse1->pulse_frames > -fast_mult)  // have to allow for fast play
+            { /* pulse beat has ended for this pass, make sure ready for start of next beat play */
+              pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+              pulse1->fade_factor = 1.0; // set start fade factor to full volume
+            }
+            if (pulse1->pulse_frames > 0)  // playing a pulse
+            {
+              if (opt_c)  // compensate
+                amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
+              else
+                amp1 = pulse1->amp;
+              /* pulse is always square wave, full volume  */
+              out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor
+                                                        * sin_table[pulse1->off1]);
+              out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor
+                                                        * sin_table[pulse1->off1]);
+              /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
+              pulse1->inc1 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
+              pulse1->off1 += pulse1->inc1;  // don't worry about fractional portion, frequency high enough to ignore
+              pulse1->off1 = pulse1->off1 % (out_rate * 2);  // mod with sin table size, to wrap offset
+            }
+            /*  Adjust split or split beat even when not playing beat */
+            pulse1->split_now += pulse1->split_adj * fast_mult;
+            if (pulse1->split_beat == 0.0 && pulse1->split_beat_adj == 0.0)
+            {  // no split beat adjust, adjust split towards split_end
+              if (pulse1->split_now < 0.0)
+                pulse1->split_now = 0.0;
+              else if (pulse1->split_now > 1.0)
+                pulse1->split_now = 1.0;
+            }
+            else // split beat so oscillates between begin and end
+            {
+              double split_dist = fabs (pulse1->split_end - pulse1->split_begin);
+                /* assumes split_end > split_begin, this is done in init_binaural */
+              if (pulse1->split_now >= pulse1->split_end)  // larger than end
+              {
+                double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to end
+                  pulse1->split_now = pulse1->split_end;
+                else // overshoot smaller than overall split, reflect from end
+                  pulse1->split_now = pulse1->split_end - delta;
+                pulse1->split_adj *= -1.;  // swap direction
+              }
+              else if (pulse1->split_now <= pulse1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (pulse1->split_begin - pulse1->split_now);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to begin
+                  pulse1->split_now = pulse1->split_begin;
+                else // overshoot smaller than overall split, reflect from begin
+                  pulse1->split_now = pulse1->split_begin + delta;
+                pulse1->split_adj *= -1.;  // swap direction
+              }
+              /* Adjust the split beat and split adjust.  Second difference equation. */
+              pulse1->split_beat += (pulse1->split_beat_adj * fast_mult);
+              double sign_adjust = 1.0;  // default to positive when split_adj == 0.0
+              if (pulse1->split_adj != 0.0)
+                sign_adjust = fabs(pulse1->split_adj) / pulse1->split_adj;
+              pulse1->split_adj = fabs(pulse1->split_adj) 
+                                            + (pulse1->split_beat_adj * (2.* split_dist) / (double) out_rate);  
+              pulse1->split_adj *= sign_adjust;
+            }  
+            pulse1->carrier += (pulse1->carr_adj * fast_mult);  // tone to sound if time
+            pulse1->pulse_beat += (pulse1->pulse_beat_adj * fast_mult);  // beat of the pulse
+            pulse1->pulse_time += (pulse1->pulse_time_adj * fast_mult);  // duration of the pulse
+            pulse1->pulse_frames -= fast_mult;  // played pulse frame(s)
+            pulse1->amp += (pulse1->amp_adj * fast_mult);  // amplitude to sound at
+            if (pulse1->amp < 0.0)  // no negative amplitudes
+              pulse1->amp = 0.0;
+          }
+        }
+        break;
+      case 14:                // Pulse tones step slide
+      case 15:                // Pulse tones vary slide
+        {
+          double amp1;
+          int off2_prev;
+          pulse *pulse1;
+
+          pulse1 = (pulse *) this;  // reassign void pointer as pulse struct
+
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
+          {
+            if (pulse1->cur_frames >= pulse1->tot_frames)  // step voice finished
+            {
+              pulse *pulse2;
+              pulse2 = pulse1->step_next;
+              pulse2->next = pulse1->next;
+              pulse2->prev = pulse1->prev;
+              if (pulse1->prev != NULL)
+                ((pulse *) pulse1->prev)->next = pulse2;
+              else  // must be first voice in chain for time sequence
+                snd1->voices = (void *) pulse2;
+              if (pulse1->next != NULL)
+                ((pulse *) pulse1->next)->prev = pulse2;
+              /* free(pulse1); */  // not bothering to free, because it could slow down sound generation
+              pulse1 = pulse2;  // new voice from step list
+            }
+            if (pulse1->first_pass)
+            {
+              pulse1->first_pass = 0;  // now active
+              pulse1->fade_factor = 1.0; // set fade to start play
+              if (pulse1->last_off1 != NULL)  // there *is* a previous offset to use
+                pulse1->off1 = *pulse1->last_off1;  // to eliminate crackle from discontinuity in wave
+              if (pulse1->last_off2 != NULL)  // there *is* a previous offset to use
+                pulse1->off2 = *pulse1->last_off2;
+            }
+            off2_prev = pulse1->off2;  // save the original offset to determine if time to play pulse
+            pulse1->inc2 += ( pulse1->pulse_beat * 2. * fast_mult);  //inc to next sin value
+            pulse1->off2 += (int) round(pulse1->inc2);  // offset for beat frequency into sin table
+            pulse1->inc2 -= round (pulse1->inc2);  // remaining increment is only fractional part, +ve or -ve
+            pulse1->off2 = pulse1->off2 % (out_rate * 2);  // mod with sin table size, to wrap offset
+            if (off2_prev > pulse1->off2)  // time to play, beat offset just wrapped to start of sin table
+              pulse1->pulse_frames = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+            /* fade out begins one millisecond from end  */
+            if (pulse1->pulse_frames > 0 && pulse1->pulse_frames <= msec_fade_count)  
+              pulse1->fade_factor -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+            if (pulse1->pulse_frames <= 0 && pulse1->pulse_frames > -fast_mult)  // have to allow for fast play
+            { /* pulse beat has ended for this pass, make sure ready for start of next beat play */
+              pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+              pulse1->fade_factor = 1.0; // set start fade factor to full volume
+            }
+            if (pulse1->pulse_frames > 0)  // playing a pulse
+            {
+              if (opt_c)  // compensate
+                amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
+              else
+                amp1 = pulse1->amp;
+              /* pulse is always square wave, full volume  */
+              out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor
+                                                        * sin_table[pulse1->off1]);
+              out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor
+                                                        * sin_table[pulse1->off1]);
+              /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
+              pulse1->inc1 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
+              pulse1->off1 += pulse1->inc1;  // don't worry about fractional portion, frequency high enough to ignore
+              pulse1->off1 = pulse1->off1 % (out_rate * 2);  // mod with sin table size, to wrap offset
+            }
+            /*  Adjust split or split beat even when not playing beat */
+            pulse1->split_now += pulse1->split_adj * fast_mult;
+            if (pulse1->split_beat == 0.0)  // no split beat, adjust split towards split_end
+            {
+              if (pulse1->split_now < 0.0)
+                pulse1->split_now = 0.0;
+              else if (pulse1->split_now > 1.0)
+                pulse1->split_now = 1.0;
+            }
+            else // split beat so oscillates between begin and end
+            {
+              double split_dist = fabs (pulse1->split_end - pulse1->split_begin);
+                /* assumes split_end > split_begin, this is done in init_binaural */
+              if (pulse1->split_now > pulse1->split_end)  // larger than end
+              {
+                double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to end
+                  pulse1->split_now = pulse1->split_end;
+                else // overshoot smaller than overall split, reflect from end
+                  pulse1->split_now = pulse1->split_end - delta;
+                pulse1->split_adj *= -1.;  // swap direction
+              }
+              else if (pulse1->split_now < pulse1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (pulse1->split_begin - pulse1->split_now);  // overshoot
+                if (delta > split_dist) // overshoot too large, set to begin
+                  pulse1->split_now = pulse1->split_begin;
+                else // overshoot smaller than overall split, reflect from begin
+                  pulse1->split_now = pulse1->split_begin + delta;
+                pulse1->split_adj *= -1.;  // swap direction
+              }
+              /* Adjust the split beat and split adjust.  Second difference equation. */
+              pulse1->split_beat += (pulse1->split_beat_adj * fast_mult);
+              double sign_adjust = 1.0;  // default to positive when split_adj == 0.0
+              if (pulse1->split_adj != 0.0)
+                sign_adjust = fabs(pulse1->split_adj) / pulse1->split_adj;
+              pulse1->split_adj = fabs(pulse1->split_adj) 
+                                            + ((pulse1->split_beat_adj * (2. * split_dist)) / (double) out_rate);  
+              pulse1->split_adj *= sign_adjust;
+            }  
+            pulse1->carrier += (pulse1->carr_adj * fast_mult);  // tone to sound if time
+            pulse1->pulse_beat += (pulse1->pulse_beat_adj * fast_mult);  // beat of the pulse
+            pulse1->pulse_time += (pulse1->pulse_time_adj * fast_mult);  // duration of the pulse
+            pulse1->pulse_frames -= fast_mult;  // played pulse frame(s)
+            pulse1->amp += (pulse1->amp_adj * fast_mult);  // amplitude to sound at
+            if (pulse1->amp < 0.0)  // no negative amplitudes
+              pulse1->amp = 0.0;
+            pulse1->cur_frames += fast_mult;  
+          }
+        }
+        break;
       default:               // do nothing if not recognized
         ;
     }
@@ -5543,6 +6435,53 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
       }
       break;
+    case 13:  // pulse
+      {
+        pulse *pulse1;
+
+        pulse1 = (pulse *) this;
+        char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
+        char_count += fprintf (fp, " %.3f", pulse1->pulse_beat);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (pulse1->amp), pulse1->pulse_time);
+        char_count += fprintf (fp, " %d", pulse1->pulse_frames);
+        char_count += fprintf (fp, " %d %d", pulse1->inc1, pulse1->off1);
+        char_count += fprintf (fp, " %.3f %d", pulse1->inc2, pulse1->off2);
+        char_count += fprintf (fp, " %.3e %.3e %.3e %.3e", pulse1->carr_adj, pulse1->pulse_beat_adj, 
+                                                            pulse1->pulse_time_adj, pulse1->amp_adj);
+        char_count += fprintf (fp, " %.3f", pulse1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f", pulse1->split_begin, pulse1->split_end, 
+                                                              pulse1->split_low, pulse1->split_high);
+        char_count += fprintf (fp, " %.3f", pulse1->fade_factor);
+        char_count += fprintf (fp, " %.3e", pulse1->split_beat);
+        char_count += fprintf (fp, " %.3e %.3e", pulse1->split_beat_adj, pulse1->split_adj);
+        char_count += fprintf (fp, " %d\n", pulse1->slide);
+      }
+      break;
+    case 14:  // pulse step slide
+    case 15:  // pulse vary slide, even though doesn't have fuzz
+      {
+        pulse *pulse1;
+
+        pulse1 = (pulse *) this;
+        char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
+        char_count += fprintf (fp, " %.3f", pulse1->pulse_beat);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (pulse1->amp), pulse1->pulse_time);
+        char_count += fprintf (fp, " %d", pulse1->pulse_frames);
+        char_count += fprintf (fp, " %d %d", pulse1->inc1, pulse1->off1);
+        char_count += fprintf (fp, " %.3f %d", pulse1->inc2, pulse1->off2);
+        char_count += fprintf (fp, " %.3e %.3e %.3e %.3e", pulse1->carr_adj, pulse1->pulse_beat_adj, 
+                                                            pulse1->pulse_time_adj, pulse1->amp_adj);
+        char_count += fprintf (fp, " %.3f", pulse1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f", pulse1->split_begin, pulse1->split_end, 
+                                                              pulse1->split_low, pulse1->split_high);
+        char_count += fprintf (fp, " %.3f", pulse1->fade_factor);
+        char_count += fprintf (fp, " %.3e", pulse1->split_beat);
+        char_count += fprintf (fp, " %.3e %.3e", pulse1->split_beat_adj, pulse1->split_adj);
+        char_count += fprintf (fp, " %d", pulse1->slide);
+        char_count += fprintf (fp, " %lld %lld", pulse1->tot_frames, pulse1->cur_frames);
+        char_count += fprintf (fp, " %d %.2f %.1f\n", pulse1->steps, pulse1->slide_time, pulse1->fuzz);
+      }
+      break;
     default:  // not known, do nothing
       ;
   }
@@ -5657,6 +6596,21 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
         char_count += fprintf (fp, "   %.3f", chronaural1->split_now);
         char_count += fprintf (fp, "   %.3e  %.3f\n", chronaural1->split_adj, chronaural1->split_beat); 
+        break;
+      }
+    case 13:  // pulse
+    case 14:  // pulse step slide
+    case 15:  // pulse vary slide
+      {
+        pulse *pulse1;
+
+        pulse1 = (pulse *) this;
+        char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
+        char_count += fprintf (fp, "   %.3f", pulse1->pulse_beat);
+        char_count += fprintf (fp, "   %.3f", AMP_DA (pulse1->amp * amp_comp (pulse1->carrier)));
+        char_count += fprintf (fp, "   %.3f", pulse1->pulse_time);
+        char_count += fprintf (fp, "   %.3f", pulse1->split_now);
+        char_count += fprintf (fp, "   %.3e  %.3f\n", pulse1->split_adj, pulse1->split_beat); 
         break;
       }
     default:  // not known, do nothing
