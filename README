@@ -76,3 +76,9 @@ and esound is running.  If it is pulseaudio causing the problem, it
 has probably replaced the default device of ALSA.  Remove the
 pulseaudio-alsa package or find the file pulseaudio-alsa.conf and move
 it to another name.
+
+If you are looking for sound samples to use with discord, one place
+you can look at is freesound at http://freesound.iua.upf.edu/.  Most
+of the sounds there are under a creative commons licence so I don't
+distribute them with discord, but you should be able to use them
+without any licensing problem for personal use.
