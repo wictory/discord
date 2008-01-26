@@ -12,7 +12,7 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P><STRONG><FONT COLOR="NAVY">NAME</FONT></STRONG>
 
-<P>  discord - Generate binaural and chronaural tones to soundcard or
+<P>  discord - Generate binaural, pulse, or chronaural tones to soundcard or
   file for use in brain wave entrainment. &nbsp;&nbsp; Link to <A HREF="http://sourceforge.net/projects/discord/">discord project and
   download  page at sourceforge</A>
 
@@ -22,7 +22,7 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P><STRONG><FONT COLOR="NAVY">DESCRIPTION</FONT></STRONG>
 
-<P>  discord is a command line program used to generate binaural and
+<P>  discord is a command line program used to generate binaural, pulse,  and
   chronaural beats mixed with tones, noise, or sound files of the
   users choice.  The default is to play the files via the computer's
   sound card, but they can be written to output files instead.  Only
@@ -49,7 +49,7 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   either a script file or the command line.  There is a sample .discordrc
   included, so you can move it to your $HOME directory if you want.
 
-<P>  There are eight voice types in discord.  These are binaural,
+<P>  There are nine voice types in discord.  These are binaural, pulse,
   chronaural, bell, noise, stoch (stands for stochastic), sample,
   repeat, and once.
 
@@ -62,7 +62,18 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   the left and right channels at a specified frequency and by a
   specified percent.  Binaural tones are allowed to slide into the
   next binaural on carrier, beat, amplitude, amplitude beat, and
-  amplitude amount.
+  amplitude beat variation amount.
+
+<P><STRONG><FONT COLOR=#FF7F00>pulse</FONT></STRONG>
+
+<P>  Generate a periodic tone at a specified frequency and amplitude.
+  The period is the beat in this case.  In addition, the split or
+  pan of the tone can be specified to vary between set values at
+  a rate specified.  Pulse tones are allowed to slide into the
+  next pulse on carrier, pulse beat, pulse time, amplitude, and
+  split beat.  The difference between this and chronaural is the
+  way the duration is specified.  Pulse is also fixed as using a
+  square wave.
 
 <P><STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG>
 
@@ -399,22 +410,61 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
     vary slide
 </PRE>
 
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>pulse</FONT></STRONG> 
+  are name, carrier, amplitude, pulse beat, pulse time, beginning
+  split, ending split, lowest split allowed, highest split
+  allowed, split beat, and slide.  Pulse beat is the frequency
+  through time of the carrier tone.  Pulse time is the duration
+  of the pulse beat in seconds.  There is a one millisecond fade
+  out on all pulse tones to prevent crackle in the sound stream
+  so you cannot use a pulse beat such that the length of the tone
+  is less than one millisecond or it will begin to fade
+  immediately.  If the pulse time is longer than the period of
+  the pulse beat frequency, greater than 1/pulse_beat, the tone
+  will sound continuously.  So at a pulse beat of 20 Hz, the
+  pulse time has to be less than .05 and if you don't want
+  immediate fade, greater than .001.  If beginning split or ending
+  split are -1, they are set randomly between lowest split and
+  highest split.  Split beat is the frequency through time of the
+  oscillation of the left and right split.  Slide indicator must
+  be present or no slide will occur.
+
+<P>  Example
+<P><PRE>
+         carrier   pulse time   begin split   high split  slide
+           |               |       |               |          |
+  pulse''145.0''1.0''4.0''.02''''0.0''0.5''.050''.950''1.200''&gt;
+    |   |       |     |                |    |            |
+   name |       | pulse beat           | low split    split beat
+   separators  amplitude          end split             
+    |     |
+  &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
+  |    |    |         |
+  | steps slide time  fuzz percent
+  step slide
+  ~,,,,5''''20  (slide with ~ instead of &gt;)
+  |    |    |
+  | steps slide time
+  vary slide
+</PRE>
+
 <P>  Fields for <STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG> 
-  are name, carrier, amplitude, amplitude beat,
-  amplitude fraction, amplitude behave, beginning split, ending split,
-  lowest split allowed, highest split allowed, split beat, and slide.
-  Amplitude beat is the frequency through time of the carrier tone.
-  Amplitude fraction is the value the sin function has to have
-  before the tone is played, [0.0, 1.0).  The closer this is to 1.0, the
-  shorter the tone will be.  There is a twenty-five frame fade in and
-  fade out on all chronaural tones to prevent crackle in the sound
-  stream so you cannot use an amplitude fraction such that the length of
-  the tone is less than fifty frames or it will not sound.
-  e.g. at a frame rate of 48000/sec and chronaural beat frequency of
-  20 Hz the maximum amplitude fraction is slightly above 0.9975.
-  at a frame rate of 96000/sec and chronaural beat frequency of
-  5 Hz the maximum amplitude fraction is slightly above 0.9999.
-  Behavior for amp beat is as follows:
+  are name, carrier, amplitude, amplitude beat, amplitude
+  fraction, amplitude behave, beginning split, ending split,
+  lowest split allowed, highest split allowed, split beat, and
+  slide.  Amplitude beat is the frequency through time of the
+  carrier tone.  Amplitude fraction is the value the sin function
+  has to have before the tone is played, [0.0, 1.0).  The closer
+  this is to 1.0, the shorter the tone will be.  There is a one
+  millisecond fade out on all chronaural tones to prevent crackle
+  in the sound stream so you cannot use an amplitude fraction
+  such that the length of the tone is less than one millisecond
+  or it will fade immediately.  e.g. at a frame rate of 48000/sec
+  and chronaural beat frequency of 20 Hz the maximum amplitude
+  fraction is slightly above 0.9975.  at a frame rate of
+  96000/sec and chronaural beat frequency of 5 Hz the maximum
+  amplitude fraction is slightly above 0.9999.  Behavior for amp
+  beat is as follows:
 
 <P>  1 sin wave - tone is multiplied by sin value <BR>
   2 square wave - tone is either on or off <BR>
@@ -575,10 +625,11 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
                                                    when to play
 </PRE>
 <P>  There are test script files called binaural_test.discord,
-  chronaural_test.discord, bell_test.discord, noise_test.discord,
-  stoch_test.discord, sample_test.discord, repeat_test.discord,
-  once_test.discord, and frequency_loudness_test.discord and several script
-  files for actual usage.
+  pulse_test.discord, chronaural_test.discord, bell_test.discord,
+  noise_test.discord, stoch_test.discord, sample_test.discord,
+  repeat_test.discord, once_test.discord, and
+  frequency_loudness_test.discord and several script files for actual
+  usage.
 
 <P><STRONG><FONT COLOR="NAVY">QUESTIONS AND ANSWERS</FONT></STRONG>
 <DL>
@@ -728,7 +779,7 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   This document is by Stan Lysiak &lt;<A HREF="mailto:stanlk@users.sourceforge.net">stanlk@users.sourceforge.net</A>&gt;
 
 <P><STRONG><FONT COLOR="NAVY">COPYRIGHT</FONT></STRONG><BR>
-  Discord is copyright (C) 2007 by Stan Lysiak 
+  Discord is copyright (C) 2007-2008 by Stan Lysiak 
   &lt;<A HREF="mailto:stanlk@users.sourceforge.net">stanlk@users.sourceforge.net</A>&gt;
 </BODY>
 </HTML>

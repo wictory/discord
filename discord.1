@@ -1,46 +1,45 @@
-.TH DISCORD 1 "07 December 2007"
+.TH DISCORD 1 "26 January 2008"
 .SH NAME
-discord \- Generate binaural and chronaural tones to soundcard or
-file for use in brain wave entrainment.
+discord \- Generate binaural, pulse, or chronaural tones to 
+soundcard or file for use in brain wave entrainment.
 .SH SYNOPSIS
 
 \fBdiscord\fP [\fIflags\fP] \fBfilename\fP
 
 .SH COPYRIGHT
-Discord is copyright (C) 2007 by Stan Lysiak <stanlk@users.sourceforge.net>
+Discord is copyright (C) 2007-2008 by Stan Lysiak <stanlk@users.sourceforge.net>
 
 .SH  DESCRIPTION
 
-\fBdiscord\fP is a command line program used to generate binaural and
-chronaural beats mixed with tones, noise, or sound files of the
-users choice.  The default is to play the files via the computer's
-sound card, but they can be written to output files instead.  Only
-file formats available in libsndfile can be used as input.  Those
-formats do not include mp3 or ogg at this time, though the creator
-of libsndfile is thinking about adding ogg.  He is not adding mp3
-because of patent issues.  For practical purposes, this means wav,
-flac, or raw files on a PC, though au and aiff formats are also
-available.  If an input sound file has a different sample rate than
-that selected for the output, it will automatically be resampled to
-the requested rate.  A copy can be retained in the same directory as
-it was found with the new rate appended to the filename.  Output
+\fBdiscord\fP is a command line program used to generate binaural,
+pulse, and chronaural beats mixed with tones, noise, or sound files
+of the users choice.  The default is to play the files via the
+computer's sound card, but they can be written to output files
+instead.  Only file formats available in libsndfile can be used as
+input.  Those formats do not include mp3 or ogg at this time, though
+the creator of libsndfile is thinking about adding ogg.  He is not
+adding mp3 because of patent issues.  For practical purposes, this
+means wav, flac, or raw files on a PC, though au and aiff formats are
+also available.  If an input sound file has a different sample rate
+than that selected for the output, it will automatically be resampled
+to the requested rate.  A copy can be retained in the same directory
+as it was found with the new rate appended to the filename.  Output
 file types are limited to wav, flac, and raw; these are all lossless
 formats.
 
 While all of the options below can be used on the command line, the
-sequences to play must be defined in a script file.  Options
-on the command line override options in a script file.
-Script files are named with a .discord extension by
-convention.  You can, however, use whatever name you want for your
-script files.  All of the options can also be set in a
-configuration file in your home directory called .discordrc.  This
-file contains options identical to those in a script file or on the
-command line.  The options found here have the lowest priority and
-will be overridden by either a script file or the command line.
-There is a sample .discordrc included, so you can move it to your
-$HOME directory if you want.
+sequences to play must be defined in a script file.  Options on the
+command line override options in a script file.  Script files are
+named with a .discord extension by convention.  You can, however, use
+whatever name you want for your script files.  All of the options can
+also be set in a configuration file in your home directory called
+.discordrc.  This file contains options identical to those in a script
+file or on the command line.  The options found here have the lowest
+priority and will be overridden by either a script file or the command
+line.  There is a sample .discordrc included, so you can move it to
+your $HOME directory if you want.
 
-There are eight voice types in discord.  These are binaural,
+There are nine voice types in discord.  These are binaural, pulse,
 chronaural, bell, noise, stoch (stands for stochastic), sample,
 repeat, and once.
 
@@ -53,7 +52,17 @@ carrier frequency and amplitude.  Optionally vary the amplitude of
 the left and right channels at a specified frequency and by a
 specified percent.  Binaural tones are allowed to slide into the
 next binaural on carrier, beat, amplitude, amplitude beat, and
-amplitude amount.
+amplitude beat variation amount.
+
+\fBpulse\fP
+
+Generate a periodic tone at a specified frequency and amplitude.  The
+period is the beat in this case.  In addition, the split or pan of the
+tone can be specified to vary between set values at a rate specified.
+Pulse tones are allowed to slide into the next pulse on carrier, pulse
+beat, pulse time, amplitude, and split beat.  The difference between
+this and chronaural is the way the duration is specified.  Pulse is
+also fixed as using a square wave.
 
 \fBchronaural\fP
 
@@ -354,21 +363,58 @@ Examples
 .br        
   vary slide
 
-Fields for \fBchronaural\fP are name, carrier, amplitude, amplitude
-beat, amplitude fraction, amplitude behave, beginning split, ending
-split, lowest split allowed, highest split allowed, split beat, and
-slide.  Amplitude beat is the frequency through time of the carrier
-tone.  Amplitude fraction is the value the sin function has to have
-before the tone is played, [0.0, 1.0).  The closer this is to 1.0, the
-shorter the tone will be.  There is a twenty-five frame fade in and
-fade out on all chronaural tones to prevent crackle in the sound
-stream so you cannot use an amplitude fraction such that the length of
-the tone is less than fifty frames or it will not sound.
-e.g. at a frame rate of 48000/sec and chronaural beat frequency of
-20 Hz the maximum amplitude fraction is slightly above 0.9975.
-at a frame rate of 96000/sec and chronaural beat frequency of
-5 Hz the maximum amplitude fraction is slightly above 0.9999.
-Behavior for amp beat is as follows:
+Fields for \fBpulse\fP are name, carrier, amplitude, pulse beat, pulse
+time, beginning split, ending split, lowest split allowed, highest
+split allowed, split beat, and slide.  Pulse beat is the frequency
+through time of the carrier tone.  Pulse time is the duration of the
+pulse beat in seconds.  There is a one millisecond fade out on all
+pulse tones to prevent crackle in the sound stream so you cannot use
+a pulse beat such that the length of the tone is less than one
+millisecond or it will begin to fade immediately.  If the pulse time
+is longer than the period of the pulse beat frequency, greater than
+1/pulse_beat, the tone will sound continuously.  So at a pulse beat
+of 20 Hz, the pulse time has to be less than .05 and if you don't
+want immediate fade, greater than .001.  If beginning split or ending
+split are -1, they are set randomly between lowest split and highest
+split.  Split beat is the frequency through time of the oscillation
+of the left and right split.  Slide indicator must be present or no
+slide will occur.
+
+  Example
+         carrier   pulse time   begin split   high split  slide
+           |               |       |               |          |
+  pulse''145.0''1.0''4.0''.02''''0.0''0.5''.050''.950''1.200''>
+    |   |       |     |                |    |            |
+   name |       | pulse beat           | low split    split beat
+   separators  amplitude          end split             
+    |     |
+.br        
+  &''''8''''30'''',,,,10  (slide with & instead of >)
+  |    |    |         |
+  | steps slide time  fuzz percent
+  step slide
+.br        
+  ~,,,,5''''20  (slide with ~ instead of >)
+  |    |    |
+  | steps slide time
+  vary slide
+
+Fields for \fBchronaural\fP are name, carrier, amplitude,
+amplitude beat, amplitude fraction, amplitude behave, beginning
+split, ending split, lowest split allowed, highest split allowed,
+split beat, and slide.  Amplitude beat is the frequency through
+time of the carrier tone.  Amplitude fraction is the value the
+sin function has to have before the tone is played, [0.0, 1.0).
+The closer this is to 1.0, the shorter the tone will be.  There
+is a one millisecond fade out on all chronaural tones to prevent
+crackle in the sound stream so you cannot use an amplitude
+fraction such that the length of the tone is less than one
+millisecond or it will fade immediately.  e.g. at a frame rate of
+48000/sec and chronaural beat frequency of 20 Hz the maximum
+amplitude fraction is slightly above 0.9975.  at a frame rate of
+96000/sec and chronaural beat frequency of 5 Hz the maximum
+amplitude fraction is slightly above 0.9999.  Behavior for amp
+beat is as follows:
 
 1 sin wave - tone is multiplied by sin value
 .br
@@ -542,9 +588,10 @@ Example
                                                    when to play
 
 There are test script files called binaural_test.discord,
-chronaural_test.discord, bell_test.discord, noise_test.discord,
-stoch_test.discord, sample_test.discord, repeat_test.discord,
-once_test.discord, and frequency_loudness_test.discord.
+pulse_test.discord, chronaural_test.discord, bell_test.discord,
+noise_test.discord, stoch_test.discord, sample_test.discord,
+repeat_test.discord, once_test.discord, and
+frequency_loudness_test.discord.
 
 .SH QUESTIONS AND ANSWERS
 .TP
