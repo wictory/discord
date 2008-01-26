@@ -184,11 +184,11 @@
 #    lowest split allowed, highest split allowed, when to play.
 #    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
 #
-#  Fields for chronaural are name, carrier, amplitude, amplitude beat, amplitude fraction, amplitude behave,
+#  Fields for chronaural are name, carrier, amplitude, beat, sin threshold, beat behave, 
 #    beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
 #    Amplitude beat is the frequency through time of the carrier tone.
 #    Amplitude fraction is the value the sin function has to have before the tone is played.
-#    Behavior for amp beat is below.
+#    Beat amplitude behavior is below.
 #      1 sin wave  tone is adjusted by sin value
 #      2 square wave  tone is either on or off
 #      3 dirac delta approximation, 5th power of sin
