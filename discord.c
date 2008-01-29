@@ -232,6 +232,9 @@ struct binaural
   double carrier;               // Carrier freq
   double beat;                  // Resonance freq or beat freq
   double amp;                   // Amplitude level 0-100%, stored as decimal. i.e. .06
+  double phase;                 // Phase between left and right channel, 0 to 360 degrees.
+                                // Left always starts at zero, right leads, 
+                                // 0 or 360 means in phase.
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for binaural tones, offset + increment into sine
@@ -420,8 +423,11 @@ struct chronaural
   void *next;
   int type;                 // 8, or 10 for chronaural step slide, 12 for vary
   double carrier;               // Carrier freq
+  double beat;   // Beat frequency of carrier frequency
   double amp;   // Amplitude level 0-100%, stored as decimal. i.e. .06
-  double beat;   // Amplitude variation frequency
+  double phase;                 // Phase between left and right channel, 0 to 360 degrees.
+                                // Left always starts at zero, right leads, 
+                                // 0 or 360 means in phase.
   double sin_threshold;   // Value of sin at which to begin the chronaural beat
   int beat_behave;
   /* amplitude behavior of chronaural beat:
@@ -463,8 +469,11 @@ struct pulse
   void *next;
   int type;                 // 13, or 14 for pulse step slide, 15 for vary
   double carrier;               // Carrier freq
+  double pulse_beat;   // Pulse beat frequency of carrier frequency
   double amp;   // Amplitude level 0-100%, stored as decimal. i.e. .06
-  double pulse_beat;   // Pulse beat frequency
+  double phase;                 // Phase between left and right channel, 0 to 360 degrees.
+                                // Left always starts at zero, right leads, 
+                                // 0 or 360 means in phase.
   double pulse_time;   // Duration of the pulse in seconds
   int pulse_frames; // Number of frames that the current pulse time will take
   double split_begin, split_end, split_now;      // left fraction for pulse, .5 means evenly split L and R
@@ -2842,6 +2851,16 @@ setup_chronaural (char *token, void **work)
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
+  double beat = strtod (subtoken, &endptr);
+  if (beat == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Beat for chronaural had an error.\n");
+  }
+  chronaural1->beat = beat;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
   double amp = strtod (subtoken, &endptr);
   if (amp == 0.0)
   {
@@ -2849,16 +2868,6 @@ setup_chronaural (char *token, void **work)
       error ("Amplitude for chronaural had an error.\n");
   }
   chronaural1->amp = AMP_AD(amp);
-
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double beat = strtod (subtoken, &endptr);
-  if (beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude beat for chronaural had an error.\n");
-  }
-  chronaural1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -3049,16 +3058,6 @@ setup_pulse (char *token, void **work)
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
-  double amp = strtod (subtoken, &endptr);
-  if (amp == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude for pulse had an error.\n");
-  }
-  pulse1->amp = AMP_AD(amp);
-
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
   double pulse_beat = strtod (subtoken, &endptr);
   if (pulse_beat == 0.0)
   {
@@ -3066,6 +3065,16 @@ setup_pulse (char *token, void **work)
       error ("Pulse beat for pulse had an error.\n");
   }
   pulse1->pulse_beat = pulse_beat;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double amp = strtod (subtoken, &endptr);
+  if (amp == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Amplitude for pulse had an error.\n");
+  }
+  pulse1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
