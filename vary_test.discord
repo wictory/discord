@@ -165,10 +165,10 @@
 #    lowest split allowed, highest split allowed, when to play.
 #    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
 #
-#  Fields for chronaural are name, carrier, amplitude, beat, sin threshold, beat behave, 
+#  Fields for chronaural are name, carrier, beat, amplitude, sin threshold, beat behave, 
 #    beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
-#    Amplitude beat is the frequency through time of the carrier tone.
-#    Amplitude fraction is the value the sin function has to have before the tone is played.
+#    Beat is the frequency through time of the carrier tone.
+#    Sin threshold is the value the sin function has to have before the tone is played.
 #    Beat amplitude behavior is below.
 #      1 sin wave  tone is adjusted by sin value
 #      2 square wave  tone is either on or off
@@ -180,7 +180,7 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
-#  Fields for pulse are name, carrier, amplitude, pulse beat, pulse time,
+#  Fields for pulse are name, carrier, pulse beat, amplitude, pulse time,
 #    beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
 #    Pulse beat is the frequency through time of the carrier tone.
 #    Pulse time is the length in seconds that the carrier should play for a pulse.  There is a 1 ms fade out
@@ -199,21 +199,21 @@
 00:00:10'''<  
                binaural''''200.0''''+16.3''''0.520''''4.50''''4.50''''2.0''''2.0
                binaural''''200.0''''-16.3''''0.520''''4.50''''4.50''''2.0''''2.0
-  chronaural''''200.0''''0.40''''16.3''''0.95''''3''''0.0''''1.0''''.001''''.999''''16.001
-  chronaural''''200.0''''0.40''''16.3''''0.95''''3''''0.0''''1.0''''.001''''.999''''15.999
+  chronaural''''200.0''''16.3''''0.40''''0.95''''3''''0.0''''1.0''''.001''''.999''''16.001
+  chronaural''''200.0''''16.3''''0.40''''0.95''''3''''0.0''''1.0''''.001''''.999''''15.999
 #
 # Play vary
 #
 00:02:00  
                binaural''''200.0''''+16.3''''0.620''''4.50''''4.50''''2.0''''2.0''''~''''4''''10
                binaural''''200.0''''-16.3''''0.620''''4.50''''4.50''''2.0''''2.0''''~''''4''''10
-  chronaural''''200.0''''0.40''''16.3''''0.95''''3''''0.0''''1.0''''.001''''.999''''16.001''''~''''4''''10
-  chronaural''''200.0''''0.40''''16.3''''0.95''''3''''0.0''''1.0''''.001''''.999''''15.999''''~''''4''''10
+  chronaural''''200.0''''16.3''''0.40''''0.95''''3''''0.0''''1.0''''.001''''.999''''16.001''''~''''4''''10
+  chronaural''''200.0''''16.3''''0.40''''0.95''''3''''0.0''''1.0''''.001''''.999''''15.999''''~''''4''''10
 #
 # Fade out
 #
 00:00:10'''>  
                binaural''''100.0''''+12.3''''0.420''''14.50''''14.50''''2.0''''2.0
                binaural''''100.0''''-12.3''''0.420''''14.50''''14.50''''2.0''''2.0
-  chronaural''''100.0''''0.60''''12.3''''0.95''''3''''0.0''''1.0''''.001''''.999''''11.999
-  chronaural''''100.0''''0.60''''12.3''''0.95''''3''''0.0''''1.0''''.001''''.999''''12.999
+  chronaural''''100.0''''12.3''''0.60''''0.95''''3''''0.0''''1.0''''.001''''.999''''11.999
+  chronaural''''100.0''''12.3''''0.60''''0.95''''3''''0.0''''1.0''''.001''''.999''''12.999
