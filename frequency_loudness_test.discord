@@ -111,7 +111,8 @@
 #  For any fields with a minimum and maximum range, setting them the same makes it a constant value.  Any time 
 #    they are different, a random selection in the range will be made.
 #
-#  Fields for binaural are name, carrier frequency, beat frequency, and amplitude.
+#  Fields for binaural are name, carrier frequency, beat frequency, amplitude, and phase.
+#    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
 #    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
 #    Must be at the end, before the slide indicator if they are present.
 #    The + or - on the beat frequency indicates whether the left ear is higher + or lower -.
@@ -166,9 +167,10 @@
 #    lowest split allowed, highest split allowed, when to play.
 #    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
 #
-#  Fields for chronaural are name, carrier, beat, amplitude, sin threshold, beat behave, 
+#  Fields for chronaural are name, carrier, beat, amplitude, phase, sin threshold, beat behave, 
 #    beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
 #    Beat is the frequency through time of the carrier tone.
+#    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
 #    Sin threshold is the value the sin function has to have before the tone is played.
 #    Beat amplitude behavior is below.
 #      1 sin wave  tone is adjusted by sin value
@@ -181,9 +183,10 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
-#  Fields for pulse are name, carrier, pulse beat, amplitude, pulse time,
+#  Fields for pulse are name, carrier, pulse beat, amplitude, phase, pulse time,
 #    beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
 #    Pulse beat is the frequency through time of the carrier tone.
+#    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
 #    Pulse time is the length in seconds that the carrier should play for a pulse.  There is a 1 ms fade out
 #      so it should be longer than that.  If it is longer than 1/pulse beat it will play continuously.  It is
 #      a simple on-off tone, square wave.

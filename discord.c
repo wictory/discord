@@ -6423,9 +6423,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->beat_adj, chronaural1->amp_adj);
         char_count += fprintf (fp, " %.3f", chronaural1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f\n",
+        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        char_count += fprintf (fp, "         %.3f %d %.3f",
+        char_count += fprintf (fp, " %.3f %d %.3f",
                         chronaural1->fade_sinval, chronaural1->fade_frame, chronaural1->fade_factor);
         char_count += fprintf (fp, " %.3e", chronaural1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e",
@@ -6468,9 +6468,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->beat_adj, chronaural1->amp_adj);
         char_count += fprintf (fp, " %.3f", chronaural1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f\n",
+        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
-        char_count += fprintf (fp, "         %.3f %d %.3f",
+        char_count += fprintf (fp, " %.3f %d %.3f",
                         chronaural1->fade_sinval, chronaural1->fade_frame, chronaural1->fade_factor);
         char_count += fprintf (fp, " %.3e", chronaural1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e",
@@ -6655,7 +6655,7 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
         char_count += fprintf (fp, "   %.3f", pulse1->pulse_beat);
         char_count += fprintf (fp, "   %.3f", AMP_DA (pulse1->amp * amp_comp (pulse1->carrier)));
-        char_count += fprintf (fp, "   %.4f", pulse1->phase);
+        char_count += fprintf (fp, "   %.3f", pulse1->phase);
         char_count += fprintf (fp, "   %.3f", pulse1->pulse_time);
         char_count += fprintf (fp, "   %.3f", pulse1->split_now);
         char_count += fprintf (fp, "   %.3e  %.3f\n", pulse1->split_adj, pulse1->split_beat); 
