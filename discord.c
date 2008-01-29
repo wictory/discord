@@ -1820,6 +1820,18 @@ setup_binaural (char *token, void **work)
   binaural1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double phase = strtod (subtoken, &endptr);
+  if (phase == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Phase for binaural had an error.\n");
+  }
+  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
+      error ("Phase for binaural cannot be less than 0 or greater than 360.\n");
+  binaural1->phase = AMP_AD(phase);
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
     binaural1->slide = 1;
   else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
@@ -2871,6 +2883,18 @@ setup_chronaural (char *token, void **work)
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
+  double phase = strtod (subtoken, &endptr);
+  if (phase == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Phase for chronaural had an error.\n");
+  }
+  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
+      error ("Phase for chronaural cannot be less than 0 or greater than 360.\n");
+  chronaural1->phase = AMP_AD(phase);
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
   double sin_threshold = strtod (subtoken, &endptr);
   if (sin_threshold == 0.0)
   {
@@ -3075,6 +3099,18 @@ setup_pulse (char *token, void **work)
       error ("Amplitude for pulse had an error.\n");
   }
   pulse1->amp = AMP_AD(amp);
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double phase = strtod (subtoken, &endptr);
+  if (phase == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Phase for pulse had an error.\n");
+  }
+  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
+      error ("Phase for pulse cannot be less than 0 or greater than 360.\n");
+  pulse1->phase = AMP_AD(phase);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -6240,7 +6276,7 @@ fprint_voice_all (FILE *fp, void *this)
 
         binaural1 = (binaural *) this;
         char_count += fprintf (fp, "   bin %.3f %+.3f", binaural1->carrier, binaural1->beat);
-        char_count += fprintf (fp, " %.3f", AMP_DA (binaural1->amp));
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp), binaural1->phase);
         char_count += fprintf (fp, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
         char_count += fprintf (fp, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
@@ -6381,7 +6417,7 @@ fprint_voice_all (FILE *fp, void *this)
         chronaural1 = (chronaural *) this;
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
         char_count += fprintf (fp, " %.3f", chronaural1->beat);
-        char_count += fprintf (fp, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->sin_threshold);
+        char_count += fprintf (fp, " %.3f %.3f %.3e", AMP_DA(chronaural1->amp), chronaural1->phase, chronaural1->sin_threshold);
         char_count += fprintf (fp, " %d", chronaural1->beat_behave);
         char_count += fprintf (fp, " %d %d", chronaural1->inc1, chronaural1->off1);
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
@@ -6404,7 +6440,7 @@ fprint_voice_all (FILE *fp, void *this)
 
         binaural1 = (binaural *) this;
         char_count += fprintf (fp, "   bin %.3f %+.3f", binaural1->carrier, binaural1->beat);
-        char_count += fprintf (fp, " %.3f", AMP_DA (binaural1->amp));
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp), binaural1->phase);
         char_count += fprintf (fp, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
         char_count += fprintf (fp, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
@@ -6426,7 +6462,7 @@ fprint_voice_all (FILE *fp, void *this)
         chronaural1 = (chronaural *) this;
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
         char_count += fprintf (fp, " %.3f", chronaural1->beat);
-        char_count += fprintf (fp, " %.3f %.3e", AMP_DA (chronaural1->amp), chronaural1->sin_threshold);
+        char_count += fprintf (fp, " %.3f %.3f %.3e", AMP_DA(chronaural1->amp), chronaural1->phase, chronaural1->sin_threshold);
         char_count += fprintf (fp, " %d", chronaural1->beat_behave);
         char_count += fprintf (fp, " %d %d", chronaural1->inc1, chronaural1->off1);
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
@@ -6451,7 +6487,7 @@ fprint_voice_all (FILE *fp, void *this)
         pulse1 = (pulse *) this;
         char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
         char_count += fprintf (fp, " %.3f", pulse1->pulse_beat);
-        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (pulse1->amp), pulse1->pulse_time);
+        char_count += fprintf (fp, " %.3f %.3f %.3f", AMP_DA (pulse1->amp), pulse1->phase, pulse1->pulse_time);
         char_count += fprintf (fp, " %d", pulse1->pulse_frames);
         char_count += fprintf (fp, " %d %d", pulse1->inc1, pulse1->off1);
         char_count += fprintf (fp, " %.3f %d", pulse1->inc2, pulse1->off2);
@@ -6474,7 +6510,7 @@ fprint_voice_all (FILE *fp, void *this)
         pulse1 = (pulse *) this;
         char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
         char_count += fprintf (fp, " %.3f", pulse1->pulse_beat);
-        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (pulse1->amp), pulse1->pulse_time);
+        char_count += fprintf (fp, " %.3f %.3f %.3f", AMP_DA (pulse1->amp), pulse1->phase, pulse1->pulse_time);
         char_count += fprintf (fp, " %d", pulse1->pulse_frames);
         char_count += fprintf (fp, " %d %d", pulse1->inc1, pulse1->off1);
         char_count += fprintf (fp, " %.3f %d", pulse1->inc2, pulse1->off2);
@@ -6534,8 +6570,9 @@ fprint_voice (FILE *fp, void *this)
           amp1 += ((amp1 * binaural1->amp_pct1) * sin_table[binaural1->amp_off1]);
         if (binaural1->amp_beat2 > 0.0)
           amp2 += ((amp2 * binaural1->amp_pct2) * sin_table[binaural1->amp_off2]);
-        char_count = fprintf (fp, "   bin %.3f    %+.3f   %.3f   %.3f\n", 
+        char_count += fprintf (fp, "   bin %.3f    %+.3f   %.3f   %.3f", 
                       binaural1->carrier, binaural1->beat, AMP_DA (amp1), AMP_DA (amp2));
+        char_count += fprintf (fp, "   %.3f\n", binaural1->phase);
       }
       break;
     case 2:  // bell
@@ -6603,6 +6640,7 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   chron %.3f", chronaural1->carrier);
         char_count += fprintf (fp, "   %.3f", chronaural1->beat);
         char_count += fprintf (fp, "   %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
+        char_count += fprintf (fp, "   %.3f", chronaural1->phase);
         char_count += fprintf (fp, "   %.3f", chronaural1->split_now);
         char_count += fprintf (fp, "   %.3e  %.3f\n", chronaural1->split_adj, chronaural1->split_beat); 
         break;
@@ -6617,6 +6655,7 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
         char_count += fprintf (fp, "   %.3f", pulse1->pulse_beat);
         char_count += fprintf (fp, "   %.3f", AMP_DA (pulse1->amp * amp_comp (pulse1->carrier)));
+        char_count += fprintf (fp, "   %.4f", pulse1->phase);
         char_count += fprintf (fp, "   %.3f", pulse1->pulse_time);
         char_count += fprintf (fp, "   %.3f", pulse1->split_now);
         char_count += fprintf (fp, "   %.3e  %.3f\n", pulse1->split_adj, pulse1->split_beat); 
