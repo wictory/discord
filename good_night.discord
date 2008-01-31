@@ -110,8 +110,7 @@
 #  For any fields with a minimum and maximum range, setting them the same makes it a constant value.  Any time 
 #    they are different, a random selection in the range will be made.
 #
-#  Fields for binaural are name, carrier frequency, beat frequency, amplitude, and phase.
-#    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
+#  Fields for binaural are name, carrier frequency, beat frequency, amplitude.
 #    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
 #    Must be at the end, before the slide indicator if they are present.
 #    The + or - on the beat frequency indicates whether the left ear is higher + or lower -.
@@ -195,6 +194,17 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
+#  Fields for phase are name, carrier frequency, beat frequency, amplitude, and phase.
+#    Beat frequency is the number of times per second that the phase shifts between 0 and the current phase.
+#    Phase is the phase difference in degrees between the left and right channel, from 0 to 360.
+#    If beat frequency is +ve, it is the amount the right channel leads the left.
+#    If beat frequency is -ve, it is the amount the left channel leads the right.
+#    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
+#    Must be at the end, before the slide indicator if they are present.
+#    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
+#    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
+#    have number of steps and slide time after it.
+#
 #  This is a file to do a deep delta followed by a medium theta.
 #  Fade in for 10 seconds, slide down for 20 minutes, working time of deep delta 30 minutes, 
 #  slide for 5 minutes, working time of theta 5 minutes, fade out for 10 seconds.
@@ -203,29 +213,29 @@
 # Fade in
 #
 00:00:10''''<    # using compensation above, all amps are equal
-               binaural''''200.0''''+10.00''''0.520''''0000.0000''''0.50''''0.50''''2.0''''2.0''''>
+               binaural''''200.0''''+10.00''''0.520''''0.50''''0.50''''2.0''''2.0''''>
 #
 # Play slide
 #
 00:20:00    # using compensation above, all amps are equal
-               binaural''''200.0''''+10.00''''0.520''''0000.0000''''0.50''''0.50''''2.0''''2.0''''>
+               binaural''''200.0''''+10.00''''0.520''''0.50''''0.50''''2.0''''2.0''''>
 #
 # Play constant
 #
 00:30:00    # using compensation above, all amps are equal
-               binaural''''25.0''''+0.05''''0.520''''0000.0000''''0.05''''0.05''''2.0''''2.0
+               binaural''''25.0''''+0.05''''0.520''''0.05''''0.05''''2.0''''2.0
 #
 # Play slide
 #
 00:05:00    # using compensation above, all amps are equal
-               binaural''''25.0''''+0.05''''0.520''''0000.0000''''0.05''''0.05''''2.0''''2.0''''>
+               binaural''''25.0''''+0.05''''0.520''''0.05''''0.05''''2.0''''2.0''''>
 #
 # Play constant
 #
 00:05:00    # using compensation above, all amps are equal
-               binaural''''40.0''''+6.40''''0.520''''0000.0000''''0.30''''0.30''''2.0''''2.0
+               binaural''''40.0''''+6.40''''0.520''''0.30''''0.30''''2.0''''2.0
 #
 # Fade out
 #
 00:00:10''''>    # using compensation above, all amps are equal
-               binaural''''40.0''''+6.40''''0.520''''0000.0000''''0.30''''0.30''''2.0''''2.0
+               binaural''''40.0''''+6.40''''0.520''''0.30''''0.30''''2.0''''2.0

@@ -110,8 +110,7 @@
 #  For any fields with a minimum and maximum range, setting them the same makes it a constant value.  Any time 
 #    they are different, a random selection in the range will be made.
 #
-#  Fields for binaural are name, carrier frequency, beat frequency, amplitude, and phase.
-#    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
+#  Fields for binaural are name, carrier frequency, beat frequency, amplitude.
 #    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
 #    Must be at the end, before the slide indicator if they are present.
 #    The + or - on the beat frequency indicates whether the left ear is higher + or lower -.
@@ -195,6 +194,17 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
+#  Fields for phase are name, carrier frequency, beat frequency, amplitude, and phase.
+#    Beat frequency is the number of times per second that the phase shifts between 0 and the current phase.
+#    Phase is the phase difference in degrees between the left and right channel, from 0 to 360.
+#    If beat frequency is +ve, it is the amount the right channel leads the left.
+#    If beat frequency is -ve, it is the amount the left channel leads the right.
+#    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
+#    Must be at the end, before the slide indicator if they are present.
+#    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
+#    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
+#    have number of steps and slide time after it.
+#
 #  This is a file for complete beginners.  If you have never used binaural or chronaural beats before, and you have
 #  never consistently formally meditated, this is where to start.  Use this daily until it seems to do nothing for you.
 #  Beginner doesn't mean it won't have effects.  I have made step slide the default as I think it is better, particularly for
@@ -209,100 +219,105 @@
 #  s/\(chronaural\|pulse\)\('\+[0-9]*\.[0-9]*\)\('\+[+-]\?[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1\2\4\3/e800
 #  # adds phase to binaural, chronaural, and pulse scripts for discord.  Uses distinctive pattern so easy to alter later.  
 #  Expects the flip of amplitude and beat to already be done for chronaural and pulse voices. 
-#  This only matters if amp has sign, which is meaningless if + for chronaural and pulse, and an error if -.
+#  This only matters if beat has sign, which is meaningless if + for chronaural and pulse, and an error if -.
 #  Visual select and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
 #  s/\(binaural\|chronaural\|pulse\)\('\+[0-9]*\.[0-9]*'\+[+-]\?[0-9]*\.[0-9]*'\+[0-9]*\.[0-9]*\)/\1\2''''0000.0000/e800  
+#  # removes phase from binaural voice in scripts for discord.
+#  Expects the flip of amplitude and beat to already be done for chronaural and pulse voices. 
+#  This only matters if beat has sign, which is meaningless if + for chronaural and pulse, and an error if -.
+#  Visual select and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
+#  s/\(binaural'\+[0-9]*\.[0-9]*'\+[+-]\?[0-9]*\.[0-9]*'\+[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1/e800  
 #
 # Fade in
 #
 00:00:10''''<
-               binaural''''200.0''''+20.363''''0.520''''0000.0000''''4.50''''4.50''''2.0''''2.0''''>
+               binaural''''200.0''''+20.363''''0.520''''4.50''''4.50''''2.0''''2.0''''>
   chronaural''''200.0''''20.363''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Play slide
 #
 00:05:00
-               binaural''''200.0''''+20.363''''0.520''''0000.0000''''4.50''''4.50''''2.0''''2.0''''&''''4''''20''''10
-#               binaural''''200.0''''+20.363''''0.520''''0000.0000''''4.50''''4.50''''2.0''''2.0''''>
+               binaural''''200.0''''+20.363''''0.520''''4.50''''4.50''''2.0''''2.0''''&''''4''''20''''10
+#               binaural''''200.0''''+20.363''''0.520''''4.50''''4.50''''2.0''''2.0''''>
   chronaural''''200.0''''20.363''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''&''''4''''20''''10
 #  chronaural''''200.0''''20.363''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Play constant
 #
 00:04:00
-               binaural''''200.0''''+10.007''''0.520''''0000.0000''''2.50''''2.50''''2.0''''2.0
+               binaural''''200.0''''+10.007''''0.520''''2.50''''2.50''''2.0''''2.0
   chronaural''''200.0''''10.007''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
 #
 # Play slide
 #
 00:06:00
-               binaural''''200.0''''+10.007''''0.520''''0000.0000''''2.50''''2.50''''2.0''''2.0''''&''''4''''20''''10
-#               binaural''''200.0''''+10.007''''0.520''''0000.0000''''2.50''''2.50''''2.0''''2.0''''>
+               binaural''''200.0''''+10.007''''0.520''''2.50''''2.50''''2.0''''2.0''''&''''4''''20''''10
+#               binaural''''200.0''''+10.007''''0.520''''2.50''''2.50''''2.0''''2.0''''>
   chronaural''''200.0''''10.007''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''&''''4''''20''''10
 #  chronaural''''200.0''''10.007''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Play constant
 #
 00:04:00
-               binaural''''200.0''''+8.135''''0.520''''0000.0000''''2.00''''2.00''''2.0''''2.0
+               binaural''''200.0''''+8.135''''0.520''''2.00''''2.00''''2.0''''2.0
   chronaural''''200.0''''8.135''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
 #
 # Play slide
 #
 00:06:00
-               binaural''''200.0''''+8.135''''0.520''''0000.0000''''2.00''''2.00''''2.0''''2.0''''&''''4''''20''''10
-#               binaural''''200.0''''+8.135''''0.520''''0000.0000''''2.00''''2.00''''2.0''''2.0''''>
+               binaural''''200.0''''+8.135''''0.520''''2.00''''2.00''''2.0''''2.0''''&''''4''''20''''10
+#               binaural''''200.0''''+8.135''''0.520''''2.00''''2.00''''2.0''''2.0''''>
   chronaural''''200.0''''8.135''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''&''''4''''20''''10
 #  chronaural''''200.0''''8.135''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Play constant
 #
 00:04:00
-               binaural''''200.0''''+6.030''''0.520''''0000.0000''''1.50''''1.50''''2.0''''2.0
+               binaural''''200.0''''+6.030''''0.520''''1.50''''1.50''''2.0''''2.0
   chronaural''''200.0''''6.030''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
 #
 # Play slide
 #
 00:06:00
-               binaural''''200.0''''+6.030''''0.520''''0000.0000''''1.50''''1.50''''2.0''''2.0''''&''''4''''20''''10
-#               binaural''''200.0''''+6.030''''0.520''''0000.0000''''1.50''''1.50''''2.0''''2.0''''>
+               binaural''''200.0''''+6.030''''0.520''''1.50''''1.50''''2.0''''2.0''''&''''4''''20''''10
+#               binaural''''200.0''''+6.030''''0.520''''1.50''''1.50''''2.0''''2.0''''>
   chronaural''''200.0''''6.030''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''&''''4''''20''''10
 #  chronaural''''200.0''''6.030''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Play constant
 #
 00:04:00
-               binaural''''200.0''''+4.230''''0.520''''0000.0000''''1.00''''1.00''''2.0''''2.0
+               binaural''''200.0''''+4.230''''0.520''''1.00''''1.00''''2.0''''2.0
   chronaural''''200.0''''4.230''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
 #
 # Play slide
 #
 00:06:00
-               binaural''''200.0''''+4.230''''0.520''''0000.0000''''1.00''''1.00''''2.0''''2.0''''&''''4''''20''''10
-#               binaural''''200.0''''+4.230''''0.520''''0000.0000''''1.00''''1.00''''2.0''''2.0''''>
+               binaural''''200.0''''+4.230''''0.520''''1.00''''1.00''''2.0''''2.0''''&''''4''''20''''10
+#               binaural''''200.0''''+4.230''''0.520''''1.00''''1.00''''2.0''''2.0''''>
   chronaural''''200.0''''4.230''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''&''''4''''20''''10
 #  chronaural''''200.0''''4.230''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Play constant
 #
 00:10:00
-               binaural''''200.0''''+2.430''''0.520''''0000.0000''''0.50''''0.50''''2.0''''2.0
+               binaural''''200.0''''+2.430''''0.520''''0.50''''0.50''''2.0''''2.0
   chronaural''''200.0''''2.430''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
 #
 # Fade out, if don't want to come up, uncomment this and comment rest of file
 #
 #00:00:10''''>
-#               binaural''''200.0''''+2.430''''0.520''''0000.0000''''0.50''''0.50''''2.0''''2.0
+#               binaural''''200.0''''+2.430''''0.520''''0.50''''0.50''''2.0''''2.0
 #  chronaural''''200.0''''2.430''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
 #
 # Play slide
 #
 00:02:00
-               binaural''''200.0''''+2.430''''0.520''''0000.0000''''0.50''''0.50''''2.0''''2.0''''>
+               binaural''''200.0''''+2.430''''0.520''''0.50''''0.50''''2.0''''2.0''''>
   chronaural''''200.0''''2.430''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000''''>
 #
 # Fade out
 #
 00:00:10''''>
-               binaural''''200.0''''+10.5''''0.520''''0000.0000''''0.50''''0.50''''2.0''''2.0
+               binaural''''200.0''''+10.5''''0.520''''0.50''''0.50''''2.0''''2.0
   chronaural''''200.0''''10.5''''0.50''''0000.0000''''0.00''''3''''0.5''''0.5''''.050''''.950''''0.000
