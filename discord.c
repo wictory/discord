@@ -232,9 +232,6 @@ struct binaural
   double carrier;               // Carrier freq
   double beat;                  // Resonance freq or beat freq
   double amp;                   // Amplitude level 0-100%, stored as decimal. i.e. .06
-  double phase;                 // Phase between left and right channel, 0 to 360 degrees.
-                                // Left always starts at zero, right leads, 
-                                // 0 or 360 means in phase.
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for binaural tones, offset + increment into sine
@@ -497,6 +494,44 @@ struct pulse
   double fade_factor;  // current fade out multiplier, no fade in as always start at zero.
 } ;
 
+/* structure to set a phase beat */
+typedef struct phase phase;
+struct phase
+{
+  void *prev;
+  void *next;
+  int type;                 // 16  Can be 17 for step, 18 for vary
+  double carrier;               // Carrier freq
+  double beat;                  // Phase shift frequency, equivalent to beat freq
+  double amp;                   // Amplitude level 0-100%, stored as decimal. i.e. .06
+  double phase;                 // Phase between left and right channel, 0 to 360 degrees.
+                                // Beat +ve, left starts at zero, right channel phase shifts.
+                                // Beat -ve, right starts at zero, left channel phase shifts.
+                                // 0 or 360 means in phase.
+  double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
+  double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
+  int inc1, off1;               // for phase tones, offset + increment into sine
+  int inc2, off2;               // table for each channel
+  int amp_inc1, amp_off1;       // sin table ofset and increment for left amp
+  int amp_inc2, amp_off2;       // sin table ofset and increment for right amp
+  double carr_adj, beat_adj, amp_adj, phase_adj;   // continuous adjustment if desired
+  double amp_beat1_adj, amp_beat2_adj, amp_pct1_adj, amp_pct2_adj;   // amp pulse continuous adjustment if desired
+  int slide;     // 1 if this sequence slides into the next (only phases slide)
+    /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
+        starting offset for this voice.  Store a pointer to it during setup.
+    */
+  int *last_off1, *last_off2;   
+  int *last_amp_off1, *last_amp_off2;   
+  int first_pass;  // is this voice inactive?
+  /* used for step and vary */
+  phase *step_next;  // point to linked list of phase voices for steps and vary
+  int_64 tot_frames;  // total frames for this step
+  int_64 cur_frames;  // current frames for this step
+  int steps;  // number of steps if selected
+  double slide_time;  // how many seconds to slide between steps
+  double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
+} ;
+
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
 typedef struct slice slice;
 struct slice
@@ -550,6 +585,7 @@ void setup_repeat (char *token, void **work);
 void setup_once (char *token, void **work);
 void setup_chronaural (char *token, void **work);
 void setup_pulse (char *token, void **work);
+void setup_phase (char *token, void **work);
 void init_binaural ();
 snd_buffer * process_sound_file (char *filename);
 void play_loop ();
@@ -1719,6 +1755,8 @@ setup_play_seq ()
         setup_chronaural (voice, &work);
       else if (strcasecmp (subtoken, "pulse") == 0)
         setup_pulse (voice, &work);
+      else if (strcasecmp (subtoken, "phase") == 0)
+        setup_phase (voice, &work);
       else
         error ("Unrecognized time sequence type: %s\n", subtoken);
       /* Append this voice to the rest of the voices for the period/ time sequence */
@@ -1818,18 +1856,6 @@ setup_binaural (char *token, void **work)
       error ("Amplitude for binaural had an error.\n");
   }
   binaural1->amp = AMP_AD(amp);
-
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double phase = strtod (subtoken, &endptr);
-  if (phase == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Phase for binaural had an error.\n");
-  }
-  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
-      error ("Phase for binaural cannot be less than 0 or greater than 360.\n");
-  binaural1->phase = AMP_AD(phase);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
@@ -2891,7 +2917,7 @@ setup_chronaural (char *token, void **work)
   }
   else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
       error ("Phase for chronaural cannot be less than 0 or greater than 360.\n");
-  chronaural1->phase = AMP_AD(phase);
+  chronaural1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -3110,7 +3136,7 @@ setup_pulse (char *token, void **work)
   }
   else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
       error ("Phase for pulse cannot be less than 0 or greater than 360.\n");
-  pulse1->phase = AMP_AD(phase);
+  pulse1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -3243,6 +3269,252 @@ setup_pulse (char *token, void **work)
         error ("Slide time for pulse had an error.\n");
     }
     pulse1->slide_time = slide_time;
+  }
+}
+
+/* Set up a phase sequence */
+
+void
+setup_phase (char *token, void **work)
+{
+  char *endptr;
+  char *subtoken;
+  char *str2 = NULL;
+  char *saveptr2;
+  phase *phase1 = NULL;
+
+  phase1 = (phase *) Alloc ((sizeof (phase)) * 1);
+  *work = (void *) phase1;
+  phase1->next = NULL;
+  phase1->type = 1;
+  phase1->slide = 0;  // default to not slide
+  phase1->off1 = phase1->off2 = 0;  // begin at 0 degrees
+  phase1->last_off1 = phase1->last_off2 = NULL;  // no previous voice offsets yet
+  phase1->last_amp_off1 = phase1->last_amp_off2 = NULL;  // no previous voice offsets yet
+  phase1->first_pass = 1;  // inactive
+  /* used for step and vary */
+  phase1->step_next = NULL;  // default no steps
+  phase1->tot_frames = 0;  // total frames for this step
+  phase1->cur_frames = 0;  // current frames for this step
+  phase1->steps = 0;  // no steps
+  phase1->slide_time = 0.0;  // no slide between steps
+  phase1->fuzz = 0.0;  // no fuzziness around step frequency
+  str2 = token;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
+  str2 = NULL;
+  
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  errno = 0;
+  double carrier = strtod (subtoken, &endptr);
+  if (carrier == 0.0)
+  {
+    if (errno == 0)             // no errors
+      error ("Carrier for phase cannot be 0.\n");
+    else                        // there was an error
+      error ("Carrier for phase had an error.\n");
+  }
+  phase1->carrier = carrier;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double beat = strtod (subtoken, &endptr);
+  if (beat == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Beat for phase had an error.\n");
+  }
+  phase1->beat = beat;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double amp = strtod (subtoken, &endptr);
+  if (amp == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Amplitude for phase had an error.\n");
+  }
+  phase1->amp = AMP_AD(amp);
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double phase = strtod (subtoken, &endptr);
+  if (phase == 0.0)
+  {
+    if (errno != 0)             //  error
+      error ("Phase for phase had an error.\n");
+  }
+  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
+      error ("Phase for phase cannot be less than 0 or greater than 360.\n");
+  phase1->phase = phase;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
+    phase1->slide = 1;
+  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
+  {
+    phase1->type = 9;  // phase step
+    phase1->slide = 2;  // phase step slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for phase had an error.\n");
+    }
+    phase1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for phase had an error.\n");
+    }
+    phase1->slide_time = slide_time;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double fuzz = strtod (subtoken, &endptr);
+    if (fuzz == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Fuzz for phase had an error.\n");
+    }
+    phase1->fuzz = AMP_AD(fuzz);
+  }
+  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
+  {
+    phase1->type = 11;  // phase vary
+    phase1->slide = 3;  // phase vary slide
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double steps = strtod (subtoken, &endptr);
+    if (steps == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Step count for phase had an error.\n");
+    }
+    phase1->steps = (int) steps;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double slide_time = strtod (subtoken, &endptr);
+    if (slide_time == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Slide time for phase had an error.\n");
+    }
+    phase1->slide_time = slide_time;
+  }
+  else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
+  {
+    errno = 0;
+    double amp_beat1 = strtod (subtoken, &endptr);
+    if (amp_beat1 == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Amplitude beat1 for phase had an error.\n");
+    }
+    phase1->amp_beat1 = amp_beat1;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double amp_beat2 = strtod (subtoken, &endptr);
+    if (amp_beat2 == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Amplitude beat2 for phase had an error.\n");
+    }
+    phase1->amp_beat2 = amp_beat2;
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double amp_pct1 = strtod (subtoken, &endptr);
+    if (amp_pct1 == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Amplitude adj1 for phase had an error.\n");
+    }
+    phase1->amp_pct1 = AMP_AD(amp_pct1);
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    errno = 0;
+    double amp_pct2 = strtod (subtoken, &endptr);
+    if (amp_pct2 == 0.0)
+    {
+      if (errno != 0)             //  error
+        error ("Amplitude adj2 for phase had an error.\n");
+    }
+    phase1->amp_pct2 = AMP_AD(amp_pct2);
+
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+      phase1->slide = 1;
+    else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // step slide
+    {
+      phase1->type = 9;  // phase step
+      phase1->slide = 2;  // phase step slide
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if (steps == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Step count for phase had an error.\n");
+      }
+      phase1->steps = (int) steps;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if (slide_time == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Slide time for phase had an error.\n");
+      }
+      phase1->slide_time = slide_time;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double fuzz = strtod (subtoken, &endptr);
+      if (fuzz == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Fuzz for phase had an error.\n");
+      }
+      phase1->fuzz = AMP_AD(fuzz);
+    }
+    else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
+    {
+      phase1->type = 11;  // phase vary
+      phase1->slide = 3;  // phase vary slide
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if (steps == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Step count for phase had an error.\n");
+      }
+      phase1->steps = (int) steps;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if (slide_time == 0.0)
+      {
+        if (errno != 0)             //  error
+          error ("Slide time for phase had an error.\n");
+      }
+      phase1->slide_time = slide_time;
+    }
   }
 }
 
@@ -4472,6 +4744,343 @@ init_binaural ()
             }
             break;
           }
+        case 16:  // phase
+          { 
+            phase *phase1 = NULL, *phase2 = NULL;
+
+            phase1 = (phase *) work1;
+            phase1->off1 = phase1->inc1 = phase1->off2 = phase1->inc2 = 0;
+            phase1->amp_off1 = phase1->amp_inc1 = phase1->amp_off2 = phase1->amp_inc2 = 0;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 16 || stub2->type == 17 || stub2->type == 18)  // also phase
+              { 
+                phase2 = (phase *) work2;
+                /* Set the pointers to the previous voice's offsets here so it can be used while running.
+                   Need to do this even when there is no slide.  Some duplication with below. */
+                phase2->last_off1 = &(phase1->off1);
+                phase2->last_off2 = &(phase1->off2);
+                phase2->last_amp_off1 = &(phase1->amp_off1);
+                phase2->last_amp_off2 = &(phase1->amp_off2);
+              } 
+            } 
+            if (phase1->slide == 0)
+            { 
+              phase1->carr_adj = phase1->beat_adj = phase1->amp_adj = phase1->phase_adj = 0.0;
+              phase1->amp_beat1_adj = phase1->amp_beat2_adj = 0.0;
+              phase1->amp_pct1_adj = phase1->amp_pct2_adj = 0.0;
+            } 
+            else  // slide to next phase in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (phase2 != NULL)  // set above if phase, NULL means next voice not phase
+                {
+                  phase1->carr_adj = (phase2->carrier - phase1->carrier)/ (double) snd1->tot_frames;
+                  phase1->beat_adj = (phase2->beat - phase1->beat)/ (double) snd1->tot_frames;
+                  phase1->amp_adj = (phase2->amp - phase1->amp)/ (double) snd1->tot_frames;
+                  phase1->phase_adj = (phase2->phase - phase1->phase)/ (double) snd1->tot_frames;
+                  /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
+                  if (phase2->amp_beat1 > 0.0)
+                    phase1->amp_beat1_adj = (phase2->amp_beat1 - phase1->amp_beat1)/ (double) snd1->tot_frames;
+                  else  // zero amp_beat1 in next phase
+                    phase1->amp_beat1_adj = - phase1->amp_beat1 / (double) snd1->tot_frames;
+                  if (phase2->amp_beat2 > 0.0)
+                    phase1->amp_beat2_adj = (phase2->amp_beat2 - phase1->amp_beat2)/ (double) snd1->tot_frames;
+                  else  // zero amp_beat2 in next phase
+                    phase1->amp_beat2_adj = - phase1->amp_beat2 / (double) snd1->tot_frames;
+                  /* Amplitude percents are optional.  If there isn't a match, treat as zero instead */
+                  if (phase2->amp_pct1 > 0.0)
+                    phase1->amp_pct1_adj = (phase2->amp_pct1 - phase1->amp_pct1)/ (double) snd1->tot_frames;
+                  else  // zero amp_pct1 in next phase
+                    phase1->amp_pct1_adj = - phase1->amp_pct1 / (double) snd1->tot_frames;
+                  if (phase2->amp_pct2 > 0.0)
+                    phase1->amp_pct2_adj = (phase2->amp_pct2 - phase1->amp_pct2)/ (double) snd1->tot_frames;
+                  else  // zero amp_pct2 in next phase
+                    phase1->amp_pct2_adj = - phase1->amp_pct2 / (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not phase.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next phase in time sequence!\n");
+            }
+            break;
+          }
+        case 17:  // phase step slide, have to create list of steps and slides
+          { 
+            phase *phase1 = NULL, *phase2 = NULL, *phase3 = NULL, *phase4 = NULL;
+
+            phase1 = (phase *) work1;
+            phase1->off1 = phase1->inc1 = phase1->off2 = phase1->inc2 = 0;
+            phase1->amp_off1 = phase1->amp_inc1 = phase1->amp_off2 = phase1->amp_inc2 = 0;
+             /* First step is always the input frequency, so no adjust. */
+            phase1->carr_adj = phase1->beat_adj = phase1->amp_adj = phase1->phase_adj = 0.0;
+            phase1->amp_beat1_adj = phase1->amp_beat2_adj = 0.0;
+            phase1->amp_pct1_adj = phase1->amp_pct2_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * phase1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * phase1->steps);  //  total slide time
+            int_64 step_frames = (snd1->tot_frames - total_slide) / phase1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last step. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * phase1->steps));
+            phase1->tot_frames = step_frames;
+            phase1->cur_frames = 0;  // phase1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine phase we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 16 || stub2->type == 17 || stub2->type == 18)  // also phase
+                phase2 = (phase *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not phase.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next phase in time sequence!\n");
+            double carr_diff = (phase2->carrier - phase1->carrier);
+            double beat_diff = (phase2->beat - phase1->beat);
+            double amp_diff = (phase2->amp - phase1->amp);
+            double phase_diff = (phase2->phase - phase1->phase);
+            double amp_beat1_diff = (phase2->amp_beat1 - phase1->amp_beat1);
+            double amp_beat2_diff = (phase2->amp_beat2 - phase1->amp_beat2);
+            double amp_pct1_diff = (phase2->amp_pct1 - phase1->amp_pct1);
+            double amp_pct2_diff = (phase2->amp_pct2 - phase1->amp_pct2);
+            double next_carrier = 0.0;
+            double next_beat = 0.0;
+            double next_amp = 0.0;
+            double next_phase = 0.0;
+            double next_amp_beat1 = 0.0;
+            double next_amp_beat2 = 0.0;
+            double next_amp_pct1 = 0.0;
+            double next_amp_pct2 = 0.0;
+            phase4 = phase1;  // set last node processed
+            int total_nodes = (2 * phase1->steps);
+            int ii;
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of step list nodes
+            {
+              phase3 = (phase *) Alloc ((sizeof (phase)) * 1);  // create next node of step list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) phase3, (void *) phase4, sizeof (phase)); // copy last step
+                phase3->tot_frames = slide_frames;
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice phase2
+                {
+                  phase2->last_off1 = &(phase3->off1);
+                  phase2->last_off2 = &(phase3->off2);
+                  phase2->last_amp_off1 = &(phase3->amp_off1);
+                  phase2->last_amp_off2 = &(phase3->amp_off2);
+                  next_carrier = phase2->carrier;
+                  next_beat = phase2->beat;
+                  next_amp = phase2->amp;
+                  next_phase = phase2->phase;
+                  next_amp_beat1 = phase2->amp_beat1;
+                  next_amp_beat2 = phase2->amp_beat2;
+                  next_amp_pct1 = phase2->amp_pct1;
+                  next_amp_pct2 = phase2->amp_pct2;
+                  phase3->step_next = NULL;  // last node, no next node
+                }
+                else  // internal slide
+                {
+                  double fraction = ((double) (ii+1)/(double) total_nodes);  // fraction of interval
+                  next_carrier = phase1->carrier + (carr_diff * fraction);
+                  next_beat = phase1->beat + (beat_diff * fraction);
+                  next_amp = phase1->amp + (amp_diff * fraction);
+                  next_phase = phase1->phase + (phase_diff * fraction);
+                  next_amp_beat1 = phase1->amp_beat1 + (amp_beat1_diff * fraction);
+                  next_amp_beat2 = phase1->amp_beat2 + (amp_beat2_diff * fraction);
+                  next_amp_pct1 = phase1->amp_pct1 + (amp_pct1_diff * fraction);
+                  next_amp_pct2 = phase1->amp_pct2 + (amp_pct2_diff * fraction);
+                  if (phase1->fuzz > 0.0)  // fuzz the interval
+                  {
+                    double adjust = drand48() - 0.5;  // fuzz adjustment between -.5 and +.5 of fuzz
+                    next_carrier += ((carr_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_beat += ((beat_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_amp += ((amp_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_phase += ((phase_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_amp_beat1 += ((amp_beat1_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_amp_beat2 += ((amp_beat2_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_amp_pct1 += ((amp_pct1_diff/phase1->steps) * phase1->fuzz * adjust);
+                    next_amp_pct2 += ((amp_pct2_diff/phase1->steps) * phase1->fuzz * adjust);
+                  }
+                }
+                phase3->carr_adj = (next_carrier - phase4->carrier)/ phase3->tot_frames;
+                phase3->beat_adj = (next_beat - phase4->beat)/ phase3->tot_frames;
+                phase3->amp_adj = (next_amp - phase4->amp)/ phase3->tot_frames;
+                phase3->phase_adj = (next_phase - phase4->phase)/ phase3->tot_frames;
+                /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_beat1 > 0.0)
+                  phase3->amp_beat1_adj = (next_amp_beat1 - phase4->amp_beat1)/ phase3->tot_frames;
+                else  // zero amp_beat1 in next phase
+                  phase3->amp_beat1_adj = - phase4->amp_beat1 / phase3->tot_frames;
+                if (next_amp_beat2 > 0.0)
+                  phase3->amp_beat2_adj = (next_amp_beat2 - phase4->amp_beat2)/ phase3->tot_frames;
+                else  // zero amp_beat2 in next phase
+                  phase3->amp_beat2_adj = - phase4->amp_beat2 / phase3->tot_frames;
+                /* Amplitude percents are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_pct1 > 0.0)
+                  phase3->amp_pct1_adj = (next_amp_pct1 - phase4->amp_pct1)/ phase3->tot_frames;
+                else  // zero amp_pct1 in next phase
+                  phase3->amp_pct1_adj = - phase4->amp_pct1 / phase3->tot_frames;
+                if (next_amp_pct2 > 0.0)
+                  phase3->amp_pct2_adj = (next_amp_pct2 - phase4->amp_pct2)/ phase3->tot_frames;
+                else  // zero amp_pct2 in next phase
+                  phase3->amp_pct2_adj = - phase4->amp_pct2 / phase3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) phase3, (void *) phase1, sizeof (phase)); // copy first in list to it
+                if (ii == (total_nodes - 2))
+                  phase3->tot_frames += frame_residue;  // use up leftover frames in last step
+                /* Set values used for calculation in last slide */
+                phase3->carrier = next_carrier;
+                phase3->beat = next_beat;
+                phase3->amp = next_amp;
+                phase3->phase = next_phase;
+                phase3->amp_beat1 = next_amp_beat1;
+                phase3->amp_beat2 = next_amp_beat2;
+                phase3->amp_pct1 = next_amp_pct1;
+                phase3->amp_pct2 = next_amp_pct2;
+              }
+              phase4->step_next = phase3;  // set list pointer for previous node
+              phase3->last_off1 = &(phase4->off1);  // each node starts where last left off as offset
+              phase3->last_off2 = &(phase4->off2);
+              phase3->last_amp_off1 = &(phase4->amp_off1);  // each node starts where last left off as amp_offset
+              phase3->last_amp_off2 = &(phase4->amp_off2);
+              phase4 = phase3;  // make current node previous node
+            }
+            break;
+          }
+        case 18:  // phase vary slide, have to create list of steps and slides
+          { 
+            phase *phase1 = NULL, *phase2 = NULL, *phase3 = NULL, *phase4 = NULL;
+
+            phase1 = (phase *) work1;
+            phase1->off1 = phase1->inc1 = phase1->off2 = phase1->inc2 = 0;
+            phase1->amp_off1 = phase1->amp_inc1 = phase1->amp_off2 = phase1->amp_inc2 = 0;
+             /* First step is always the input frequency, so no adjust. */
+            phase1->carr_adj = phase1->beat_adj = phase1->amp_adj = phase1->phase_adj = 0.0;
+            phase1->amp_beat1_adj = phase1->amp_beat2_adj = 0.0;
+            phase1->amp_pct1_adj = phase1->amp_pct2_adj = 0.0;
+            /* Determine the step and slide frame sizes.  */
+            int_64 slide_frames = (int_64) (out_rate * phase1->slide_time);  // frames in each slide
+            int_64 total_slide = (int_64) (slide_frames * phase1->steps);  //  total slide time
+            int_64 step_frames = (snd1->tot_frames - total_slide) / phase1->steps;  // frames in each step
+            /*  Leftover frames after all step slides determined.  Add to last slide. The total number
+             *  of frames in the list has to be exactly the number of frames in the current time sequence. */
+            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * phase1->steps));
+            phase1->tot_frames = step_frames;
+            phase1->cur_frames = 0;  // phase1 complete except for step list pointer set below.
+            if (work2 != NULL)  // determine phase we are step sliding to so steps and slides can be set up
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 16 || stub2->type == 17 || stub2->type == 18)  // also phase
+                phase2 = (phase *) work2;
+              else
+                error ("Step slide called for, voice to slide to is not phase.  Position matters!\n");
+            } 
+            else
+              error ("Step slide called for, no next phase in time sequence!\n");
+            double carr_diff = (phase2->carrier - phase1->carrier);
+            double beat_diff = (phase2->beat - phase1->beat);
+            double amp_diff = (phase2->amp - phase1->amp);
+            double phase_diff = (phase2->phase - phase1->phase);
+            double amp_beat1_diff = (phase2->amp_beat1 - phase1->amp_beat1);
+            double amp_beat2_diff = (phase2->amp_beat2 - phase1->amp_beat2);
+            double amp_pct1_diff = (phase2->amp_pct1 - phase1->amp_pct1);
+            double amp_pct2_diff = (phase2->amp_pct2 - phase1->amp_pct2);
+            double next_carrier = 0.0;
+            double next_beat = 0.0;
+            double next_amp = 0.0;
+            double next_phase = 0.0;
+            double next_amp_beat1 = 0.0;
+            double next_amp_beat2 = 0.0;
+            double next_amp_pct1 = 0.0;
+            double next_amp_pct2 = 0.0;
+            phase4 = phase1;  // set last node processed
+            int total_nodes = (2 * phase1->steps);
+            int ii;
+            for (ii = 1; ii < total_nodes; ii++)  // create rest of vary list nodes
+            {
+              phase3 = (phase *) Alloc ((sizeof (phase)) * 1);  // create next node of vary list
+              if (ii % 2 == 1)  // a slide
+              {
+                memcpy ((void *) phase3, (void *) phase4, sizeof (phase)); // copy last step
+                phase3->tot_frames = slide_frames;
+                if (ii == total_nodes - 1)  // last slide, to next time sequence voice phase2
+                {
+                  phase2->last_off1 = &(phase3->off1);  // phase2 will start from these offsets
+                  phase2->last_off2 = &(phase3->off2);
+                  phase2->last_amp_off1 = &(phase3->amp_off1);  // phase2 will start from these amp_offsets
+                  phase2->last_amp_off2 = &(phase3->amp_off2);
+                  next_carrier = phase2->carrier;
+                  next_beat = phase2->beat;
+                  next_amp = phase2->amp;
+                  next_phase = phase2->phase;
+                  next_amp_beat1 = phase2->amp_beat1;
+                  next_amp_beat2 = phase2->amp_beat2;
+                  next_amp_pct1 = phase2->amp_pct1;
+                  next_amp_pct2 = phase2->amp_pct2;
+                  phase3->step_next = NULL;  // last node, no next node
+                  phase3->tot_frames += frame_residue;  // use up leftover frames in last slide
+                }
+                else  // internal slide
+                {
+                  double fraction = drand48 ();  // random fraction of interval
+                  next_carrier = phase1->carrier + (carr_diff * fraction);
+                  next_beat = phase1->beat + (beat_diff * fraction);
+                  next_amp = phase1->amp + (amp_diff * fraction);
+                  next_phase = phase1->phase + (phase_diff * fraction);
+                  next_amp_beat1 = phase1->amp_beat1 + (amp_beat1_diff * fraction);
+                  next_amp_beat2 = phase1->amp_beat2 + (amp_beat2_diff * fraction);
+                  next_amp_pct1 = phase1->amp_pct1 + (amp_pct1_diff * fraction);
+                  next_amp_pct2 = phase1->amp_pct2 + (amp_pct2_diff * fraction);
+                }
+                phase3->carr_adj = (next_carrier - phase4->carrier)/ phase3->tot_frames;
+                phase3->beat_adj = (next_beat - phase4->beat)/ phase3->tot_frames;
+                phase3->amp_adj = (next_amp - phase4->amp)/ phase3->tot_frames;
+                phase3->phase_adj = (next_phase - phase4->phase)/ phase3->tot_frames;
+                /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_beat1 > 0.0)
+                  phase3->amp_beat1_adj = (next_amp_beat1 - phase4->amp_beat1)/ phase3->tot_frames;
+                else  // zero amp_beat1 in next phase
+                  phase3->amp_beat1_adj = - phase4->amp_beat1 / phase3->tot_frames;
+                if (next_amp_beat2 > 0.0)
+                  phase3->amp_beat2_adj = (next_amp_beat2 - phase4->amp_beat2)/ phase3->tot_frames;
+                else  // zero amp_beat2 in next phase
+                  phase3->amp_beat2_adj = - phase4->amp_beat2 / phase3->tot_frames;
+                /* Amplitude percents are optional.  If there isn't a match, treat as zero instead */
+                if (next_amp_pct1 > 0.0)
+                  phase3->amp_pct1_adj = (next_amp_pct1 - phase4->amp_pct1)/ phase3->tot_frames;
+                else  // zero amp_pct1 in next phase
+                  phase3->amp_pct1_adj = - phase4->amp_pct1 / phase3->tot_frames;
+                if (next_amp_pct2 > 0.0)
+                  phase3->amp_pct2_adj = (next_amp_pct2 - phase4->amp_pct2)/ phase3->tot_frames;
+                else  // zero amp_pct2 in next phase
+                  phase3->amp_pct2_adj = - phase4->amp_pct2 / phase3->tot_frames;
+              } 
+              else  // a step
+              {
+                memcpy ((void *) phase3, (void *) phase1, sizeof (phase)); // copy first in list to it
+                /* Set values used for calculation in last slide */
+                phase3->carrier = next_carrier;
+                phase3->beat = next_beat;
+                phase3->amp = next_amp;
+                phase3->phase = next_phase;
+                phase3->amp_beat1 = next_amp_beat1;
+                phase3->amp_beat2 = next_amp_beat2;
+                phase3->amp_pct1 = next_amp_pct1;
+                phase3->amp_pct2 = next_amp_pct2;
+              }
+              phase4->step_next = phase3;  // set list pointer for previous node
+              phase3->last_off1 = &(phase4->off1);  // each node starts where last left off as offset
+              phase3->last_off2 = &(phase4->off2);
+              phase3->last_amp_off1 = &(phase4->amp_off1);  // each node starts where last left off as amp_offset
+              phase3->last_amp_off2 = &(phase4->amp_off2);
+              phase4 = phase3;  // make current node previous node
+            }
+            break;
+          }
         default:
           break;
       }
@@ -4889,6 +5498,7 @@ int
 generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int frame_count)
 {
   int ii;
+  int sin_siz = 2 * out_rate;
   int channels = 2;  // always output stereo
   stub *stub1;
   void *this, *next;
@@ -4908,6 +5518,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
         break;
       case 1:                // Binaural tones
         {
+          int offset2;
           double freq1, freq2;
           double amp1, amp2;
           binaural *binaural1;
@@ -4964,8 +5575,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (binaural1->slide)
             { /* adjust values for next pass only if this binaural is sliding */
               binaural1->carrier += (binaural1->carr_adj * fast_mult);
-              binaural1->amp += (binaural1->amp_adj * fast_mult);
               binaural1->beat += (binaural1->beat_adj * fast_mult);
+              binaural1->amp += (binaural1->amp_adj * fast_mult);
               binaural1->amp_beat1 += (binaural1->amp_beat1_adj * fast_mult);
               binaural1->amp_beat2 += (binaural1->amp_beat2_adj * fast_mult);
               binaural1->amp_pct1 += (binaural1->amp_pct1_adj * fast_mult);
@@ -5582,6 +6193,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
         break;
       case 8:                // Chronaural tones
         {
+          int offset2;
           double freq1, sinval;
           double amp1;
           chronaural *chronaural1;
@@ -5728,6 +6340,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
       case 9:                // Binaural tone, step slide, little less efficient, two extra checks each pass
       case 11:                // Binaural tone, vary slide, little less efficient, two extra checks each pass
         {
+          int offset2;
           double freq1, freq2;
           double amp1, amp2;
           binaural *binaural1;
@@ -5799,8 +6412,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (binaural1->slide)
             { /* adjust values for next pass only if this binaural is sliding */
               binaural1->carrier += (binaural1->carr_adj * fast_mult);
-              binaural1->amp += (binaural1->amp_adj * fast_mult);
               binaural1->beat += (binaural1->beat_adj * fast_mult);
+              binaural1->amp += (binaural1->amp_adj * fast_mult);
               binaural1->amp_beat1 += (binaural1->amp_beat1_adj * fast_mult);
               binaural1->amp_beat2 += (binaural1->amp_beat2_adj * fast_mult);
               binaural1->amp_pct1 += (binaural1->amp_pct1_adj * fast_mult);
@@ -6189,6 +6802,178 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           }
         }
         break;
+      case 16:                // phase tones
+        {
+          double amp1, amp2;
+          phase *phase1;
+
+          phase1 = (phase *) this;  // reassign void pointer as phase struct
+
+          /* if start of the voice, set starting offset to be last offset of previous voice */
+          if (phase1->first_pass)
+          {
+            phase1->first_pass = 0;  // now active
+            if (phase1->last_off1 != NULL)  // there *is* a previous offset to use
+              phase1->off1 = *phase1->last_off1;  // to eliminate crackle from discontinuity in wave
+            if (phase1->last_off2 != NULL)  // there *is* a previous offset to use
+              phase1->off2 = *phase1->last_off2;
+            if (phase1->last_amp_off1 != NULL)  // there *is* a previous amp_offset to use
+              phase1->amp_off1 = *phase1->last_amp_off1;  // to eliminate crackle from discontinuity in wave
+            if (phase1->last_amp_off2 != NULL)  // there *is* a previous amp_offset to use
+              phase1->amp_off2 = *phase1->last_amp_off2;
+          }
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
+          {
+            if (opt_c)  // compensate
+            {
+              amp1 = (phase1->amp * amp_comp (phase1->carrier));
+              amp2 = (phase1->amp * amp_comp (phase1->carrier));
+            }
+            else
+              amp1 = amp2 = phase1->amp;
+            /* perform the amplitude variation adjustment if required */
+            if (phase1->amp_beat1 > 0.0)
+            {
+              phase1->amp_inc1 = (int) round(phase1->amp_beat1*2);
+              phase1->amp_off1 += phase1->amp_inc1;
+              phase1->amp_off1 = phase1->amp_off1 % sin_siz;
+              amp1 += ((amp1 * phase1->amp_pct1) * sin_table[phase1->amp_off1]);
+            }
+            if (phase1->amp_beat2 > 0.0)
+            {
+              phase1->amp_inc2 = (int) round(phase1->amp_beat2*2);
+              phase1->amp_off2 += phase1->amp_inc2;
+              phase1->amp_off2 = phase1->amp_off2 % sin_siz;
+              amp2 += ((amp2 * phase1->amp_pct2) * sin_table[phase1->amp_off2]);
+            }
+            phase1->inc1 = (int) round(phase1->carrier*2);  // (phase1->carrier / out_rate) * (out_rate * 2));
+            phase1->off1 += phase1->inc1;
+            phase1->off1 = phase1->off1 % sin_siz;
+            if (phase1->beat > 0.0)
+            {
+              out_buffer[ii] += (amp1 * sin_table[phase1->off1]);
+              /* this is the number of sin table positions per frame to keep the beat */
+              int phase_frames_adj = (int) (((phase1->phase/360.) * sin_siz * 2. * phase1->beat) / out_rate);
+              phase1->off2 = (phase1->off1 + phase_frames_adj) % sin_siz;
+              out_buffer[ii+1] += (amp2 * sin_table[phase1->off2]);  // right leads left
+            }
+            else if (phase1->beat < 0.0)
+            {
+              out_buffer[ii+1] += (amp2 * sin_table[phase1->off1]);
+              /* this is the number of sin table positions per frame to keep the beat */
+              int phase_frames_adj = (int) (((phase1->phase/360.) * sin_siz * 2. * phase1->beat) / out_rate);
+              phase1->off2 = (phase1->off1 + phase_frames_adj) % sin_siz;
+              out_buffer[ii] += (amp1 * sin_table[phase1->off2]);  // left leads right
+            }
+            else
+            {
+              out_buffer[ii] += (amp1 * sin_table[phase1->off1]);  // in phase
+              out_buffer[ii+1] += (amp2 * sin_table[phase1->off1]);
+              phase1->off2 = phase1->off1;
+            }
+            if (phase1->slide)
+            { /* adjust values for next pass only if this phase is sliding */
+              phase1->carrier += (phase1->carr_adj * fast_mult);
+              phase1->beat += (phase1->beat_adj * fast_mult);
+              phase1->amp += (phase1->amp_adj * fast_mult);
+              phase1->phase += (phase1->phase_adj * fast_mult);
+              phase1->amp_beat1 += (phase1->amp_beat1_adj * fast_mult);
+              phase1->amp_beat2 += (phase1->amp_beat2_adj * fast_mult);
+              phase1->amp_pct1 += (phase1->amp_pct1_adj * fast_mult);
+              phase1->amp_pct2 += (phase1->amp_pct2_adj * fast_mult);
+            }
+          }
+        }
+        break;
+      case 17:                // phase tone, step slide, little less efficient, two extra checks each pass
+      case 18:                // phase tone, vary slide, little less efficient, two extra checks each pass
+        {
+          int offset2;
+          double freq1, freq2;
+          double amp1, amp2;
+          phase *phase1;
+
+          phase1 = (phase *) this;  // reassign void pointer as phase struct
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
+          {
+            if (phase1->cur_frames >= phase1->tot_frames)  // step voice finished
+            {
+              phase *phase2;
+              phase2 = phase1->step_next;
+              phase2->next = phase1->next;
+              phase2->prev = phase1->prev;
+              if (phase1->prev != NULL)
+                ((phase *) phase1->prev)->next = phase2;
+              else  // must be first voice in chain for time sequence
+                snd1->voices = (void *) phase2;
+              if (phase1->next != NULL)
+                ((phase *) phase1->next)->prev = phase2;
+              /* free(phase1); */  // not bothering to free, because it could slow down sound generation
+              phase1 = phase2;  // new voice from step list
+            }
+
+            /* if start of the voice, set starting offset to be last offset of previous voice */
+            if (phase1->first_pass)
+            {
+              phase1->first_pass = 0;  // now active
+              if (phase1->last_off1 != NULL)  // there *is* a previous offset to use
+                phase1->off1 = *phase1->last_off1;  // to eliminate crackle from discontinuity in wave
+              if (phase1->last_off2 != NULL)  // there *is* a previous offset to use
+                phase1->off2 = *phase1->last_off2;
+              if (phase1->last_amp_off1 != NULL)  // there *is* a previous amp_offset to use
+                phase1->amp_off1 = *phase1->last_amp_off1;  // to eliminate crackle from discontinuity in wave
+              if (phase1->last_amp_off2 != NULL)  // there *is* a previous amp_offset to use
+                phase1->amp_off2 = *phase1->last_amp_off2;
+            }
+            freq1 = phase1->carrier + phase1->beat / 2;
+            freq2 = phase1->carrier - phase1->beat / 2;
+            if (opt_c)  // compensate
+            {
+              amp1 = (phase1->amp * amp_comp (freq1));
+              amp2 = (phase1->amp * amp_comp (freq2));
+            }
+            else
+              amp1 = amp2 = phase1->amp;
+            /* perform the amplitude variation adjustment if required */
+            if (phase1->amp_beat1 > 0.0)
+            {
+              phase1->amp_inc1 = (int) round(phase1->amp_beat1*2);
+              phase1->amp_off1 += phase1->amp_inc1;
+              phase1->amp_off1 = phase1->amp_off1 % (out_rate * 2);
+              amp1 += ((amp1 * phase1->amp_pct1) * sin_table[phase1->amp_off1]);
+            }
+            if (phase1->amp_beat2 > 0.0)
+            {
+              phase1->amp_inc2 = (int) round(phase1->amp_beat2*2);
+              phase1->amp_off2 += phase1->amp_inc2;
+              phase1->amp_off2 = phase1->amp_off2 % (out_rate * 2);
+              amp2 += ((amp2 * phase1->amp_pct2) * sin_table[phase1->amp_off2]);
+            }
+            phase1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
+            phase1->off1 += phase1->inc1;
+            phase1->off1 = phase1->off1 % (out_rate * 2);
+            out_buffer[ii] += (amp1 * sin_table[phase1->off1]);
+            phase1->inc2 = (int) round(freq2*2);  // (freq2 / out_rate) * (out_rate * 2));
+            phase1->off2 += phase1->inc2;
+            offset2 = phase1->off2 = phase1->off2 % (out_rate * 2);
+            offset2 += ((int) round((phase1->phase/360.) * sin_siz));  // adjust right channel for phase
+            offset2 = (offset2 % (out_rate * 2));  // fit to size of sin table
+            out_buffer[ii+1] += (amp2 * sin_table[offset2]);
+            if (phase1->slide)
+            { /* adjust values for next pass only if this phase is sliding */
+              phase1->carrier += (phase1->carr_adj * fast_mult);
+              phase1->beat += (phase1->beat_adj * fast_mult);
+              phase1->amp += (phase1->amp_adj * fast_mult);
+              phase1->phase += (phase1->phase_adj * fast_mult);
+              phase1->amp_beat1 += (phase1->amp_beat1_adj * fast_mult);
+              phase1->amp_beat2 += (phase1->amp_beat2_adj * fast_mult);
+              phase1->amp_pct1 += (phase1->amp_pct1_adj * fast_mult);
+              phase1->amp_pct2 += (phase1->amp_pct2_adj * fast_mult);
+            }
+            phase1->cur_frames += 1 * fast_mult;  
+          }
+        }
+        break;
       default:               // do nothing if not recognized
         ;
     }
@@ -6276,7 +7061,7 @@ fprint_voice_all (FILE *fp, void *this)
 
         binaural1 = (binaural *) this;
         char_count += fprintf (fp, "   bin %.3f %+.3f", binaural1->carrier, binaural1->beat);
-        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp), binaural1->phase);
+        char_count += fprintf (fp, " %.3f", AMP_DA (binaural1->amp));
         char_count += fprintf (fp, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
         char_count += fprintf (fp, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
@@ -6440,7 +7225,7 @@ fprint_voice_all (FILE *fp, void *this)
 
         binaural1 = (binaural *) this;
         char_count += fprintf (fp, "   bin %.3f %+.3f", binaural1->carrier, binaural1->beat);
-        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp), binaural1->phase);
+        char_count += fprintf (fp, " %.3f", AMP_DA (binaural1->amp));
         char_count += fprintf (fp, " %.3f %.3f", binaural1->amp_beat1, binaural1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (binaural1->amp_pct1), AMP_DA (binaural1->amp_pct2));
         char_count += fprintf (fp, " %d %d %d %d", binaural1->inc1, binaural1->off1, binaural1->inc2, binaural1->off2);
@@ -6527,6 +7312,47 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %.2f %.1f\n", pulse1->steps, pulse1->slide_time, pulse1->fuzz);
       }
       break;
+    case 16:  // phase
+      {
+        phase *phase1;
+
+        phase1 = (phase *) this;
+        char_count += fprintf (fp, "   bin %.3f %+.3f", phase1->carrier, phase1->beat);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (phase1->amp), phase1->phase);
+        char_count += fprintf (fp, " %.3f %.3f", phase1->amp_beat1, phase1->amp_beat2);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (phase1->amp_pct1), AMP_DA (phase1->amp_pct2));
+        char_count += fprintf (fp, " %d %d %d %d", phase1->inc1, phase1->off1, phase1->inc2, phase1->off2);
+        char_count += fprintf (fp, " %d %d %d %d\n", 
+                                   phase1->amp_inc1, phase1->amp_off1, phase1->amp_inc2, phase1->amp_off2);
+        char_count += fprintf (fp, "       %.3e %.3e %.3e %.3e", 
+                                   phase1->carr_adj, phase1->beat_adj, phase1->amp_adj, phase1->phase_adj);
+        char_count += fprintf (fp, " %.3e %.3e", phase1->amp_beat1_adj, phase1->amp_beat2_adj);
+        char_count += fprintf (fp, " %.3e %.3e", phase1->amp_pct1_adj, phase1->amp_pct2_adj);
+        char_count += fprintf (fp, " %d\n", phase1->slide);
+      }
+      break;
+    case 17:  // phase step slide
+    case 18:  // phase vary slide, even though doesn't have fuzz
+      {
+        phase *phase1;
+
+        phase1 = (phase *) this;
+        char_count += fprintf (fp, "   bin %.3f %+.3f", phase1->carrier, phase1->beat);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (phase1->amp), phase1->phase);
+        char_count += fprintf (fp, " %.3f %.3f", phase1->amp_beat1, phase1->amp_beat2);
+        char_count += fprintf (fp, " %.3f %.3f", AMP_DA (phase1->amp_pct1), AMP_DA (phase1->amp_pct2));
+        char_count += fprintf (fp, " %d %d %d %d", phase1->inc1, phase1->off1, phase1->inc2, phase1->off2);
+        char_count += fprintf (fp, " %d %d %d %d\n", 
+                                   phase1->amp_inc1, phase1->amp_off1, phase1->amp_inc2, phase1->amp_off2);
+        char_count += fprintf (fp, "       %.3e %.3e %.3e %.3e", 
+                                   phase1->carr_adj, phase1->beat_adj, phase1->amp_adj, phase1->phase_adj);
+        char_count += fprintf (fp, " %.3e %.3e", phase1->amp_beat1_adj, phase1->amp_beat2_adj);
+        char_count += fprintf (fp, " %.3e %.3e", phase1->amp_pct1_adj, phase1->amp_pct2_adj);
+        char_count += fprintf (fp, " %d", phase1->slide);
+        char_count += fprintf (fp, " %lld %lld", phase1->tot_frames, phase1->cur_frames);
+        char_count += fprintf (fp, " %d %.2f %.1f\n", phase1->steps, phase1->slide_time, phase1->fuzz);
+      }
+      break;
     default:  // not known, do nothing
       ;
   }
@@ -6570,9 +7396,8 @@ fprint_voice (FILE *fp, void *this)
           amp1 += ((amp1 * binaural1->amp_pct1) * sin_table[binaural1->amp_off1]);
         if (binaural1->amp_beat2 > 0.0)
           amp2 += ((amp2 * binaural1->amp_pct2) * sin_table[binaural1->amp_off2]);
-        char_count += fprintf (fp, "   bin %.3f    %+.3f   %.3f   %.3f", 
+        char_count = fprintf (fp, "   bin %.3f    %+.3f   %.3f   %.3f\n", 
                       binaural1->carrier, binaural1->beat, AMP_DA (amp1), AMP_DA (amp2));
-        char_count += fprintf (fp, "   %.3f\n", binaural1->phase);
       }
       break;
     case 2:  // bell
@@ -6661,6 +7486,35 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   %.3e  %.3f\n", pulse1->split_adj, pulse1->split_beat); 
         break;
       }
+    case 16:  // phase
+    case 17:  // phase step slide
+    case 18:  // phase vary slide
+      {
+        double freq1, freq2;
+        double amp1, amp2;
+        phase *phase1;
+
+        phase1 = (phase *) this;  // reassign void pointer as phase struct
+          /* use last calculated values instead of calculating new ones */
+        freq1 = phase1->carrier + phase1->beat / 2;
+        freq2 = phase1->carrier - phase1->beat / 2;
+        if (opt_c)  // compensate
+        {
+          amp1 = (phase1->amp * amp_comp (freq1));
+          amp2 = (phase1->amp * amp_comp (freq2));
+        }
+        else
+          amp1 = amp2 = phase1->amp;
+          /* perform the amplitude variation adjustment if required */
+        if (phase1->amp_beat1 > 0.0)
+          amp1 += ((amp1 * phase1->amp_pct1) * sin_table[phase1->amp_off1]);
+        if (phase1->amp_beat2 > 0.0)
+          amp2 += ((amp2 * phase1->amp_pct2) * sin_table[phase1->amp_off2]);
+        char_count += fprintf (fp, "   bin %.3f    %+.3f   %.3f   %.3f", 
+                      phase1->carrier, phase1->beat, AMP_DA (amp1), AMP_DA (amp2));
+        char_count += fprintf (fp, "   %.3f\n", phase1->phase);
+      }
+      break;
     default:  // not known, do nothing
       ;
   }
