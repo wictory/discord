@@ -469,21 +469,25 @@ struct pulse
   double pulse_beat;   // Pulse beat frequency of carrier frequency
   double amp;   // Amplitude level 0-100%, stored as decimal. i.e. .06
   double phase;                 // Phase between left and right channel, 0 to 360 degrees.
-                                // Left always starts at zero, right leads, 
+                                // Beat +ve, left starts at zero, right channel phase shifts.
+                                // Beat -ve, right starts at zero, left channel phase shifts.
                                 // 0 or 360 means in phase.
   double pulse_time;   // Duration of the pulse in seconds
-  int pulse_frames; // Number of frames that the current pulse time will take
+  int pulse_frames_left; // Number of frames for the current pulse in the left channel, depends on pulse time
+  int pulse_frames_right; // Number of frames for the current pulse in the right channel, depends on pulse time
   double split_begin, split_end, split_now;      // left fraction for pulse, .5 means evenly split L and R
   double split_low, split_high; // range for split, .5 means evenly split L and R
   double split_beat;   // Split variation frequency, defaults to pulse_beat
-  int slide;     // 1 if this sequence slides into the next (binaurals and pulses slide)
-  int inc1, off1;               // for pulse tones, offset + increment into sine table for carrier
+  int slide;     // nonzero if this sequence slides into the next (binaurals, chronaurals, and phases slide)
+  int inc1, off1;               // for pulse tones, offset + increment into sine table for carrier of left channel
+  int inc3, off3;               // for pulse tones, offset + increment into sine table for carrier of right channel
   int off2;               // offset into sine table for pulse_beat
   double inc2;            // increment of offset into sine table for pulse_beat
-  double carr_adj, pulse_beat_adj, pulse_time_adj, amp_adj, split_beat_adj, split_adj;   // continuous adjustment if desired
+  double carr_adj, pulse_beat_adj, pulse_time_adj, amp_adj, phase_adj;   // continuous adjustment if desired
+  double split_beat_adj, split_adj;   // continuous adjustment if desired for pan or pan beat
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
         starting offset for this voice.  Store a pointer to it during setup.  */
-  int *last_off1, *last_off2;   
+  int *last_off1, *last_off3, *last_off2;   
   int first_pass;  // is this voice inactive?
   pulse *step_next;  // point to linked list of pulse voices for steps or vary
   int_64 tot_frames;  // total frames for this step
@@ -491,7 +495,8 @@ struct pulse
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
-  double fade_factor;  // current fade out multiplier, no fade in as always start at zero.
+  double fade_factor_left;  // current fade out multiplier for left channel, no fade in as always start at zero.
+  double fade_factor_right;  // current fade out multiplier for right channel, no fade in as always start at zero.
 } ;
 
 /* structure to set a phase beat */
@@ -3080,8 +3085,8 @@ setup_pulse (char *token, void **work)
   pulse1->next = NULL;
   pulse1->type = 13;
   pulse1->slide = 0;  // default to not slide
-  pulse1->off1 = pulse1->off2 = 0;  // begin at 0 degrees
-  pulse1->last_off1 = pulse1->last_off2 = NULL;  // no previous voice offsets yet
+  pulse1->off1 = pulse1->off3 = pulse1->off2 = 0;  // begin at 0 degrees
+  pulse1->last_off1 = pulse1->last_off3 = pulse1->last_off2 = NULL;  // no previous voice offsets yet
   pulse1->first_pass = 1;  // inactive
   /* used for step and vary */
   pulse1->step_next = NULL;  // default no steps
@@ -4312,7 +4317,7 @@ init_binaural ()
             pulse *pulse1 = NULL, *pulse2 = NULL;
 
             pulse1 = (pulse *) work1;
-            pulse1->off1 = pulse1->inc1 = pulse1->off2 = 0;
+            pulse1->off1 = pulse1->inc1 = pulse1->off3 = pulse1->inc3 = pulse1->off2 = 0;
             pulse1->inc2 = 0.0;
             if (work2 != NULL)
             { 
@@ -4323,14 +4328,16 @@ init_binaural ()
                 /* Set the pointers to the previous voice's offsets here so it can be used while running.
                    Need to do this even when there is no slide. */
                 pulse2->last_off1 = &(pulse1->off1);
+                pulse2->last_off3 = &(pulse1->off3);
                 pulse2->last_off2 = &(pulse1->off2);
                 if (pulse1->slide == 0)
-                  (pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->pulse_time_adj
+                  (pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->phase_adj = pulse1->pulse_time_adj
                                       = pulse1->amp_adj = pulse1->split_beat_adj = 0.0);
                 else  // slide to next pulse in stream
                 {
                   pulse1->carr_adj = (pulse2->carrier - pulse1->carrier)/ (double) snd1->tot_frames;
                   pulse1->pulse_beat_adj = (pulse2->pulse_beat - pulse1->pulse_beat)/ (double) snd1->tot_frames;
+                  pulse1->phase_adj = (pulse2->phase - pulse1->phase)/ (double) snd1->tot_frames;
                   pulse1->pulse_time_adj = (pulse2->pulse_time - pulse1->pulse_time)/ (double) snd1->tot_frames;
                   pulse1->amp_adj = (pulse2->amp - pulse1->amp)/ (double) snd1->tot_frames;
                   pulse1->split_beat_adj = (pulse2->split_beat - pulse1->split_beat) / (double) snd1->tot_frames;
@@ -4383,10 +4390,10 @@ init_binaural ()
             pulse *pulse1 = NULL, *pulse2 = NULL, *pulse3 = NULL, *pulse4 = NULL;
 
             pulse1 = (pulse *) work1;
-            pulse1->off1 = pulse1->inc1 = pulse1->off2 = 0;
+            pulse1->off1 = pulse1->inc1 = pulse1->off3 = pulse1->inc3 = pulse1->off2 = 0;
             pulse1->inc2 = 0.0;
              /* First step is always the input frequency, so no adjust. */
-            pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->pulse_time_adj = pulse1->amp_adj = 0.0;
+            pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->phase_adj = pulse1->pulse_time_adj = pulse1->amp_adj = 0.0;
             pulse1->split_beat_adj = pulse1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * pulse1->slide_time);  // frames in each slide
@@ -4409,11 +4416,13 @@ init_binaural ()
               error ("Step slide called for, no next pulse in time sequence!\n");
             double carr_diff = (pulse2->carrier - pulse1->carrier);
             double pulse_beat_diff = (pulse2->pulse_beat - pulse1->pulse_beat);
+            double phase_diff = (pulse2->phase - pulse1->phase);
             double pulse_time_diff = (pulse2->pulse_time - pulse1->pulse_time);
             double amp_diff = (pulse2->amp - pulse1->amp);
             double split_beat_diff = (pulse2->split_beat - pulse1->split_beat);
             double next_carrier = 0.0;
             double next_pulse_beat = 0.0;
+            double next_phase = 0.0;
             double next_pulse_time = 0.0;
             double next_amp = 0.0;
             double next_split_beat = 0.0;
@@ -4430,9 +4439,11 @@ init_binaural ()
                 if (ii == total_nodes - 1)  // last slide, to next time sequence voice pulse2
                 {
                   pulse2->last_off1 = &(pulse3->off1);
+                  pulse2->last_off3 = &(pulse3->off3);
                   pulse2->last_off2 = &(pulse3->off2);
                   next_carrier = pulse2->carrier;
                   next_pulse_beat = pulse2->pulse_beat;
+                  next_phase = pulse2->phase;
                   next_pulse_time = pulse2->pulse_time;
                   next_amp = pulse2->amp;
                   pulse3->step_next = NULL;  // last node, no next node
@@ -4442,6 +4453,7 @@ init_binaural ()
                   double fraction = ((double) (ii+1)/(double) total_nodes);  // fraction of interval
                   next_carrier = pulse1->carrier + (carr_diff * fraction);
                   next_pulse_beat = pulse1->pulse_beat + (pulse_beat_diff * fraction);
+                  next_phase = pulse1->phase + (phase_diff * fraction);
                   next_pulse_time = pulse1->pulse_time + (pulse_time_diff * fraction);
                   next_amp = pulse1->amp + (amp_diff * fraction);
                   next_split_beat = pulse1->split_beat + (split_beat_diff * fraction);
@@ -4450,12 +4462,14 @@ init_binaural ()
                     double adjust = drand48() - 0.5;  // fuzz adjustment between -.5 and +.5 of fuzz
                     next_carrier += ((carr_diff/pulse1->steps) * pulse1->fuzz * adjust);
                     next_pulse_beat += ((pulse_beat_diff/pulse1->steps) * pulse1->fuzz * adjust);
+                    next_phase += ((phase_diff/pulse1->steps) * pulse1->fuzz * adjust);
                     next_pulse_time += ((pulse_time_diff/pulse1->steps) * pulse1->fuzz * adjust);
                     next_amp += ((amp_diff/pulse1->steps) * pulse1->fuzz * adjust);
                   }
                 }
                 pulse3->carr_adj = (next_carrier - pulse4->carrier)/ pulse3->tot_frames;
                 pulse3->pulse_beat_adj = (next_pulse_beat - pulse4->pulse_beat)/ pulse3->tot_frames;
+                pulse3->phase_adj = (next_phase - pulse4->phase)/ pulse3->tot_frames;
                 pulse3->pulse_time_adj = (next_pulse_time - pulse4->pulse_time)/ pulse3->tot_frames;
                 pulse3->amp_adj = (next_amp - pulse4->amp)/ pulse3->tot_frames;
                    /* change split beat only in slides */
@@ -4469,6 +4483,7 @@ init_binaural ()
                 /* Set values used for calculation in last slide */
                 pulse3->carrier = next_carrier;
                 pulse3->pulse_beat = next_pulse_beat;
+                pulse3->phase = next_phase;
                 pulse3->pulse_time = next_pulse_time;
                 pulse3->amp = next_amp;
                 pulse3->split_beat = next_split_beat;
@@ -4572,10 +4587,10 @@ init_binaural ()
             pulse *pulse1 = NULL, *pulse2 = NULL, *pulse3 = NULL, *pulse4 = NULL;
 
             pulse1 = (pulse *) work1;
-            pulse1->off1 = pulse1->inc1 = pulse1->off2 = 0;
+            pulse1->off1 = pulse1->inc1 = pulse1->off3 = pulse1->inc3 = pulse1->off2 = 0;
             pulse1->inc2 = 0.0;
              /* First step is always the input frequency, so no adjust. */
-            pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->pulse_time_adj = pulse1->amp_adj = 0.0;
+            pulse1->carr_adj = pulse1->pulse_beat_adj = pulse1->phase_adj = pulse1->pulse_time_adj = pulse1->amp_adj = 0.0;
             pulse1->split_beat_adj = pulse1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * pulse1->slide_time);  // frames in each slide
@@ -4598,11 +4613,13 @@ init_binaural ()
               error ("Step slide called for, no next pulse in time sequence!\n");
             double carr_diff = (pulse2->carrier - pulse1->carrier);
             double pulse_beat_diff = (pulse2->pulse_beat - pulse1->pulse_beat);
+            double phase_diff = (pulse2->phase - pulse1->phase);
             double pulse_time_diff = (pulse2->pulse_time - pulse1->pulse_time);
             double amp_diff = (pulse2->amp - pulse1->amp);
             double split_beat_diff = (pulse2->split_beat - pulse1->split_beat);
             double next_carrier = 0.0;
             double next_pulse_beat = 0.0;
+            double next_phase = 0.0;
             double next_pulse_time = 0.0;
             double next_amp = 0.0;
             double next_split_beat = 0.0;
@@ -4619,9 +4636,11 @@ init_binaural ()
                 if (ii == total_nodes - 1)  // last slide, to next time sequence voice pulse2
                 {
                   pulse2->last_off1 = &(pulse3->off1);
+                  pulse2->last_off3 = &(pulse3->off3);
                   pulse2->last_off2 = &(pulse3->off2);
                   next_carrier = pulse2->carrier;
                   next_pulse_beat = pulse2->pulse_beat;
+                  next_phase = pulse2->phase;
                   next_pulse_time = pulse2->pulse_time;
                   next_amp = pulse2->amp;
                   pulse3->step_next = NULL;  // last node, no next node
@@ -4631,12 +4650,14 @@ init_binaural ()
                   double fraction = drand48 ();  // random fraction of interval
                   next_carrier = pulse1->carrier + (carr_diff * fraction);
                   next_pulse_beat = pulse1->pulse_beat + (pulse_beat_diff * fraction);
+                  next_phase = pulse1->phase + (phase_diff * fraction);
                   next_pulse_time = pulse1->pulse_time + (pulse_time_diff * fraction);
                   next_amp = pulse1->amp + (amp_diff * fraction);
                   next_split_beat = pulse1->split_beat + (split_beat_diff * fraction);
                 }
                 pulse3->carr_adj = (next_carrier - pulse4->carrier)/ pulse3->tot_frames;
                 pulse3->pulse_beat_adj = (next_pulse_beat - pulse4->pulse_beat)/ pulse3->tot_frames;
+                pulse3->phase_adj = (next_phase - pulse4->phase)/ pulse3->tot_frames;
                 pulse3->pulse_time_adj = (next_pulse_time - pulse4->pulse_time)/ pulse3->tot_frames;
                 pulse3->amp_adj = (next_amp - pulse4->amp)/ pulse3->tot_frames;
                    /* change split beat only in slides */
@@ -4650,6 +4671,7 @@ init_binaural ()
                 /* Set values used for calculation in last slide */
                 pulse3->carrier = next_carrier;
                 pulse3->pulse_beat = next_pulse_beat;
+                pulse3->phase = next_phase;
                 pulse3->pulse_time = next_pulse_time;
                 pulse3->amp = next_amp;
                 pulse3->split_beat = next_split_beat;
@@ -4874,8 +4896,8 @@ init_binaural ()
                   phase2->last_off1 = &(phase3->off1);
                   phase2->last_amp_off1 = &(phase3->amp_off1);
                   phase2->last_amp_off2 = &(phase3->amp_off2);
-                  phase2->last_shift = &(phase1->shift);
-                  phase2->last_direction = &(phase1->direction);
+                  phase2->last_shift = &(phase3->shift);
+                  phase2->last_direction = &(phase3->direction);
                   next_carrier = phase2->carrier;
                   next_beat = phase2->beat;
                   next_amp = phase2->amp;
@@ -5017,8 +5039,8 @@ init_binaural ()
                   phase2->last_off1 = &(phase3->off1);  // phase2 will start from these offsets
                   phase2->last_amp_off1 = &(phase3->amp_off1);  // phase2 will start from these amp_offsets
                   phase2->last_amp_off2 = &(phase3->amp_off2);
-                  phase2->last_shift = &(phase1->shift);
-                  phase2->last_direction = &(phase1->direction);
+                  phase2->last_shift = &(phase3->shift);
+                  phase2->last_direction = &(phase3->direction);
                   next_carrier = phase2->carrier;
                   next_beat = phase2->beat;
                   next_amp = phase2->amp;
@@ -6598,44 +6620,117 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           if (pulse1->first_pass)
           {
             pulse1->first_pass = 0;  // now active
-            pulse1->fade_factor = 1.0; // set fade to start play
+            pulse1->fade_factor_left = 1.0; // set fade for left channel to start play
+            pulse1->fade_factor_right = 1.0; // set fade for right channel to start play
             if (pulse1->last_off1 != NULL)  // there *is* a previous offset to use
               pulse1->off1 = *pulse1->last_off1;  // to eliminate crackle from discontinuity in wave
+            if (pulse1->last_off3 != NULL)  // there *is* a previous offset to use
+              pulse1->off3 = *pulse1->last_off3;  // to eliminate crackle from discontinuity in wave
             if (pulse1->last_off2 != NULL)  // there *is* a previous offset to use
               pulse1->off2 = *pulse1->last_off2;
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)  // fill buffer 
           {
             off2_prev = pulse1->off2;  // save the original offset to determine if time to play pulse
-            pulse1->inc2 += ( pulse1->pulse_beat * 2. * fast_mult);  //inc to next sin value
+            pulse1->inc2 += (fabs(pulse1->pulse_beat) * 2. * fast_mult);  //inc to next sin value, allow for -ve beat
             pulse1->off2 += (int) round(pulse1->inc2);  // offset for beat frequency into sin table
             pulse1->inc2 -= round (pulse1->inc2);  // remaining increment is only fractional part, +ve or -ve
-            pulse1->off2 = pulse1->off2 % (out_rate * 2);  // mod with sin table size, to wrap offset
-            if (off2_prev > pulse1->off2)  // time to play, beat offset just wrapped to start of sin table
-              pulse1->pulse_frames = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
-            /* fade out begins one millisecond from end  */
-            if (pulse1->pulse_frames > 0 && pulse1->pulse_frames <= msec_fade_count)  
-              pulse1->fade_factor -= (msec_fade_adjust * fast_mult); // adjust fade factor down
-            if (pulse1->pulse_frames <= 0 && pulse1->pulse_frames > -fast_mult)  // have to allow for fast play
-            { /* pulse beat has ended for this pass, make sure ready for start of next beat play */
-              pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
-              pulse1->fade_factor = 1.0; // set start fade factor to full volume
+            pulse1->off2 = pulse1->off2 % sin_siz;  // mod with sin table size, to wrap offset
+            int shift = (int) ((pulse1->phase/360.) * sin_siz);  // offset shift for phase
+            if (pulse1->pulse_beat < 0.0)  // left channel leads
+            {
+              if (off2_prev > pulse1->off2)  // time to play left channel, beat offset just wrapped to start of sin table
+                pulse1->pulse_frames_left = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              /* time to play right channel, shifted beat offset just wrapped to start of sin table */
+              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+                pulse1->pulse_frames_right = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              /* fade out begins one millisecond from end  */
+              if (pulse1->pulse_frames_left > 0 && pulse1->pulse_frames_left <= msec_fade_count)  
+                pulse1->fade_factor_left -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_right > 0 && pulse1->pulse_frames_right <= msec_fade_count)  
+                pulse1->fade_factor_right -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_left <= 0 && pulse1->pulse_frames_left > -fast_mult)  // have to allow for fast play
+              { /* left pulse beat has ended for this pass, make sure ready for start of next beat play on left */
+                pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_left = 1.0; // set start fade factor to full volume
+              }
+              if (pulse1->pulse_frames_right <= 0 && pulse1->pulse_frames_right > -fast_mult)  // have to allow for fast play
+              { /* right pulse beat has ended for this pass, make sure ready for start of next beat play on right */
+                pulse1->off3 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_right = 1.0; // set start fade factor to full volume
+              }
             }
-            if (pulse1->pulse_frames > 0)  // playing a pulse
+            else if (pulse1->pulse_beat > 0.0)  // right channel leads
+            {
+              /* time to play left channel, shifted beat offset just wrapped to start of sin table */
+              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+                pulse1->pulse_frames_left = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              if (off2_prev > pulse1->off2)  // time to play right channel, beat offset just wrapped to start of sin table
+                pulse1->pulse_frames_right = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              /* fade out begins one millisecond from end  */
+              if (pulse1->pulse_frames_left > 0 && pulse1->pulse_frames_left <= msec_fade_count)  
+                pulse1->fade_factor_left -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_right > 0 && pulse1->pulse_frames_right <= msec_fade_count)  
+                pulse1->fade_factor_right -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_left <= 0 && pulse1->pulse_frames_left > -fast_mult)  // have to allow for fast play
+              { /* left pulse beat has ended for this pass, make sure ready for start of next beat play on left */
+                pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_left = 1.0; // set start fade factor to full volume
+              }
+              if (pulse1->pulse_frames_right <= 0 && pulse1->pulse_frames_right > -fast_mult)  // have to allow for fast play
+              { /* right pulse beat has ended for this pass, make sure ready for start of next beat play on right */
+                pulse1->off3 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_right = 1.0; // set start fade factor to full volume
+              }
+            }
+            else  // in phase
+            {
+              if (off2_prev > pulse1->off2)  // time to play, beat offset just wrapped to start of sin table
+              {
+                pulse1->pulse_frames_left = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+                pulse1->pulse_frames_right = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              }
+              /* fade out begins one millisecond from end  */
+              if (pulse1->pulse_frames_left > 0 && pulse1->pulse_frames_left <= msec_fade_count) 
+              {
+                pulse1->fade_factor_left -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+                pulse1->fade_factor_right -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              }
+              if (pulse1->pulse_frames_left <= 0 && pulse1->pulse_frames_left > -fast_mult)  // have to allow for fast play
+              { /* pulse beat has ended for this pass, make sure ready for start of next beat play */
+                pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_left = 1.0; // set start fade factor to full volume
+                pulse1->off3 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_right = 1.0; // set start fade factor to full volume
+              }
+            }
+            if (pulse1->pulse_frames_left > 0)  // playing a pulse in left channel
             {
               if (opt_c)  // compensate
                 amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
               else
                 amp1 = pulse1->amp;
               /* pulse is always square wave, full volume  */
-              out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor
-                                                        * sin_table[pulse1->off1]);
-              out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor
+              out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor_left
                                                         * sin_table[pulse1->off1]);
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               pulse1->inc1 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
               pulse1->off1 += pulse1->inc1;  // don't worry about fractional portion, frequency high enough to ignore
-              pulse1->off1 = pulse1->off1 % (out_rate * 2);  // mod with sin table size, to wrap offset
+              pulse1->off1 = pulse1->off1 % sin_siz;  // mod with sin table size, to wrap offset
+            }
+            if (pulse1->pulse_frames_right > 0)  // playing a pulse in right channel
+            {
+              if (opt_c)  // compensate
+                amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
+              else
+                amp1 = pulse1->amp;
+              /* pulse is always square wave, full volume  */
+              out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor_right
+                                                        * sin_table[pulse1->off3]);
+              /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
+              pulse1->inc3 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
+              pulse1->off3 += pulse1->inc3;  // don't worry about fractional portion, frequency high enough to ignore
+              pulse1->off3 = pulse1->off3 % sin_siz;  // mod with sin table size, to wrap offset
             }
             /*  Adjust split or split beat even when not playing beat */
             pulse1->split_now += pulse1->split_adj * fast_mult;
@@ -6679,8 +6774,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }  
             pulse1->carrier += (pulse1->carr_adj * fast_mult);  // tone to sound if time
             pulse1->pulse_beat += (pulse1->pulse_beat_adj * fast_mult);  // beat of the pulse
+            pulse1->phase += (pulse1->phase_adj * fast_mult);  // beat of the pulse
             pulse1->pulse_time += (pulse1->pulse_time_adj * fast_mult);  // duration of the pulse
-            pulse1->pulse_frames -= fast_mult;  // played pulse frame(s)
+            pulse1->pulse_frames_left -= fast_mult;  // played pulse frame(s)
+            pulse1->pulse_frames_right -= fast_mult;  // played pulse frame(s)
             pulse1->amp += (pulse1->amp_adj * fast_mult);  // amplitude to sound at
             if (pulse1->amp < 0.0)  // no negative amplitudes
               pulse1->amp = 0.0;
@@ -6716,42 +6813,115 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (pulse1->first_pass)
             {
               pulse1->first_pass = 0;  // now active
-              pulse1->fade_factor = 1.0; // set fade to start play
+              pulse1->fade_factor_left = 1.0; // set fade for left channel to start play
+              pulse1->fade_factor_right = 1.0; // set fade for right channel to start play
               if (pulse1->last_off1 != NULL)  // there *is* a previous offset to use
                 pulse1->off1 = *pulse1->last_off1;  // to eliminate crackle from discontinuity in wave
+              if (pulse1->last_off3 != NULL)  // there *is* a previous offset to use
+                pulse1->off3 = *pulse1->last_off3;  // to eliminate crackle from discontinuity in wave
               if (pulse1->last_off2 != NULL)  // there *is* a previous offset to use
                 pulse1->off2 = *pulse1->last_off2;
             }
             off2_prev = pulse1->off2;  // save the original offset to determine if time to play pulse
-            pulse1->inc2 += ( pulse1->pulse_beat * 2. * fast_mult);  //inc to next sin value
+            pulse1->inc2 += (fabs(pulse1->pulse_beat) * 2. * fast_mult);  //inc to next sin value, allow for -ve beat
             pulse1->off2 += (int) round(pulse1->inc2);  // offset for beat frequency into sin table
             pulse1->inc2 -= round (pulse1->inc2);  // remaining increment is only fractional part, +ve or -ve
             pulse1->off2 = pulse1->off2 % (out_rate * 2);  // mod with sin table size, to wrap offset
-            if (off2_prev > pulse1->off2)  // time to play, beat offset just wrapped to start of sin table
-              pulse1->pulse_frames = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
-            /* fade out begins one millisecond from end  */
-            if (pulse1->pulse_frames > 0 && pulse1->pulse_frames <= msec_fade_count)  
-              pulse1->fade_factor -= (msec_fade_adjust * fast_mult); // adjust fade factor down
-            if (pulse1->pulse_frames <= 0 && pulse1->pulse_frames > -fast_mult)  // have to allow for fast play
-            { /* pulse beat has ended for this pass, make sure ready for start of next beat play */
-              pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
-              pulse1->fade_factor = 1.0; // set start fade factor to full volume
+            int shift = (int) ((pulse1->phase/360.) * sin_siz);  // offset shift for phase
+            if (pulse1->pulse_beat < 0.0)  // left channel leads
+            {
+              if (off2_prev > pulse1->off2)  // time to play left channel, beat offset just wrapped to start of sin table
+                pulse1->pulse_frames_left = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              /* time to play right channel, shifted beat offset just wrapped to start of sin table */
+              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+                pulse1->pulse_frames_right = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              /* fade out begins one millisecond from end  */
+              if (pulse1->pulse_frames_left > 0 && pulse1->pulse_frames_left <= msec_fade_count)  
+                pulse1->fade_factor_left -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_right > 0 && pulse1->pulse_frames_right <= msec_fade_count)  
+                pulse1->fade_factor_right -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_left <= 0 && pulse1->pulse_frames_left > -fast_mult)  // have to allow for fast play
+              { /* left pulse beat has ended for this pass, make sure ready for start of next beat play on left */
+                pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_left = 1.0; // set start fade factor to full volume
+              }
+              if (pulse1->pulse_frames_right <= 0 && pulse1->pulse_frames_right > -fast_mult)  // have to allow for fast play
+              { /* right pulse beat has ended for this pass, make sure ready for start of next beat play on right */
+                pulse1->off3 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_right = 1.0; // set start fade factor to full volume
+              }
             }
-            if (pulse1->pulse_frames > 0)  // playing a pulse
+            else if (pulse1->pulse_beat > 0.0)  // right channel leads
+            {
+              /* time to play left channel, shifted beat offset just wrapped to start of sin table */
+              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+                pulse1->pulse_frames_left = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              if (off2_prev > pulse1->off2)  // time to play right channel, beat offset just wrapped to start of sin table
+                pulse1->pulse_frames_right = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              /* fade out begins one millisecond from end  */
+              if (pulse1->pulse_frames_left > 0 && pulse1->pulse_frames_left <= msec_fade_count)  
+                pulse1->fade_factor_left -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_right > 0 && pulse1->pulse_frames_right <= msec_fade_count)  
+                pulse1->fade_factor_right -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              if (pulse1->pulse_frames_left <= 0 && pulse1->pulse_frames_left > -fast_mult)  // have to allow for fast play
+              { /* left pulse beat has ended for this pass, make sure ready for start of next beat play on left */
+                pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_left = 1.0; // set start fade factor to full volume
+              }
+              if (pulse1->pulse_frames_right <= 0 && pulse1->pulse_frames_right > -fast_mult)  // have to allow for fast play
+              { /* right pulse beat has ended for this pass, make sure ready for start of next beat play on right */
+                pulse1->off3 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_right = 1.0; // set start fade factor to full volume
+              }
+            }
+            else  // in phase
+            {
+              if (off2_prev > pulse1->off2)  // time to play, beat offset just wrapped to start of sin table
+              {
+                pulse1->pulse_frames_left = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+                pulse1->pulse_frames_right = (int) (pulse1->pulse_time * out_rate);  // number of frames to play
+              }
+              /* fade out begins one millisecond from end  */
+              if (pulse1->pulse_frames_left > 0 && pulse1->pulse_frames_left <= msec_fade_count) 
+              {
+                pulse1->fade_factor_left -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+                pulse1->fade_factor_right -= (msec_fade_adjust * fast_mult); // adjust fade factor down
+              }
+              if (pulse1->pulse_frames_left <= 0 && pulse1->pulse_frames_left > -fast_mult)  // have to allow for fast play
+              { /* pulse beat has ended for this pass, make sure ready for start of next beat play */
+                pulse1->off1 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_left = 1.0; // set start fade factor to full volume
+                pulse1->off3 = 0;  // always start at zero to eliminate beginning discontinuity
+                pulse1->fade_factor_right = 1.0; // set start fade factor to full volume
+              }
+            }
+            if (pulse1->pulse_frames_left > 0)  // playing a pulse in left channel
             {
               if (opt_c)  // compensate
                 amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
               else
                 amp1 = pulse1->amp;
               /* pulse is always square wave, full volume  */
-              out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor
-                                                        * sin_table[pulse1->off1]);
-              out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor
+              out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor_left
                                                         * sin_table[pulse1->off1]);
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               pulse1->inc1 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
               pulse1->off1 += pulse1->inc1;  // don't worry about fractional portion, frequency high enough to ignore
-              pulse1->off1 = pulse1->off1 % (out_rate * 2);  // mod with sin table size, to wrap offset
+              pulse1->off1 = pulse1->off1 % sin_siz;  // mod with sin table size, to wrap offset
+            }
+            if (pulse1->pulse_frames_right > 0)  // playing a pulse in right channel
+            {
+              if (opt_c)  // compensate
+                amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
+              else
+                amp1 = pulse1->amp;
+              /* pulse is always square wave, full volume  */
+              out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor_right
+                                                        * sin_table[pulse1->off3]);
+              /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
+              pulse1->inc3 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
+              pulse1->off3 += pulse1->inc3;  // don't worry about fractional portion, frequency high enough to ignore
+              pulse1->off3 = pulse1->off3 % sin_siz;  // mod with sin table size, to wrap offset
             }
             /*  Adjust split or split beat even when not playing beat */
             pulse1->split_now += pulse1->split_adj * fast_mult;
@@ -6795,8 +6965,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }  
             pulse1->carrier += (pulse1->carr_adj * fast_mult);  // tone to sound if time
             pulse1->pulse_beat += (pulse1->pulse_beat_adj * fast_mult);  // beat of the pulse
+            pulse1->phase += (pulse1->phase_adj * fast_mult);  // beat of the pulse
             pulse1->pulse_time += (pulse1->pulse_time_adj * fast_mult);  // duration of the pulse
-            pulse1->pulse_frames -= fast_mult;  // played pulse frame(s)
+            pulse1->pulse_frames_left -= fast_mult;  // played pulse frame(s)
+            pulse1->pulse_frames_right -= fast_mult;  // played pulse frame(s)
             pulse1->amp += (pulse1->amp_adj * fast_mult);  // amplitude to sound at
             if (pulse1->amp < 0.0)  // no negative amplitudes
               pulse1->amp = 0.0;
@@ -6838,14 +7010,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             /* perform the amplitude variation adjustment if required */
             if (phase1->amp_beat1 > 0.0)
             {
-              phase1->amp_inc1 = (int) round(phase1->amp_beat1*2);
+              phase1->amp_inc1 = (int) round(phase1->amp_beat1*2.);
               phase1->amp_off1 += phase1->amp_inc1;
               phase1->amp_off1 = phase1->amp_off1 % sin_siz;
               amp1 += ((amp1 * phase1->amp_pct1) * sin_table[phase1->amp_off1]);
             }
             if (phase1->amp_beat2 > 0.0)
             {
-              phase1->amp_inc2 = (int) round(phase1->amp_beat2*2);
+              phase1->amp_inc2 = (int) round(phase1->amp_beat2*2.);
               phase1->amp_off2 += phase1->amp_inc2;
               phase1->amp_off2 = phase1->amp_off2 % sin_siz;
               amp2 += ((amp2 * phase1->amp_pct2) * sin_table[phase1->amp_off2]);
@@ -7342,15 +7514,17 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
         char_count += fprintf (fp, " %.3f", pulse1->pulse_beat);
         char_count += fprintf (fp, " %.3f %.3f %.3f", AMP_DA (pulse1->amp), pulse1->phase, pulse1->pulse_time);
-        char_count += fprintf (fp, " %d", pulse1->pulse_frames);
+        char_count += fprintf (fp, " %d %d", pulse1->pulse_frames_left, pulse1->pulse_frames_right);
         char_count += fprintf (fp, " %d %d", pulse1->inc1, pulse1->off1);
+        char_count += fprintf (fp, " %d %d", pulse1->inc3, pulse1->off3);
         char_count += fprintf (fp, " %.3f %d", pulse1->inc2, pulse1->off2);
-        char_count += fprintf (fp, " %.3e %.3e %.3e %.3e", pulse1->carr_adj, pulse1->pulse_beat_adj, 
+        char_count += fprintf (fp, " %.3e %.3e %.3e\n         %.3e %.3e", pulse1->carr_adj, 
+                                                            pulse1->pulse_beat_adj, pulse1->phase_adj, 
                                                             pulse1->pulse_time_adj, pulse1->amp_adj);
         char_count += fprintf (fp, " %.3f", pulse1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f", pulse1->split_begin, pulse1->split_end, 
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f", pulse1->split_begin, pulse1->split_end, 
                                                               pulse1->split_low, pulse1->split_high);
-        char_count += fprintf (fp, " %.3f", pulse1->fade_factor);
+        char_count += fprintf (fp, " %.3f %.3f", pulse1->fade_factor_left, pulse1->fade_factor_right);
         char_count += fprintf (fp, " %.3e", pulse1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e", pulse1->split_beat_adj, pulse1->split_adj);
         char_count += fprintf (fp, " %d\n", pulse1->slide);
@@ -7365,15 +7539,17 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, "   pulse %.3f", pulse1->carrier);
         char_count += fprintf (fp, " %.3f", pulse1->pulse_beat);
         char_count += fprintf (fp, " %.3f %.3f %.3f", AMP_DA (pulse1->amp), pulse1->phase, pulse1->pulse_time);
-        char_count += fprintf (fp, " %d", pulse1->pulse_frames);
+        char_count += fprintf (fp, " %d %d", pulse1->pulse_frames_left, pulse1->pulse_frames_right);
         char_count += fprintf (fp, " %d %d", pulse1->inc1, pulse1->off1);
+        char_count += fprintf (fp, " %d %d", pulse1->inc3, pulse1->off3);
         char_count += fprintf (fp, " %.3f %d", pulse1->inc2, pulse1->off2);
-        char_count += fprintf (fp, " %.3e %.3e %.3e %.3e", pulse1->carr_adj, pulse1->pulse_beat_adj, 
+        char_count += fprintf (fp, " %.3e %.3e %.3e\n         %.3e %.3e", pulse1->carr_adj, 
+                                                            pulse1->pulse_beat_adj, pulse1->phase_adj, 
                                                             pulse1->pulse_time_adj, pulse1->amp_adj);
         char_count += fprintf (fp, " %.3f", pulse1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f", pulse1->split_begin, pulse1->split_end, 
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f", pulse1->split_begin, pulse1->split_end, 
                                                               pulse1->split_low, pulse1->split_high);
-        char_count += fprintf (fp, " %.3f", pulse1->fade_factor);
+        char_count += fprintf (fp, " %.3f %.3f", pulse1->fade_factor_left, pulse1->fade_factor_right);
         char_count += fprintf (fp, " %.3e", pulse1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e", pulse1->split_beat_adj, pulse1->split_adj);
         char_count += fprintf (fp, " %d", pulse1->slide);
