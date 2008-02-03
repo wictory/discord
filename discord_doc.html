@@ -12,9 +12,10 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P><STRONG><FONT COLOR="NAVY">NAME</FONT></STRONG>
 
-<P>  discord - Generate binaural, pulse, or chronaural tones to soundcard or
-  file for use in brain wave entrainment. &nbsp;&nbsp; Link to <A HREF="http://sourceforge.net/projects/discord/">discord project and
-  download  page at sourceforge</A>
+<P>  discord - Generate binaural, chronaural, or phase beats to
+  soundcard or file for use in brain wave entrainment.  &nbsp;&nbsp;
+  Link to <A HREF="http://sourceforge.net/projects/discord/">discord
+  project and download  page at sourceforge</A>
 
 <P><STRONG><FONT COLOR="NAVY">SYNOPSIS</FONT></STRONG>
 
@@ -22,21 +23,23 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P><STRONG><FONT COLOR="NAVY">DESCRIPTION</FONT></STRONG>
 
-<P>  discord is a command line program used to generate binaural, pulse,  and
-  chronaural beats mixed with tones, noise, or sound files of the
+<P>  Discord is a command line program used to generate binaural, phase,
+  and chronaural beats mixed with tones, noise, or sound files of the
   users choice.  The default is to play the files via the computer's
   sound card, but they can be written to output files instead.  Only
   file formats available in libsndfile can be used as input.  Those
   formats do not include mp3 or ogg at this time, though the creator
   of libsndfile is thinking about adding ogg.  He is not adding mp3
-  because of patent issues.  For practical purposes, this means wav,
-  flac, or raw files on a PC, though au and aiff formats are also
-  available.  If an input sound file has a different sample rate than
-  that selected for the output, it will automatically be resampled to
-  the requested rate.  A copy can be retained in the same directory as
-  it was found with the new rate appended to the filename.  Output
-  file types are limited to wav, flac, and raw; these are all lossless
-  formats.
+  because of patent issues.  Because of a change in the api for FLAC
+  after version 1.1.2, libsndfile can no longer read or write FLAC
+  files.  Thus, for practical purposes, this means wav or raw files on
+  a PC, though au and aiff formats are also available.  If an input
+  sound file has a different sample rate than that selected for the
+  output, it will automatically be resampled to the requested rate.  A
+  copy can be retained in the same directory as it was found with the
+  new rate appended to the filename.  Output file types are limited to
+  wav and raw until the FLAC interface is fixed; these are lossless
+  formats.  
 
 <P>  While all of the options below can be used on the command line, the
   sequences to play must be defined in a script file.  Options on the command
@@ -49,9 +52,14 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   either a script file or the command line.  There is a sample .discordrc
   included, so you can move it to your $HOME directory if you want.
 
-<P>  There are nine voice types in discord.  These are binaural, pulse,
-  chronaural, bell, noise, stoch (stands for stochastic), sample,
-  repeat, and once.
+<P>  While discord is very complex, that is part of its purpose.  To
+  allow the exploration of auditory beats in new ways, perhaps leading
+  to greater efficacy or new effects.
+
+<P>  There are ten voice types in discord.  These are binaural,
+  chronaural, pulse (a variation of chronaural), phase, bell, noise,
+  stoch (stands for stochastic), sample, repeat, and once.
+
 
 <P>  Voice type description
 
@@ -64,24 +72,30 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   next binaural on carrier, beat, amplitude, amplitude beat, and
   amplitude beat variation amount.
 
-<P><STRONG><FONT COLOR=#FF7F00>pulse</FONT></STRONG>
-
-<P>  Generate a periodic tone at a specified frequency and amplitude.
-  The period is the beat in this case.  In addition, the split or
-  pan of the tone can be specified to vary between set values at
-  a rate specified.  Pulse tones are allowed to slide into the
-  next pulse on carrier, pulse beat, pulse time, amplitude, and
-  split beat.  The difference between this and chronaural is the
-  way the duration is specified.  Pulse is also fixed as using a
-  square wave.
-
 <P><STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG>
 
 <P>  Generate a periodic tone at a specified frequency and amplitude.
   The period is the beat in this case.  In addition, the split or pan
   of the tone can be specified to vary between set values at a rate
   specified.  Chronaural tones are allowed to slide into the next
-  chronaural on carrier, beat, amplitude, and split beat.
+  chronaural on carrier, beat, amplitude, phase, and split beat.
+
+<P><STRONG><FONT COLOR=#FF7F00>pulse</FONT></STRONG>
+
+<P>  Generate a periodic tone at a specified frequency and amplitude.
+  The period is the beat in this case.  In addition, the split or pan
+  of the tone can be specified to vary between set values at a rate
+  specified.  Pulse tones are allowed to slide into the next pulse on
+  carrier, beat, amplitude, phase, time, and split beat.  The
+  difference between this and chronaural is the way the duration is
+  specified.  Pulse is also fixed as using a square wave.
+
+<P><STRONG><FONT COLOR=#FF7F00>phase</FONT></STRONG>
+
+<P>  Generate a beat by shifting the phase of either the left or right
+  channel at a specified beat frequency and to a specified phase
+  offset between 0 and 360 degrees.  Phase tones are allowed to slide
+  into the next phase on carrier, beat, amplitude, and phase.
 
 <P><STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG>
 
@@ -323,43 +337,45 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   However, every voice must be joined by separators.  No white space
   is allowed.
   
-<P>  The greater than sign "&gt;" after a binaural or chronaural voice is a
-  slide, and will continuously adjust carrier, beat, amplitude,
-  amplitude beat and amplitude variation to be the next binaural or
-  chronaural at the end of the time period.  For slides to work, the
-  binaural or chronaural voices must be in the same relative position
-  in the time sequences.  There is no other way to know that there is
-  a link between the voices.  So the first voice in the sequence will
-  always look to the first voice in the next sequence to slide to,
-  etc.
+<P>  The greater than sign "&gt;" after a binaural, chronaural, pulse, or
+  phase voice is a slide, and will continuously adjust fields that are
+  allowed to slide for that voice so that they match the corresponding
+  field's value at the start of the next binaural, chronaural, pulse,
+  or phase voice that they slide to.  For slides to work, the
+  binaural, chronaural, pulse, or phase voices must be in the same
+  relative position in the time sequences.  There is no other way to
+  know that there is a link between the voices.  So the first voice in
+  the sequence will always look to the first voice in the next
+  sequence to slide to, etc.
 
-<P>  One alternative slide format is the step slide.  Instead of using a
-  greater than sign "&gt;" to indicate a slide, use an ampersand "&amp;".
-  Instead of sliding smoothly to the next time sequence, the slide
-  will occur in a series of steps with slides between them.  The
-  ampersand is followed by three fields separated by separators:
-  number of steps, time for slide joins and fuzz.  Number of steps is
-  the number of step-slide sequences that you want in the time period.
-  The time for slide join is how long to make the slides that bridge
-  the steps in seconds.  And the fuzz is the percent of the interval
-  that the constant tone can occur in, if it is 10 per cent, then it
-  will be the fixed frequence +/- 5 per cent.  The time for slide join
-  determines the length of the constant step as the total time for the
-  period minus all of the slides has to equal the number of steps.
-  The first step or constant tone is always the starting frequency.
-  Time to entrain varies and you should make sure that the step time
-  is above this for you.  For some, this will work better than a
-  continuous slide.
+<P>  One alternative slide format is the step slide.  Instead of using
+  a greater than sign "&gt;" to indicate a slide, use an ampersand
+  "&amp;".  Instead of sliding smoothly to the next time sequence, the
+  slide will occur in a series of steps with slides between them.  The
+  ampersand is followed by three fields separated by any combination of
+  the allowed separators: number of steps, time for slide joins in
+  seconds, and fuzz in per cent.  Number of steps is the number of
+  step-slide sequences that you want in the time period.  The time for
+  slide join is how long to make the slides that bridge the steps in
+  seconds.  And the fuzz is the percent of the interval that the
+  constant tone can occur in, if it is 10 per cent, then it will be the
+  fixed frequency +/- 5 per cent.  The time for slide join determines
+  the length of the constant step as the total time for the period minus
+  all of the slides has to equal the number of steps.  The first step or
+  constant tone is always the starting frequency.  Time to entrain
+  varies and you should make sure that the step time is above this for
+  you.  For some, this will work better than a continuous slide because
+  it allows time for the brain to entrain between each slide.
 
 <P>  Another alternative slide format is the vary slide.  Instead of
   using a greater than sign "&gt;" to indicate a slide, use a tilde "~".
   Instead of sliding smoothly to the next time sequence, the slide
   will occur in a series of steps with slides between them.  The tilde
   is followed by two fields separated by separators:  number of steps
-  and time for slide joins.  Number of steps is the number of
-  step-slide sequences that you want in the time period.  The time for
-  slide join is how long to make the slides that bridge the steps in
-  seconds.  The time for slide join determines the length of the
+  and time for slide joins in seconds.  Number of steps is the number
+  of step-slide sequences that you want in the time period.  The time
+  for slide join is how long to make the slides that bridge the steps
+  in seconds.  The time for slide join determines the length of the
   constant step as the total time for the period minus all of the
   slides has to equal the number of steps.  The first step or constant
   tone is always the starting frequency.  Time to entrain varies and
@@ -370,7 +386,10 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   corresponding voice of the next time sequence.  This is a great way
   to experience a lot of frequencies in a range.
 
-<P>  All amplitudes are in percentages, 0 is none, 100 is max.  
+<P>  All amplitudes are in percentages, 0 is none, 100 is max.  And the
+  amplitude is for each channel.  So if you have an amplitude of 10%,
+  each channel will have an amplitude of 10% (except where split can
+  distribute it differently, say 13% and 7%).
 
 <P>  All splits are expressed as fraction for left channel.  e.g. .3
   means .3 left channel, .7 right channel 
@@ -382,13 +401,14 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   same makes it a constant value.  Any time they are different, a
   random selection in the range will be made.
 
-<P>  Fields for <STRONG><FONT COLOR=#FF7F00>binaural</FONT></STRONG> are name, carrier frequency, beat frequency, and
-  amplitude.  Optional fields are a left and right amplitude frequency
-  variation and a left and right percentage to vary.  Optional fields
-  must be at the end, before the slide indicator if they are present.
-  The + or - on the beat frequency indicates whether the left ear is
-  higher + or lower -.  The beat is centered on the carrier frequency,
-  so 200  +4 results in L 202 and R 198.
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>binaural</FONT></STRONG>
+  are name, carrier frequency, beat frequency, and amplitude.  Optional
+  fields are a left and right amplitude frequency variation and a left
+  and right percentage to vary.  Optional fields must be at the end,
+  before the slide indicator if they are present.  The + or - on the
+  beat frequency indicates whether the left ear is higher + or lower -.
+  The beat is centered on the carrier frequency, so 200  +4 results in
+  L 202 and R 198.
 
 <P>  Examples
 <P><PRE>
@@ -410,61 +430,25 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
     vary slide
 </PRE>
 
-<P>  Fields for <STRONG><FONT COLOR=#FF7F00>pulse</FONT></STRONG> 
-  are name, carrier, amplitude, pulse beat, pulse time, beginning
-  split, ending split, lowest split allowed, highest split
-  allowed, split beat, and slide.  Pulse beat is the frequency
-  through time of the carrier tone.  Pulse time is the duration
-  of the pulse beat in seconds.  There is a one millisecond fade
-  out on all pulse tones to prevent crackle in the sound stream
-  so you cannot use a pulse beat such that the length of the tone
-  is less than one millisecond or it will begin to fade
-  immediately.  If the pulse time is longer than the period of
-  the pulse beat frequency, greater than 1/pulse_beat, the tone
-  will sound continuously.  So at a pulse beat of 20 Hz, the
-  pulse time has to be less than .05 and if you don't want
-  immediate fade, greater than .001.  If beginning split or ending
-  split are -1, they are set randomly between lowest split and
-  highest split.  Split beat is the frequency through time of the
-  oscillation of the left and right split.  Slide indicator must
-  be present or no slide will occur.
-
-<P>  Example
-<P><PRE>
-         carrier   pulse time   begin split   high split  slide
-           |               |       |               |          |
-  pulse''145.0''1.0''4.0''.02''''0.0''0.5''.050''.950''1.200''&gt;
-    |   |       |     |                |    |            |
-   name |       | pulse beat           | low split    split beat
-   separators  amplitude          end split             
-    |     |
-  &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
-  |    |    |         |
-  | steps slide time  fuzz percent
-  step slide
-  ~,,,,5''''20  (slide with ~ instead of &gt;)
-  |    |    |
-  | steps slide time
-  vary slide
-</PRE>
-
 <P>  Fields for <STRONG><FONT COLOR=#FF7F00>chronaural</FONT></STRONG> 
-  are name, carrier, amplitude, amplitude beat, amplitude
-  fraction, amplitude behave, beginning split, ending split,
-  lowest split allowed, highest split allowed, split beat, and
-  slide.  Amplitude beat is the frequency through time of the
-  carrier tone.  Amplitude fraction is the value the sin function
-  has to have before the tone is played, [0.0, 1.0).  The closer
-  this is to 1.0, the shorter the tone will be.  There is a one
-  millisecond fade out on all chronaural tones to prevent crackle
-  in the sound stream so you cannot use an amplitude fraction
-  such that the length of the tone is less than one millisecond
-  or it will fade immediately.  e.g. at a frame rate of 48000/sec
-  and chronaural beat frequency of 20 Hz the maximum amplitude
-  fraction is slightly above 0.9975.  at a frame rate of
-  96000/sec and chronaural beat frequency of 5 Hz the maximum
-  amplitude fraction is slightly above 0.9999.  Behavior for amp
-  beat is as follows:
+  are name, carrier, beat, amplitude, phase, sin threshold, beat
+  amplitude behavior, beginning split, ending split, lowest split
+  allowed, highest split allowed, split beat, and slide.  Beat is the
+  frequency through time of the occurrence of the carrier tone.  Phase
+  is the phase difference in degrees between the left and right
+  channel, from 0 to 360.  If the beat is positive, the right channel
+  leads and will be phase shifted.  If the beat is negative, the left
+  channel leads and will be phase shifted.  Sin threshold is the value
+  the sin function has to have before the tone is played, [0.0, 1.0).
+  The closer this is to 1.0, the shorter the tone will be.  There is a
+  one millisecond fade out on all chronaural tones to prevent crackle
+  in the sound stream so you cannot use a sin threshold such that the
+  length of the tone is less than one millisecond or it will fade
+  immediately.  e.g. at a frame rate of 48000/sec and chronaural beat
+  frequency of 20 Hz the maximum amplitude fraction is slightly above
+  0.9975.  at a frame rate of 96000/sec and chronaural beat frequency
+  of 5 Hz the maximum amplitude fraction is slightly above 0.9999.
+  Behavior for beat amplitude is as follows:
 
 <P>  1 sin wave - tone is multiplied by sin value <BR>
   2 square wave - tone is either on or off <BR>
@@ -478,12 +462,12 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P>  Example
 <P><PRE>
-             carrier                begin split                 slide
-               |                       |                            |
-  chronaural''145.0''1.0''4.0''.00''3''0.0''0.5''.050''.950''1.200''&gt;
-    |       |        |     |    |   |        |    |      |     |
-   name     |        | amp beat | amp behave | low split |  split beat
-        separators amplitude  amp fraction  end split  high split
+             carrier         phase     begin split     split beat  slide
+               |               |          |                     |      |
+  chronaural''145.0''4.0''1.0''5''.00''3''0.0''0.5''.050''.950''1.200''&gt;
+    |       |        |     |       |   |        |    |      |
+   name     |        | amplitude   | amp behave | low split |
+        separators beat     sin threshold      end split    high split
           |     |<BR>
   &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
   |    |    |         |
@@ -495,11 +479,83 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   vary slide
 </PRE>
 
-<P>  Fields for <STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG> are name, frequency, minimum start amplitude, maximum
-  start amplitude, beginning split, ending split, lowest split allowed,
-  highest split allowed, minimum time allowed to ring, maximum time
-  allowed to ring, minimum time till next ring, maximum time till next
-  ring, and decay pattern for the ring, 1 through 5.  
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>pulse</FONT></STRONG> 
+  are name, carrier, amplitude, beat, phase, time, beginning split,
+  ending split, lowest split allowed, highest split allowed, split
+  beat, and slide.  Beat is the frequency through time of the
+  occurrence of the carrier tone.  Phase is the phase difference in
+  degrees between the left and right channel, from 0 to 360.  If the
+  beat is positive, the right channel leads and will be phase shifted.
+  If the beat is negative, the left channel leads and will be phase
+  shifted.  Time is the duration of the pulse beat in seconds.  There
+  is a one millisecond fade out on all pulse tones to prevent crackle
+  in the sound stream so you cannot use a pulse beat such that the
+  length of the tone is less than one millisecond or it will begin to
+  fade immediately.  If the time is longer than the period of the beat
+  frequency, greater than 1/beat, the tone will sound continuously.
+  So at a beat of 20 Hz, the time has to be less than .05 and if you
+  don't want immediate fade, greater than .001.  If beginning split or
+  ending split are -1, they are set randomly between lowest split and
+  highest split.  Split beat is the frequency through time of the
+  oscillation of the left and right split.  Slide indicator must be
+  present or no slide will occur.
+
+<P>  Example
+<P><PRE>
+         carrier            time   begin split   high split  slide
+           |                  |       |               |          |
+  pulse''145.0''4.0''1.0''5''.02''''0.0''0.5''.050''.950''1.200''&gt;
+    |   |       |     |   |               |    |            |
+   name |      beat   |   phase           | low split    split beat
+   separators     amplitude          end split             
+    |     |
+  &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
+  |    |    |         |
+  | steps slide time  fuzz percent
+  step slide
+  ~,,,,5''''20  (slide with ~ instead of &gt;)
+  |    |    |
+  | steps slide time
+  vary slide
+</PRE>
+
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>phase</FONT></STRONG> 
+  are name, carrier frequency, beat, amplitude, and phase.  Phase is
+  the maximum phase difference in degrees between the left and right
+  channel, from 0 to 360.  If the beat is positive, the right channel
+  leads and will be phase shifted between 0 and the phase at the beat
+  rate.  If the beat is negative, the left channel leads and will be
+  phase shifted between 0 and the phase at the beat rate.  Optional
+  fields are a left and right amplitude frequency variation and a left
+  and right percentage to vary.  Optional fields must be at the end,
+  before the slide indicator if they are present.
+
+<P>  Example
+<P><PRE>
+    phase''''400.0''''+10.01''5''2.9
+      |       |        |      |    |
+    name  carrier   beat  phase  amplitude  left percent vary  right
+      |       |        |     |   |                    |        |
+    phase''''60.0''''-10.01''5''1.0''''0.5''''0.5''''10.0''''10.0'&gt;
+          |                             |       |                 |
+      field separators   left amplitude beat   right              |
+           |     |                                            slide
+    &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
+    |    |    |         |
+    | steps slide time  fuzz percent
+    step slide
+    ~,,,,5''''20  (slide with ~ instead of &gt;)
+    |    |    |
+    | steps slide time
+    vary slide
+</PRE>
+
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG> are
+  name, frequency, minimum start amplitude, maximum start amplitude,
+  beginning split, ending split, lowest split allowed, highest split
+  allowed, minimum time allowed to ring, maximum time allowed to ring,
+  minimum time till next ring, maximum time till next ring, and decay
+  pattern for the ring, 1 through 5.  
 
 <P>  1 decrease linearly to 0 <BR>
   2 decrease linearly to .5, <BR>
@@ -676,7 +732,8 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 <P><DD>  <STRONG>A</STRONG>  Research I've seen on the internet suggests that chronaural beats
   are much more effective than binaural beats.  Personally, I like
   mixing them and find both effective with a preference for binaural.
-  Try for yourself.</DD>
+  And the newest voice, phase, seems on limited experience, to be the
+  most effective of all.  Experiment to see which works best for you.</DD>
 
 <P><DT>  <STRONG>Q</STRONG>  What is the maximum amount you should listen per day?</DT>
 
@@ -720,19 +777,21 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P><DT>  <STRONG>Q</STRONG>  That EFT thing seems kind of flaky.  Talk to me.</DT>
 
-<P><DD>  <STRONG>A</STRONG>  Think of your brain as an operating system.  The pattern of your
-  current situation is used as a fuzzy key into a hash table looking
-  for a response.  All hits are stored in a list.  The scheduler scans
-  the list looking for the closest match with the highest emotional
-  intensity.  The preconfigured response for that match is run.  If
-  there are no hits on the hash table then logic is used to figure out
-  what to do.  What EFT does is change the scheduling priority for a
-  memory.  It does this by having the memory loaded/active and then
-  reducing (the tapping) the charge on the emotion.  My theory is that
-  the tapping points are like direct lines into your neural machinery,
-  and allow you to 'turn the knobs' that lower the intensity.  The
-  good part of this is that you aren't actually in the situation so
-  you can deal with the response a lot better.
+<P><DD>  <STRONG>A</STRONG>  Think of your subconscious brain as an operating system.  The
+  pattern of your current situation is used as a fuzzy key into a hash
+  table looking for a response.  All hits are stored in a list.  The
+  scheduler scans the list looking for the closest match with the
+  highest emotional intensity.  The preconfigured response for that
+  match is run.  If there are no hits on the hash table then conscious
+  logic is used to figure out what to do.  You couldn't function in
+  the world if there wasn't some fast lookup/response mechanism.  What
+  EFT does is change the scheduling priority for a memory in the
+  subconscious.  It does this by having the memory loaded/active and
+  then reducing (the tapping) the charge on the emotion.  My theory is
+  that the tapping points are like direct lines into your neural
+  machinery, and allow you to 'turn the knobs' that lower the
+  intensity.  The good part of this is that you aren't actually in the
+  situation so you can deal with the response a lot better.  
 
   <P>Brain wave entrainment bypasses the lookup and triggers unrelated
   memories directly in a random manner, thus diffusing the response.
@@ -756,15 +815,15 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   <P>Once you understand the way the brain processes experience it is not
   EFT that seems flaky but conventional therapies.  They don't address
   the cause of the problem, the emotional intensity, but instead try
-  to get you to 'understand it'.  Maybe this will reduce the emotional
-  intensity through some chance happening, but probably won't.  In all
-  likelihood the problem actually becomes worse, because you are
-  triggering the response over and over and over so you get really
-  good at it.  Thus you end up being in therapy for years with no
-  resolution.  EFT or the above alternatives take anywhere from
-  seconds/minutes through hours to weeks and address the actual
-  problem, the emotional intensity, directly.  Once they work the
-  problem is gone.</DD>
+  to get you to 'understand it' consciously.  Maybe this will reduce
+  the emotional intensity through some chance happening, but probably
+  won't as emotion comes out of the subconscious.  In all likelihood
+  the problem actually becomes worse, because you are triggering the
+  response over and over and over so you get really good at it.  Thus
+  you end up being in therapy for years with no resolution.  EFT or
+  the above alternatives take anywhere from seconds/minutes through
+  hours to weeks and address the actual problem, the emotional
+  intensity, directly.  Once they work the problem is gone.</DD>
     
 </DL>
 <P><STRONG><FONT COLOR="NAVY">BUGS</FONT></STRONG>
