@@ -5692,7 +5692,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 bell1->amp = bell1->amp_min + delta;       // beginning amplitude of tone
               }
               if (opt_c)  // compensate, could be done in setup for bell, less obvious
-                bell1->amp *= amp_comp (bell1->carrier);
+                bell1->amp *= amp_comp (bell1->carrier) * 2.;  // like binaural, double so each channel at amp
               if (bell1->behave == 1)   // linear amp_adj to zero
                 bell1->amp_adj = - (bell1->amp / bell1->ring);
               else if (bell1->behave == 2)      // amp_adj to half
@@ -5795,7 +5795,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 noise1->amp = noise1->amp_min + delta;       // beginning amplitude of tone
               }
               if (opt_c)  // compensate
-                noise1->amp *= amp_comp (noise1->carrier);
+                noise1->amp *= amp_comp (noise1->carrier) * 2.;  // like binaural, double so each channel at amp with split
               if (noise1->behave_low == noise1->behave_high)
               {                   // fixed decay behavior
                 noise1->behave = noise1->behave_low;
@@ -5993,28 +5993,29 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (stoch1->play > 0L)  // stoch is active
             {
+              double amp = stoch1->amp * 2.;  // like binaural, double so each channel at amp with split
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               stoch1->off1 += (stoch1->channels * fast_mult);
               stoch1->off1 %= stoch1->frames;  
               if (stoch1->mono == 0)  // stereo
               {
-                out_buffer[ii] += (stoch1->split_now * stoch1->amp
+                out_buffer[ii] += (stoch1->split_now * amp
                         * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
-                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * stoch1->amp
+                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                         * (double) ((*(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
               }
               else if (stoch1->mono == 1)  // mono, repeat left as right channel
               {
-                out_buffer[ii] += (stoch1->split_now * stoch1->amp
+                out_buffer[ii] += (stoch1->split_now * amp
                         * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
-                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * stoch1->amp
+                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                         * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
               }
               else if (stoch1->mono == 2)  // mono, repeat right as left channel
               {
-                out_buffer[ii] += (stoch1->split_now * stoch1->amp
+                out_buffer[ii] += (stoch1->split_now * amp
                         * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
-                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * stoch1->amp
+                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                         * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
               }
               stoch1->split_now += (stoch1->split_adj * fast_mult);
@@ -6065,28 +6066,29 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (sample1->play > 0L)  // sample is active
             {
+              double amp = sample1->amp * 2.;  // like binaural, double so each channel at amp with split
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               sample1->off1 += (sample1->channels * fast_mult);
               sample1->off1 %= sample1->frames;  
               if (sample1->mono == 0)  // stereo
               {
-                out_buffer[ii] += (sample1->split_now * sample1->amp
+                out_buffer[ii] += (sample1->split_now * amp
                         * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
-                out_buffer[ii+1] += ((1.0 - sample1->split_now) * sample1->amp
+                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                         * (double) ((*(sample1->sound + sample1->off1 + 1)) * sample1->scale));
               }
               else if (sample1->mono == 1)  // mono, repeat left as right channel
               {
-                out_buffer[ii] += (sample1->split_now * sample1->amp
+                out_buffer[ii] += (sample1->split_now * amp
                         * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
-                out_buffer[ii+1] += ((1.0 - sample1->split_now) * sample1->amp
+                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                         * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
               }
               else if (sample1->mono == 2)  // mono, repeat right as left channel
               {
-                out_buffer[ii] += (sample1->split_now * sample1->amp
+                out_buffer[ii] += (sample1->split_now * amp
                         * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
-                out_buffer[ii+1] += ((1.0 - sample1->split_now) * sample1->amp
+                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                         * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
               }
               sample1->split_now += (sample1->split_adj * fast_mult);
@@ -6135,28 +6137,29 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (repeat1->play > 0L)  // repeat is active
             {
+              double amp = repeat1->amp * 2.;  // like binaural, double so each channel at amp with split
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               repeat1->off1 += (repeat1->channels * fast_mult);
               repeat1->off1 %= repeat1->frames;  
               if (repeat1->mono == 0)  // stereo
               {
-                out_buffer[ii] += (repeat1->split_now * repeat1->amp
+                out_buffer[ii] += (repeat1->split_now * amp
                         * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
-                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * repeat1->amp
+                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                         * (double) ((*(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
               }
               else if (repeat1->mono == 1)  // mono, repeat left as right channel
               {
-                out_buffer[ii] += (repeat1->split_now * repeat1->amp
+                out_buffer[ii] += (repeat1->split_now * amp
                         * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
-                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * repeat1->amp
+                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                         * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
               }
               else if (repeat1->mono == 2)  // mono, repeat right as left channel
               {
-                out_buffer[ii] += (repeat1->split_now * repeat1->amp
+                out_buffer[ii] += (repeat1->split_now * amp
                         * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
-                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * repeat1->amp
+                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                         * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
               }
               repeat1->split_now += (repeat1->split_adj * fast_mult);
@@ -6210,29 +6213,30 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (once1->play > 0L)  // once is active
             {
+              double amp = once1->amp * 2.;  // like binaural, double so each channel at amp with split
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               once1->off1 += (once1->channels * fast_mult);
               once1->off1 %= once1->frames;  
                 // assumes only 1 or two channels, default to two if not one
               if (once1->mono == 0)  // stereo
               {
-                out_buffer[ii] += (once1->split_now * once1->amp
+                out_buffer[ii] += (once1->split_now * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
-                out_buffer[ii+1] += ((1.0 - once1->split_now) * once1->amp
+                out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                         * (double) ((*(once1->sound + once1->off1 + 1)) * once1->scale));
               }
               else if (once1->mono == 1)  // mono, repeat left as right channel
               {
-                out_buffer[ii] += (once1->split_now * once1->amp
+                out_buffer[ii] += (once1->split_now * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
-                out_buffer[ii+1] += ((1.0 - once1->split_now) * once1->amp
+                out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
               }
               else if (once1->mono == 2)  // mono, repeat right as left channel
               {
-                out_buffer[ii] += (once1->split_now * once1->amp
+                out_buffer[ii] += (once1->split_now * amp
                         * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
-                out_buffer[ii+1] += ((1.0 - once1->split_now) * once1->amp
+                out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                         * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
               }
               once1->split_now += (once1->split_adj * fast_mult);
@@ -6309,6 +6313,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
                 amp1 = chronaural1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               if (chronaural1->beat_behave == 1)  // sin wave, adjust by sin value
               {
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
@@ -6647,6 +6652,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
                 amp1 = chronaural1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               if (chronaural1->beat_behave == 1)  // sin wave, adjust by sin value
               {
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
@@ -6725,6 +6731,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
                 amp1 = chronaural1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               if (chronaural1->beat_behave == 1)  // sin wave, adjust by sin value
               {
                 if (chronaural1->beat < 0.0)  // left channel no phase shift
@@ -6919,6 +6926,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
               else
                 amp1 = pulse1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor_left
                                                         * sin_table[pulse1->off1]);
@@ -6933,6 +6941,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
               else
                 amp1 = pulse1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor_right
                                                         * sin_table[pulse1->off3]);
@@ -7110,6 +7119,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
               else
                 amp1 = pulse1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor_left
                                                         * sin_table[pulse1->off1]);
@@ -7124,6 +7134,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 amp1 = (pulse1->amp * amp_comp (pulse1->carrier));
               else
                 amp1 = pulse1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor_right
                                                         * sin_table[pulse1->off3]);
