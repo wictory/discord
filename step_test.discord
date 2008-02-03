@@ -1,7 +1,7 @@
 #
 #  Discord Sequence File
 #
-#  This file will run with discord 0.7.2 and above.
+#  This file will run with discord 2.0.0 and above.
 #
 #  Anything after two hash marks (#) will be printed to stderr, if you want to watch parse progress
 #
@@ -181,9 +181,10 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
-#  Fields for pulse are name, carrier, pulse beat, amplitude, phase, pulse time,
+#  Fields for pulse are name, carrier, pulse beat, amplitude, phase, phase, pulse time,
 #    beginning split, ending split, lowest split allowed, highest split allowed, split beat, and slide.
 #    Pulse beat is the frequency through time of the carrier tone.
+#    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
 #    Phase is the degrees that the right channel is leading the left channel, between 0 and 360.
 #    Pulse time is the length in seconds that the carrier should play for a pulse.  There is a 1 ms fade out
 #      so it should be longer than that.  If it is longer than 1/pulse beat it will play continuously.  It is
@@ -210,20 +211,20 @@
 # Fade in
 #
 00:00:10''''<
-               binaural''''400.0''''+10.3''''0.520''''4.50''''4.50''''2.0''''2.0
-  chronaural''''400.0''''10.3''''0.50''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000
+               binaural''''400.0''''+10.3''''0.520''''4.50''''4.50''''2.0''''2.0''''>
+  chronaural''''400.0''''10.3''''0.40''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000''''>
 #
 # Play step slide
 #
 00:05:00
                binaural''''400.0''''+10.3''''0.820''''4.50''''4.50''''2.0''''2.0''''&''''6''''10''''30
-  chronaural''''400.0''''10.3''''1.80''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000''''&''''5''''10''''10
+  chronaural''''400.0''''10.3''''1.03''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000''''&''''5''''10''''10
 #
 # Fade out
 #
 00:00:10''''>
                binaural''''100.0''''+7.5''''0.520''''0.50''''0.50''''2.0''''2.0
-  chronaural''''100.0''''7.5''''0.50''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''1.000
+  chronaural''''100.0''''7.5''''0.40''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''1.000
 #
 # Fade in
 #
@@ -243,14 +244,14 @@
 # Fade in
 #
 00:00:10''''<
-  chronaural''''400.0''''10.3''''0.50''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000
+  chronaural''''400.0''''10.3''''0.40''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000
 #
 # Play step slide
 #
 00:02:00
-  chronaural''''400.0''''10.3''''1.80''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000''''&''''5''''10''''10
+  chronaural''''400.0''''10.3''''1.07''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''4.000''''&''''5''''10''''10
 #
 # Fade out
 #
 00:00:10''''>
-  chronaural''''100.0''''7.5''''0.50''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''1.000
+  chronaural''''100.0''''7.5''''0.40''''0000.0000''''0.00''''3''''0.0''''1.0''''.001''''.999''''1.000
