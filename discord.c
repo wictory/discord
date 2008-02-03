@@ -7698,7 +7698,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
         char_count += fprintf (fp, " %d", binaural1->slide);
         char_count += fprintf (fp, " %lld %lld", binaural1->tot_frames, binaural1->cur_frames);
-        char_count += fprintf (fp, " %d %.2f %.1f\n", binaural1->steps, binaural1->slide_time, binaural1->fuzz);
+        char_count += fprintf (fp, "\n       %d %.2f %.1f\n", binaural1->steps, binaural1->slide_time, binaural1->fuzz);
       }
       break;
     case 10:  // chronaural step slide
@@ -7725,7 +7725,7 @@ fprint_voice_all (FILE *fp, void *this)
                         chronaural1->split_beat_adj, chronaural1->split_adj);
         char_count += fprintf (fp, " %d", chronaural1->slide);
         char_count += fprintf (fp, " %lld %lld", chronaural1->tot_frames, chronaural1->cur_frames);
-        char_count += fprintf (fp, " %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
+        char_count += fprintf (fp, "\n         %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
       }
       break;
     case 13:  // pulse
@@ -7776,7 +7776,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3e %.3e", pulse1->split_beat_adj, pulse1->split_adj);
         char_count += fprintf (fp, " %d", pulse1->slide);
         char_count += fprintf (fp, " %lld %lld", pulse1->tot_frames, pulse1->cur_frames);
-        char_count += fprintf (fp, " %d %.2f %.1f\n", pulse1->steps, pulse1->slide_time, pulse1->fuzz);
+        char_count += fprintf (fp, "\n         %d %.2f %.1f\n", pulse1->steps, pulse1->slide_time, pulse1->fuzz);
       }
       break;
     case 16:  // phase
@@ -7809,15 +7809,15 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3f %.3f", phase1->amp_beat1, phase1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (phase1->amp_pct1), AMP_DA (phase1->amp_pct2));
         char_count += fprintf (fp, " %d %d %d %d", phase1->inc1, phase1->off1, phase1->shift, phase1->direction);
-        char_count += fprintf (fp, " %d %d %d %d\n", 
+        char_count += fprintf (fp, " %d %d %d %d", 
                                    phase1->amp_inc1, phase1->amp_off1, phase1->amp_inc2, phase1->amp_off2);
-        char_count += fprintf (fp, "       %.3e %.3e %.3e %.3e", 
+        char_count += fprintf (fp, "\n       %.3e %.3e %.3e %.3e", 
                                    phase1->carr_adj, phase1->beat_adj, phase1->amp_adj, phase1->phase_adj);
         char_count += fprintf (fp, " %.3e %.3e", phase1->amp_beat1_adj, phase1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", phase1->amp_pct1_adj, phase1->amp_pct2_adj);
         char_count += fprintf (fp, " %d", phase1->slide);
         char_count += fprintf (fp, " %lld %lld", phase1->tot_frames, phase1->cur_frames);
-        char_count += fprintf (fp, " %d %.2f %.1f\n", phase1->steps, phase1->slide_time, phase1->fuzz);
+        char_count += fprintf (fp, "\n       %d %.2f %.1f\n", phase1->steps, phase1->slide_time, phase1->fuzz);
       }
       break;
     default:  // not known, do nothing
