@@ -210,23 +210,14 @@
 #  Beginner doesn't mean it won't have effects.  I have made step slide the default as I think it is better, particularly for
 #  a beginner.  If you prefer the regular slide, just comment and uncomment appropriately.
 #  
-#  These are some substitute expressions for vim that update scripts to the new format for binaural, chronaural, and pulse.
-#  # flips beat and amp in vim.  
+#  These are some substitute expressions for vim that update scripts to the new format for chronaural, and pulse.
+#    flip amplitude and beat in both chronaural and pulse at the same time using vim
 #  Visual select (vE) and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
-#  s/\(chronaural'\+[0-9]*\.[0-9]*\)\('\+[+-]\?[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1\3\2/e800  
-#  s/\(pulse'\+[0-9]*\.[0-9]*\)\('\+[+-]\?[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1\3\2/e800  
-#  flip both chronaural and pulse at the same time 
 #  s/\(chronaural\|pulse\)\('\+[0-9]*\.[0-9]*\)\('\+[+-]\?[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1\2\4\3/e800
-#  # adds phase to binaural, chronaural, and pulse scripts for discord.  Uses distinctive pattern so easy to alter later.  
+#    adds phase to chronaural, and pulse scripts for discord.  Uses distinctive pattern so easy to alter later.  
 #  Expects the flip of amplitude and beat to already be done for chronaural and pulse voices. 
-#  This only matters if beat has sign, which is meaningless if + for chronaural and pulse, and an error if -.
 #  Visual select and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
-#  s/\(binaural\|chronaural\|pulse\)\('\+[0-9]*\.[0-9]*'\+[+-]\?[0-9]*\.[0-9]*'\+[0-9]*\.[0-9]*\)/\1\2''''0000.0000/e800  
-#  # removes phase from binaural voice in scripts for discord.
-#  Expects the flip of amplitude and beat to already be done for chronaural and pulse voices. 
-#  This only matters if beat has sign, which is meaningless if + for chronaural and pulse, and an error if -.
-#  Visual select and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
-#  s/\(binaural'\+[0-9]*\.[0-9]*'\+[+-]\?[0-9]*\.[0-9]*'\+[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1/e800  
+#  s/\(chronaural\|pulse\)\('\+[0-9]*\.[0-9]*'\+[+-]\?[0-9]*\.[0-9]*'\+[0-9]*\.[0-9]*\)/\1\2''''0000.0000/e800  
 #
 # Fade in
 #
