@@ -1,9 +1,27 @@
-discord is a program that allows you to program binaural and
-chronaural beats with great flexibility and mixed with sound files of
+discord is a program that allows you to program binaural, chronaural,
+and phase beats with great flexibility and mixed with sound files of
 your choice.  The flexibility requires some complexity.  There is a
 learning curve.  Use the test script files as templates and experiment
 with changing the variables to see the effects.  There is a help file
-in text and html format and a man page.
+in text and html format and a man page.  Part of the reason for the
+complexity is that it allows the exploration of scripts that are
+different than any yet used.
+
+Versions above 2.0.0 are not backward compatible.  The amplitude and 
+beat have been flipped in chronaural and pulse to match that in binaural
+and phase, and the phase field has been added to the chronaural and
+pulse voices.  All beat voices are standard now as starting with
+carrier, beat, amplitude.  Then phase if it has phase.  If you are converting
+old discord script files, the vim substitute expressions below might
+be of some use to you.  Even if it is just as templates.
+They are also found in the beginner.discord script.
+#  These are some substitute expressions for vim that update scripts to the new format for chronaural, and pulse.
+#    flip amplitude and beat in both chronaural and pulse at the same time 
+#  Visual select (vE) and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
+#  s/\(chronaural\|pulse\)\('\+[0-9]*\.[0-9]*\)\('\+[+-]\?[0-9]*\.[0-9]*\)\('\+[0-9]*\.[0-9]*\)/\1\2\4\3/e800
+#    adds phase to chronaural, and pulse scripts for discord.  Uses distinctive pattern so easy to alter later.  
+#  Visual select and yank into register ("yy) and then type :<CTRL-R>y<ENTER> where <CTRL-R> is control+R pressed
+#  s/\(chronaural\|pulse\)\('\+[0-9]*\.[0-9]*'\+[+-]\?[0-9]*\.[0-9]*'\+[0-9]*\.[0-9]*\)/\1\2''''0000.0000/e800  
 
 This was developed on a Fedora Core 6/7 linux system.  It requires
 libsndfile and libsamplerate.  Both the library and the development
@@ -19,15 +37,14 @@ then convert it to FLAC using sox or audacity.
 In additon, there are API issues between libsndfile 1.0.17 and libFLAC
 >= 1.1.3.  Succinctly, the libFLAC API changed and the changes are not
 reflected in libsndfile.  Discord will still link but there will be no
-FLAC available.  On the website are links to a patch I created to make
-libsndfile work with newer versions of libFLAC.
+FLAC available.
 
 discord now uses the standard GNU autotools mechanism to install.
 
 To unpack:
-tar -jxvf discord-1.#.#.tar.bz2
+tar -jxvf discord-2.#.#.tar.bz2
 
-Change to the directory discord-1.#.#.
+Change to the directory discord-2.#.#.
 
 To compile:
 
@@ -75,7 +92,7 @@ regard.  Try "esdctl off" if you can't get the hardware rate you want
 and esound is running.  If it is pulseaudio causing the problem, it
 has probably replaced the default device of ALSA.  Remove the
 pulseaudio-alsa package or find the file pulseaudio-alsa.conf and move
-it to another name.
+it to another name while using discord.
 
 If you are looking for sound samples to use with discord, one place
 you can look at is freesound at http://freesound.iua.upf.edu/.  Most
