@@ -405,11 +405,13 @@ struct once
   double amp_min, amp_max;     // Amp level range for sound, begin end chosen randomly unless same.
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
-  int_64 play_when;  // when to play the sound, seconds
-  int_64 next_play, sofar;   // Frames till next play, how many so far
-  int_64 off1, play;  //offset into buffer,  number of frames to play, always total frames
+  int_64 play_when;  // when to play the sound
+  int_64 sofar;   // Frames, how many so far
+  int_64 play;  //offset into buffer in frames, frames that have been played
+  int_64 off1;  //short offset into buffer
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+  int not_played;  // has the single play occurred yet?
 } ;
 
 /* structure for playing a chronaural beat */
@@ -2762,6 +2764,7 @@ setup_once (char *token, void **work)
   once1->next = NULL;
   once1->type = 7;
   once1->off1 = 0;
+  once1->not_played = 1;  // haven't played yed
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2850,8 +2853,7 @@ setup_once (char *token, void **work)
   once1->play_when = (int_64) (play_when * out_rate);      // convert to frames from seconds
 
   /* set up play of once */
-  once1->sofar = 0LL;
-  once1->next_play = once1->play_when;  // single play of file at play_when
+  once1->sofar = once1->play = (int_64) 0;
 }
 
 /* Set up a chronaural sequence */
@@ -6177,13 +6179,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           once1 = (once *) this;  // reassign void pointer as once struct
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
-            once1->sofar += fast_mult;
-            if (once1->sofar >= once1->next_play)
+            if (once1->not_played && once1->sofar >= once1->play_when)
             {                     // time to play
-              once1->sofar = 0;
+              once1->not_played = 0;
               once1->off1 = 0;  // start at beginning of buffer
-              once1->play = once1->frames; // fixed play time
-              once1->next_play = 0x7fffffffffffffffLL; // next play max so won't play again
+              once1->play = 0LL; // start play time at zero
               if (once1->amp_max == once1->amp_min)
               {                   // fixed amp
                 once1->amp = once1->amp_min;
@@ -6209,40 +6209,50 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               else
                 split_end = once1->split_end;      // fixed ending split
                 
-              once1->split_adj = (split_end - once1->split_now) / once1->play;  // adjust per frame
+              once1->split_adj = (split_end - once1->split_now) / once1->frames;  // adjust per frame
             }
-            if (once1->play > 0L)  // once is active
+            if (once1->sofar >= once1->play_when && once1->play < once1->frames)  // once is active
             {
               double amp = once1->amp * 2.;  // like binaural, double so each channel at amp with split
-                  // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
-              once1->off1 += (once1->channels * fast_mult);
-              once1->off1 %= once1->frames;  
                 // assumes only 1 or two channels, default to two if not one
-              if (once1->mono == 0)  // stereo
+              if (once1->channels == 2)  // stereo
+              {
+                if (once1->mono == 0)  // stereo
+                {
+                  out_buffer[ii] += (once1->split_now * amp
+                          * (((double) *(once1->sound + once1->off1)) * once1->scale));
+                  out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
+                          * (double) ((*(once1->sound + once1->off1 + 1)) * once1->scale));
+                }
+                else if (once1->mono == 1)  // mono in stereo form, left has sound, repeat left as right channel
+                {
+                  out_buffer[ii] += (once1->split_now * amp
+                          * (((double) *(once1->sound + once1->off1)) * once1->scale));
+                  out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
+                          * (((double) *(once1->sound + once1->off1)) * once1->scale));
+                }
+                else if (once1->mono == 2)  // mono in stereo form, right has sound, repeat right as left channel
+                {
+                  out_buffer[ii] += (once1->split_now * amp
+                          * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
+                  out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
+                          * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
+                }
+              }
+              else if (once1->channels == 1)  // mono, single channel split to be two
               {
                 out_buffer[ii] += (once1->split_now * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
                 out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
-                        * (double) ((*(once1->sound + once1->off1 + 1)) * once1->scale));
-              }
-              else if (once1->mono == 1)  // mono, repeat left as right channel
-              {
-                out_buffer[ii] += (once1->split_now * amp
-                        * (((double) *(once1->sound + once1->off1)) * once1->scale));
-                out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
               }
-              else if (once1->mono == 2)  // mono, repeat right as left channel
-              {
-                out_buffer[ii] += (once1->split_now * amp
-                        * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
-                out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
-                        * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
-              }
+                  // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
+              once1->off1 += (once1->channels * fast_mult);  // short offset different depending on channels
               once1->split_now += (once1->split_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
-              once1->play -= fast_mult;
+              once1->play += fast_mult;  // add frames just played to the total played, offset into sound buffer
             }
+            once1->sofar += fast_mult;
           }
         }
         break;
@@ -7648,12 +7658,9 @@ fprint_voice_all (FILE *fp, void *this)
                         once1->split_begin, once1->split_end, once1->split_low, once1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (once1->amp_min), AMP_DA (once1->amp_max));
-        char_count += fprintf (fp, " %lld",
-                        once1->play_when);
-        char_count += fprintf (fp, " %lld %lld %lld %lld",
-                        once1->next_play, once1->sofar, once1->off1, once1->play);
-        char_count += fprintf (fp, " %.3e %d\n",
-                        once1->split_adj, once1->mono);
+        char_count += fprintf (fp, " %lld", once1->play_when);
+        char_count += fprintf (fp, " %lld %lld %lld", once1->sofar, once1->off1, once1->play);
+        char_count += fprintf (fp, " %.3e %d %d\n", once1->split_adj, once1->mono, once1->not_played);
       }
       break;
     case 8:  // chronaural
@@ -7918,8 +7925,8 @@ fprint_voice (FILE *fp, void *this)
         once *once1;
 
         once1 = (once *) this;
-        char_count = fprintf (fp, "   once %lld   %lld   %.3f   %.3f\n", 
-                      once1->off1, once1->play, AMP_DA (once1->amp), once1->split_now );
+        char_count = fprintf (fp, "   once %lld   %lld   %lld   %.3f   %.3f\n", 
+                      once1->sofar, once1->off1, once1->play, AMP_DA (once1->amp), once1->split_now );
         break;
       }
     case 8:  // chronaural
