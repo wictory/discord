@@ -6140,33 +6140,42 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (repeat1->play > 0L)  // repeat is active
             {
               double amp = repeat1->amp * 2.;  // like binaural, double so each channel at amp with split
+              if (repeat1->channels == 2)  // stereo
+              {
+                if (repeat1->mono == 0)  // stereo
+                {
+                  out_buffer[ii] += (repeat1->split_now * amp
+                          * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
+                  out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
+                          * (double) ((*(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
+                }
+                else if (repeat1->mono == 1)  // mono in stereo form, left has sound, repeat left as right channel
+                {
+                  out_buffer[ii] += (repeat1->split_now * amp
+                          * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
+                  out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
+                          * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
+                }
+                else if (repeat1->mono == 2)  // mono in stereo form, right has sound, repeat right as left channel
+                {
+                  out_buffer[ii] += (repeat1->split_now * amp
+                          * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
+                  out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
+                          * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
+                }
+              }
+              else if (repeat1->channels == 1)  // mono, single channel split to be two
+              {
+                out_buffer[ii] += (repeat1->split_now * amp
+                        * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
+                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
+                        * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
+              }
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
-              repeat1->off1 += (repeat1->channels * fast_mult);
-              repeat1->off1 %= repeat1->frames;  
-              if (repeat1->mono == 0)  // stereo
-              {
-                out_buffer[ii] += (repeat1->split_now * amp
-                        * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
-                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
-                        * (double) ((*(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
-              }
-              else if (repeat1->mono == 1)  // mono, repeat left as right channel
-              {
-                out_buffer[ii] += (repeat1->split_now * amp
-                        * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
-                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
-                        * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
-              }
-              else if (repeat1->mono == 2)  // mono, repeat right as left channel
-              {
-                out_buffer[ii] += (repeat1->split_now * amp
-                        * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
-                out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
-                        * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
-              }
+              repeat1->off1 += (repeat1->channels * fast_mult); // adjust number of shorts played.
               repeat1->split_now += (repeat1->split_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
-              repeat1->play -= fast_mult;
+              repeat1->play -= fast_mult;  // adjust frames played
             }
           }
         }
