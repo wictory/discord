@@ -5950,7 +5950,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           stoch1 = (stoch *) this;  // reassign void pointer as stoch struct
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
-            stoch1->sofar += fast_mult;
             if (stoch1->sofar >= stoch1->next_play)
             {                     // time to play
               stoch1->sofar = 0;
@@ -5996,34 +5995,44 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (stoch1->play > 0L)  // stoch is active
             {
               double amp = stoch1->amp * 2.;  // like binaural, double so each channel at amp with split
+              if (stoch1->channels == 2)  // stereo
+              {
+                if (stoch1->mono == 0)  // stereo
+                {
+                  out_buffer[ii] += (stoch1->split_now * amp
+                          * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
+                  out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
+                          * (double) ((*(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
+                }
+                else if (stoch1->mono == 1)  // mono in stereo form, left has sound, stoch left as right channel
+                {
+                  out_buffer[ii] += (stoch1->split_now * amp
+                          * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
+                  out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
+                          * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
+                }
+                else if (stoch1->mono == 2)  // mono in stereo form, right has sound, stoch right as left channel
+                {
+                  out_buffer[ii] += (stoch1->split_now * amp
+                          * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
+                  out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
+                          * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
+                }
+              }
+              else if (stoch1->channels == 1)  // mono, single channel split to be two
+              {
+                out_buffer[ii] += (stoch1->split_now * amp
+                        * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
+                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
+                        * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
+              }
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
-              stoch1->off1 += (stoch1->channels * fast_mult);
-              stoch1->off1 %= stoch1->frames;  
-              if (stoch1->mono == 0)  // stereo
-              {
-                out_buffer[ii] += (stoch1->split_now * amp
-                        * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
-                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
-                        * (double) ((*(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
-              }
-              else if (stoch1->mono == 1)  // mono, repeat left as right channel
-              {
-                out_buffer[ii] += (stoch1->split_now * amp
-                        * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
-                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
-                        * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
-              }
-              else if (stoch1->mono == 2)  // mono, repeat right as left channel
-              {
-                out_buffer[ii] += (stoch1->split_now * amp
-                        * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
-                out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
-                        * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
-              }
+              stoch1->off1 += (stoch1->channels * fast_mult);  // adjust shorts played
               stoch1->split_now += (stoch1->split_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
-              stoch1->play -= fast_mult;
+              stoch1->play -= fast_mult;  // adjust frames played
             }
+            stoch1->sofar += fast_mult;
           }
         }
         break;
