@@ -6069,30 +6069,40 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (sample1->play > 0L)  // sample is active
             {
               double amp = sample1->amp * 2.;  // like binaural, double so each channel at amp with split
+              if (sample1->channels == 2)  // stereo
+              {
+                if (sample1->mono == 0)  // stereo
+                {
+                  out_buffer[ii] += (sample1->split_now * amp
+                          * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
+                  out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
+                          * (double) ((*(sample1->sound + sample1->off1 + 1)) * sample1->scale));
+                }
+                else if (sample1->mono == 1)  // mono in stereo form, left has sound, sample left as right channel
+                {
+                  out_buffer[ii] += (sample1->split_now * amp
+                          * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
+                  out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
+                          * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
+                }
+                else if (sample1->mono == 2)  // mono in stereo form, right has sound, sample right as left channel
+                {
+                  out_buffer[ii] += (sample1->split_now * amp
+                          * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
+                  out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
+                          * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
+                }
+              }
+              else if (sample1->channels == 1)  // mono, single channel split to be two
+              {
+                out_buffer[ii] += (sample1->split_now * amp
+                        * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
+                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
+                        * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
+              }
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               sample1->off1 += (sample1->channels * fast_mult);
               sample1->off1 %= sample1->frames;  
-              if (sample1->mono == 0)  // stereo
-              {
-                out_buffer[ii] += (sample1->split_now * amp
-                        * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
-                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
-                        * (double) ((*(sample1->sound + sample1->off1 + 1)) * sample1->scale));
-              }
-              else if (sample1->mono == 1)  // mono, repeat left as right channel
-              {
-                out_buffer[ii] += (sample1->split_now * amp
-                        * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
-                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
-                        * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
-              }
-              else if (sample1->mono == 2)  // mono, repeat right as left channel
-              {
-                out_buffer[ii] += (sample1->split_now * amp
-                        * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
-                out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
-                        * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
-              }
               sample1->split_now += (sample1->split_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               sample1->play -= fast_mult;
