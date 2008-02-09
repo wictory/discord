@@ -5001,6 +5001,8 @@ init_binaural ()
               phase3->last_off1 = &(phase4->off1);  // each node starts where last left off as offset
               phase3->last_amp_off1 = &(phase4->amp_off1);  // each node starts where last left off as amp_offset
               phase3->last_amp_off2 = &(phase4->amp_off2);
+              phase3->last_shift = &(phase4->shift);  // each node starts where last left off for phase and direction
+              phase3->last_direction = &(phase4->direction);
               phase4 = phase3;  // make current node previous node
             }
             break;
@@ -5031,10 +5033,10 @@ init_binaural ()
               if (stub2->type == 16 || stub2->type == 17 || stub2->type == 18)  // also phase
                 phase2 = (phase *) work2;
               else
-                error ("Step slide called for, voice to slide to is not phase.  Position matters!\n");
+                error ("Vary slide called for, voice to slide to is not phase.  Position matters!\n");
             } 
             else
-              error ("Step slide called for, no next phase in time sequence!\n");
+              error ("Vary slide called for, no next phase in time sequence!\n");
             double carr_diff = (phase2->carrier - phase1->carrier);
             double beat_diff = (phase2->beat - phase1->beat);
             double amp_diff = (phase2->amp - phase1->amp);
@@ -5131,6 +5133,8 @@ init_binaural ()
               phase3->last_off1 = &(phase4->off1);  // each node starts where last left off as offset
               phase3->last_amp_off1 = &(phase4->amp_off1);  // each node starts where last left off as amp_offset
               phase3->last_amp_off2 = &(phase4->amp_off2);
+              phase3->last_shift = &(phase4->shift);  // each node starts where last left off for phase and direction
+              phase3->last_direction = &(phase4->direction);
               phase4 = phase3;  // make current node previous node
             }
             break;
@@ -7259,10 +7263,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             if (opt_c)  // compensate
-            {
-              amp1 = (phase1->amp * amp_comp (phase1->carrier));
-              amp2 = (phase1->amp * amp_comp (phase1->carrier));
-            }
+              amp1 = amp2 = (phase1->amp * amp_comp (phase1->carrier));
             else
               amp1 = amp2 = phase1->amp;
             /* perform the amplitude variation adjustment if required */
@@ -7353,7 +7354,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
       case 17:                // phase tone, step slide, little less efficient, two extra checks each pass
       case 18:                // phase tone, vary slide, little less efficient, two extra checks each pass
         {
-          double freq1, freq2;
           double amp1, amp2;
           phase *phase1;
 
@@ -7391,13 +7391,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               if (phase1->last_direction != NULL)  // there *is* a previous direction to use
                 phase1->direction = *phase1->last_direction; // to eliminate crackle from discontinuity in phase shift direction
             }
-            freq1 = phase1->carrier + phase1->beat / 2;
-            freq2 = phase1->carrier - phase1->beat / 2;
             if (opt_c)  // compensate
-            {
-              amp1 = (phase1->amp * amp_comp (freq1));
-              amp2 = (phase1->amp * amp_comp (freq2));
-            }
+              amp1 = amp2 = (phase1->amp * amp_comp (phase1->carrier));
             else
               amp1 = amp2 = phase1->amp;
             /* perform the amplitude variation adjustment if required */
