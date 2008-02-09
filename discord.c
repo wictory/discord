@@ -2627,6 +2627,7 @@ setup_sample (char *token, void **work)
       error ("Split_high for sample had an error.\n");
   }
   sample1->split_high = split_high;
+
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double size = strtod (subtoken, &endptr);
@@ -2637,13 +2638,10 @@ setup_sample (char *token, void **work)
       error ("Play size for sample had an error.\n");
   }
   sample1->size = (int_64) (size * out_rate);  // convert from seconds to frames 
-  /* Create the first sample position */
+  /* Set some defaults so sample position */
   sample1->sofar = 0LL;  // how much has played so far
-  /* allow random position from 0 to length - frames in sample */
-  sample1->off1 = (int_64) (drand48 ()) * (sample1->frames - sample1->size);
-  sample1->play = sample1->size;  // start out playing at above offset
-  sample1->amp = (sample1->amp_min + sample1->amp_max)/2;  // start amp is average
-  sample1->split_now = (sample1->split_low + sample1->split_high)/2;  // start split is average
+  sample1->play = 0LL;  // start out with zero play size, let generate frames determine
+  sample1->off1 = 0LL;  // set in generate frames when play is zero.
 }
 
 /* Set up a repeat file sequence */
@@ -6050,8 +6048,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           {
             if (sample1->play <= 0)  // done playing, time to play another sample
             {     
-                  // frame start for next play
-              sample1->off1 = (long) ((drand48 ()) * sample1->frames);
+                  /* frame start for next play  */
+              sample1->off1 = (int_64) round ((drand48 ()) * sample1->frames);  // fine for mono
+              if (sample1->channels == 2)  // offset is in shorts so have to double for stereo file
+                sample1->off1 *= 2;  // this also fixes it so that offset is always left channel.
               sample1->play = sample1->size; // fixed play time/frames
               if (sample1->amp_max == sample1->amp_min)
               {                   // fixed amp
