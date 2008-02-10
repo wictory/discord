@@ -7993,10 +7993,7 @@ fprint_voice (FILE *fp, void *this)
         phase1 = (phase *) this;  // reassign void pointer as phase struct
           /* use last calculated values instead of calculating new ones */
         if (opt_c)  // compensate
-        {
-          amp1 = (phase1->amp * amp_comp (phase1->carrier));
-          amp2 = (phase1->amp * amp_comp (phase1->carrier));
-        }
+          amp1 = amp2 = (phase1->amp * amp_comp (phase1->carrier));
         else
           amp1 = amp2 = phase1->amp;
           /* perform the amplitude variation adjustment if required */
