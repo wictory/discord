@@ -2520,18 +2520,16 @@ setup_stoch (char *token, void **work)
       error ("Repeat_max for stoch had an error.\n");
   }
   stoch1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
-  /* set up first play of stoch */
+  /* set up frames till first play of stoch */
   if (stoch1->repeat_min == stoch1->repeat_max)
   {
-    int_64 delta = (int_64) ( (drand48 ()) * (stoch1->repeat_min));
-    stoch1->next_play = delta;      // fixed period, start with random play
+    stoch1->next_play = stoch1->repeat_min;      // fixed period, start at repeat interval
   }
   else
   {
-    int_64 delta = (int_64) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
-    stoch1->next_play = delta;      // frames to next play
+    stoch1->next_play  = (int_64) ( (drand48 ()) * stoch1->repeat_max);  // random up to max repeat interval
   }
-  stoch1->sofar = (int_64) (drand48() * stoch1->next_play);  // random start
+  stoch1->sofar = 0LL;
 }
 
 /* Set up a sample file sequence */
@@ -5963,7 +5961,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
               {
-                long delta = (long) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
+                int_64 delta = (int_64) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
                 // frames to next play after current play ends
                 stoch1->next_play = stoch1->repeat_min + delta + stoch1->play;
               }
