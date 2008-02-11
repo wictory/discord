@@ -7993,7 +7993,7 @@ fprint_voice (FILE *fp, void *this)
           amp1 += ((amp1 * phase1->amp_pct1) * sin_table[phase1->amp_off1]);
         if (phase1->amp_beat2 > 0.0)
           amp2 += ((amp2 * phase1->amp_pct2) * sin_table[phase1->amp_off2]);
-        char_count += fprintf (fp, "   phase %.3f    %+.3f   %.3f   %.3f", 
+        char_count += fprintf (fp, "   phase %.3f  %+.3f   %.3f   %.3f", 
                       phase1->carrier, phase1->beat, AMP_DA (amp1), AMP_DA (amp2));
         char_count += fprintf (fp, "   %.3f\n", phase1->phase);
       }
