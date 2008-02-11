@@ -363,7 +363,7 @@ struct sample
   double amp_min, amp_max;     // Amp level range for sound, begin end chosen randomly unless same.
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
-  int_64 size, sofar;   // Frames for each sample, how many so far
+  int_64 size;   // Frames for each sample
   int_64 off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
@@ -2635,8 +2635,7 @@ setup_sample (char *token, void **work)
       error ("Play size for sample had an error.\n");
   }
   sample1->size = (int_64) (size * out_rate);  // convert from seconds to frames 
-  /* Set some defaults so sample position */
-  sample1->sofar = 0LL;  // how much has played so far
+  /* Set some defaults so sample position is determined randomly at start of generate frames */
   sample1->play = 0LL;  // start out with zero play size, let generate frames determine
   sample1->off1 = 0LL;  // set in generate frames when play is zero.
 }
@@ -7636,8 +7635,8 @@ fprint_voice_all (FILE *fp, void *this)
                         sample1->split_begin, sample1->split_end, sample1->split_low, sample1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (sample1->amp_min), AMP_DA (sample1->amp_max));
-        char_count += fprintf (fp, " %lld %lld %lld %lld",
-                        sample1->size, sample1->sofar, sample1->off1, sample1->play);
+        char_count += fprintf (fp, " %lld %lld %lld",
+                        sample1->size, sample1->off1, sample1->play);
         char_count += fprintf (fp, " %.3e %d\n",
                         sample1->split_adj, sample1->mono);
       }
