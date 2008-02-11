@@ -384,7 +384,6 @@ struct repeat
   double amp_min, amp_max;     // Amp level range for sound, begin end chosen randomly unless same.
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
-  int_64 sofar;   // Frames so far, when == frames, wrap
   int_64 off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
@@ -2734,12 +2733,8 @@ setup_repeat (char *token, void **work)
       error ("Split_high for repeat had an error.\n");
   }
   repeat1->split_high = split_high;
-  /* set our position in the repeat file */
-  repeat1->sofar = 0LL;  // how much has played so far
-  repeat1->off1 = 0;  // start from start of file
-  repeat1->play = repeat1->frames;  // start out playing at above offset
-  repeat1->amp = (repeat1->amp_min + repeat1->amp_max)/2;  // start amp is average
-  repeat1->split_now = (repeat1->split_low + repeat1->split_high)/2;  // start split is average
+  /* set play to initialize in generate frames */
+  repeat1->play = 0LL;  // how much has played so far
 }
 
 /* Set up a once file sequence */
@@ -7660,8 +7655,8 @@ fprint_voice_all (FILE *fp, void *this)
                         repeat1->split_begin, repeat1->split_end, repeat1->split_low, repeat1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (repeat1->amp_min), AMP_DA (repeat1->amp_max));
-        char_count += fprintf (fp, " %lld %lld %lld",
-                        repeat1->sofar, repeat1->off1, repeat1->play);
+        char_count += fprintf (fp, " %lld %lld",
+                        repeat1->off1, repeat1->play);
         char_count += fprintf (fp, " %.3e %d\n",
                         repeat1->split_adj, repeat1->mono);
       }
