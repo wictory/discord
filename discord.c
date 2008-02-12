@@ -130,6 +130,9 @@ int opt_f_arg = 1;              // run fast, at integer multiple of time
 int fast_mult = 1;              // default to normal speed
 int opt_h;                      // display help
 int opt_k = 0;                  // keep resampled files, default delete them
+int opt_m = 0;                  // modify carrier and beat in script file by a random percentage +/-
+double opt_m_arg = 0.0;         // percentage in decimal form of modification band for carrier and beat
+double modify = 0.0;            // percentage in decimal form of modification band for carrier and beat
 int opt_o;                      // output format to write
 int outfile_format = SF_FORMAT_FLAC; // default to flac if not specified otherwise, r:raw, f:flac
 int opt_q;                      // quiet run, no display of sequence
@@ -633,7 +636,7 @@ extern int optind, opterr, optopt;      // for getopt
 void
 usage ()
 {
-  error ("discord - Create and mix binaural and chronaural beats, version " VERSION NL
+  error ("discord - Create and mix binaural, chronaural and phase beats, version " VERSION NL
          "Copyright (c) 2007-2008 Stan Lysiak, all rights reserved," NL
          "released under the GNU GPL v2.  See file COPYING." NL NL
          "Usage: discord [options] sequence-file" NL NL
@@ -732,7 +735,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "a:b:c:de:f:hko:qr:tw:";
+  const char *ostr = "a:b:c:de:f:hkm:o:qr:tw:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -746,6 +749,7 @@ parse_argv_options (int argc, char **argv)
       {"fast", 1, 0, 'f'},
       {"help", 0, 0, 'h'},
       {"keep", 0, 0, 'k'},
+      {"modify", 1, 0, 'm'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
@@ -780,6 +784,7 @@ parse_argv_options (int argc, char **argv)
       case 'f':
       case 'h':
       case 'k':
+      case 'm':
       case 'o':
       case 'q':
       case 'r':
@@ -857,7 +862,7 @@ parse_argv_configs (int argc, char **argv)
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hko:qr:tw:";
+  const char *ostr = "a:b:c:de:f:hkm:o:qr:tw:";
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -874,6 +879,7 @@ append_options (saved_option **SO, char *config_options)
       {"fast", 1, 0, 'f'},
       {"help", 0, 0, 'h'},
       {"keep", 0, 0, 'h'},
+      {"modify", 1, 0, 'm'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
@@ -1413,6 +1419,22 @@ set_options (saved_option *SO)
       case 'k':                // retain resampled files
         opt_k = 1;
         break;
+      case 'm':  // modify the script file carrier and beat frequencies by random amount of percentage provided
+        opt_m = 1;
+        errno = 0;
+        opt_m_arg = strtod (sow->option_string, &endptr);
+        if (errno == 0)       // no error
+        {
+          if (fabs (opt_m_arg) >= 200.)
+            error ("Can't modify the carrier or beat to be negative, --modify/-m must be less than 200.");
+          if (opt_m_arg < 0.0 && !opt_q)
+            fprintf (stderr, "Percentage for --modify/-m cannot be less than 0.  Converting to positive.\n");
+          opt_m_arg = AMP_AD (fabs (opt_m_arg));  // convert to positive decimal
+          modify = opt_m_arg;  // save in variable
+        }
+        else                  // there was an error
+          error ("--modify/-m expects positive numeric percentage");
+        break;
       case 'o':  // output file format
         opt_o = 1;
         if (sow->option_string != NULL)
@@ -1630,6 +1652,7 @@ help ()
           "          -f --fast         Fast.  Run through quickly (real time x 'mult')"NL
           "                              rather than wait for real time to pass"NL
           "          -k --keep         Keep the resampled input sound files"NL
+          "          -m --modify       Modify the carrier and beat in script file randomly in percentage band"NL
           "          -o --outfile      Output data to the given file instead of playing"NL
           "          -q --quiet        Don't display running status"NL
           "          -r --rate         Select the output rate (default is 44100 Hz)"NL
@@ -1846,6 +1869,13 @@ setup_binaural (char *token, void **work)
     else                        // there was an error
       error ("Carrier for binaural had an error.\n");
   }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = carrier * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    carrier += adjust;
+  }
   binaural1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -1855,6 +1885,13 @@ setup_binaural (char *token, void **work)
   {
     if (errno != 0)             //  error
       error ("Beat for binaural had an error.\n");
+  }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    beat += adjust;
   }
   binaural1->beat = beat;
 
@@ -2887,6 +2924,13 @@ setup_chronaural (char *token, void **work)
     else                        // there was an error
       error ("Carrier for chronaural had an error.\n");
   }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = carrier * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    carrier += adjust;
+  }
   chronaural1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -2896,6 +2940,13 @@ setup_chronaural (char *token, void **work)
   {
     if (errno != 0)             //  error
       error ("Beat for chronaural had an error.\n");
+  }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    beat += adjust;
   }
   chronaural1->beat = beat;
 
@@ -3106,6 +3157,13 @@ setup_pulse (char *token, void **work)
     else                        // there was an error
       error ("Carrier for pulse had an error.\n");
   }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = carrier * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    carrier += adjust;
+  }
   pulse1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3114,7 +3172,14 @@ setup_pulse (char *token, void **work)
   if (beat == 0.0)
   {
     if (errno != 0)             //  error
-      error ("Pulse beat for pulse had an error.\n");
+      error ("Beat for pulse had an error.\n");
+  }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    beat += adjust;
   }
   pulse1->beat = beat;
 
@@ -3319,6 +3384,13 @@ setup_phase (char *token, void **work)
     else                        // there was an error
       error ("Carrier for phase had an error.\n");
   }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = carrier * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    carrier += adjust;
+  }
   phase1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3328,6 +3400,13 @@ setup_phase (char *token, void **work)
   {
     if (errno != 0)             //  error
       error ("Beat for phase had an error.\n");
+  }
+  if (opt_m) // modify carrier and beat read from script file
+  {
+    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double adjust = (drand48 ()) * band;  // adjustment amount
+    adjust -= (band / 2.);
+    beat += adjust;
   }
   phase1->beat = beat;
 

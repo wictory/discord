@@ -95,6 +95,10 @@
 #--keep
 #-k
 #
+#      case 'm':  // modify carrier and beat from script file within a percentage band
+#--modify=2
+#-m 1
+#
 #      case 'o':  // output file format, w:wav, f:flac, r:raw, no point to lossy
 #--out_format=f
 #-o f

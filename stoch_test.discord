@@ -71,6 +71,10 @@
 #--keep
 #-k
 #
+#      case 'm':  // modify carrier and beat from script file within a percentage band
+#--modify=2
+#-m 1
+#
 #      case 'o':  // output file format, w:wav, f:flac, r:raw, no point to lossy
 #--out_format=f
 #-o f
@@ -214,15 +218,15 @@
 00:00:10''''<  
   stoch''''complex_trilling_trig.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''.5''''3.9
   stoch''''syncopated_scaly_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''2.9
-  stoch''''vocal_field_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''.5''''4.75
+  stoch''''vocal_field_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''1.5
   stoch''''southern_ground_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''2.75
 #
 # Play constant
 #
-00:01:20  
+00:00:50  
   stoch''''complex_trilling_trig.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''.5''''3.9
   stoch''''syncopated_scaly_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''2.9
-  stoch''''vocal_field_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''.5''''4.75
+  stoch''''vocal_field_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''1.5
   stoch''''southern_ground_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''2.75
 #
 # Fade out
@@ -230,5 +234,5 @@
 00:00:10''''>  
   stoch''''complex_trilling_trig.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''.5''''3.9
   stoch''''syncopated_scaly_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''2.9
-  stoch''''vocal_field_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''.5''''4.75
+  stoch''''vocal_field_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''1.5
   stoch''''southern_ground_cricket.aiff''''4.203''''7.815''''-1''''-1''''.050''''.950''''1.5''''2.75
