@@ -7,6 +7,34 @@ in text and html format and a man page.  Part of the reason for the
 complexity is that it allows the exploration of scripts that are
 different than any yet used.
 
+The packages for libraries libsndfile and libsamplerate have been
+included in the discord package starting with 2.0.2.  The library
+versions are the latest at the time of packaging.  libsndfile has been
+patched to work with the latest libFLAC, versions above 1.1.3.  I
+included them so that discord can be statically linked with them, and
+have no dependencies for the dynamic versions and will in that case
+work with FLAC files.  The normal procedure will still work fine if
+you don't want to use them, but won't have FLAC support for the
+reasons described below.
+
+If you do want to use them, but not install them you will have to
+do a two step install.  First, do the usual
+./configure
+make
+su
+make install
+
+Then run the following, to enable static linking with whichever
+libraries you want
+./configure --with-static-libsndfile --with-static-libsamplerate
+make
+su
+cp src/discord /usr/local/bin/
+This is necessary because the autotools have no mechanism for
+compiling an included package but not installing it.  I could have
+manually done it (look at audacity to see how) but wanted to use the
+autotools only.  This is a workaround.
+
 Versions above 2.0.0 are not backward compatible.  The amplitude and 
 beat have been flipped in chronaural and pulse to match that in binaural
 and phase, and the phase field has been added to the chronaural and
