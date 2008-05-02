@@ -6062,8 +6062,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
                 split_end = stoch1->split_end;      // fixed ending split
-                
-              stoch1->split_adj = (split_end - stoch1->split_now) / stoch1->play;  // adjust per frame
+              /* adjust per frame */
+              stoch1->split_adj = (split_end - stoch1->split_now) / (double) stoch1->play;
             }
             if (stoch1->play > 0L)  // stoch is active
             {
@@ -8331,7 +8331,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 	int err ;
 	snd_pcm_info_t *info_params ;
 	snd_pcm_hw_params_t *hw_params ;
-	snd_pcm_uframes_t buffer_size, xfer_align, start_threshold ;
+	snd_pcm_uframes_t buffer_size, start_threshold ;
 	snd_pcm_uframes_t alsa_period_size, alsa_buffer_frames ;
 	snd_pcm_sw_params_t *sw_params ;
 
@@ -8463,10 +8463,6 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
     fprintf (stderr, "Minimum buffer_size (%lu)\n", lval);
     snd_pcm_hw_params_get_buffer_size_max (hw_params, &lval);
     fprintf (stderr, "Maximum buffer_size (%lu)\n", lval);
-    snd_pcm_hw_params_get_tick_time_min (hw_params, &val, &dir);
-    fprintf (stderr, "Minimum tick_time (%u)  Direction = %d\n", val, dir);
-    snd_pcm_hw_params_get_tick_time_max (hw_params, &val, &dir);
-    fprintf (stderr, "Maximum tick_time (%u)  Direction = %d\n", val, dir);
   }
 
   err = snd_pcm_hw_params_set_access (alsa_dev, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED);
@@ -8576,15 +8572,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
 
 	/* note: set start threshold to delay start until the ring buffer is full */
 	snd_pcm_sw_params_current (alsa_dev, sw_params) ;
-	if ((err = snd_pcm_sw_params_get_xfer_align (sw_params, &xfer_align)) < 0)
-	{	fprintf (stderr, "cannot get xfer align (%s)\n", snd_strerror (err)) ;
-		goto catch_error ;
-		} ;
-
-	/* round up to closest transfer boundary */
-	start_threshold = (buffer_size / xfer_align) * xfer_align ;
-	if (start_threshold < 1)
-		start_threshold = 1 ;
+  start_threshold = 1 ;
 	if ((err = snd_pcm_sw_params_set_start_threshold (alsa_dev, sw_params, start_threshold)) < 0)
 	{	fprintf (stderr, "cannot set start threshold (%s)\n", snd_strerror (err)) ;
 		goto catch_error ;
