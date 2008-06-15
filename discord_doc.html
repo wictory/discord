@@ -32,14 +32,16 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   of libsndfile is thinking about adding ogg.  He is not adding mp3
   because of patent issues.  Because of a change in the api for FLAC
   after version 1.1.2, libsndfile can no longer read or write FLAC
-  files.  Thus, for practical purposes, this means wav or raw files on
-  a PC, though au and aiff formats are also available.  If an input
+  files without patching.  A patched version that works with the
+  latest three versions of FLAC is included in the distribution
+  archive for discord.  If you choose to use it FLAC is available,
+  otherwise for practical purposes, this means wav or raw files on a
+  PC, though au and aiff formats are also available.  If an input
   sound file has a different sample rate than that selected for the
-  output, it will automatically be resampled to the requested rate.  A
-  copy can be retained in the same directory as it was found with the
-  new rate appended to the filename.  Output file types are limited to
-  wav and raw until the FLAC interface is fixed; these are lossless
-  formats.  
+  output, it will automatically be resampled to the requested rate
+  using the highest quality available in libsamplerate.  A copy can be
+  retained in the same directory as it was found with the new rate
+  appended to the filename.
 
 <P>  While all of the options below can be used on the command line, the
   sequences to play must be defined in a script file.  Options on the command
@@ -56,9 +58,10 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   allow the exploration of auditory beats in new ways, perhaps leading
   to greater efficacy or new effects.
 
-<P>  There are ten voice types in discord.  These are binaural,
-  chronaural, pulse (a variation of chronaural), phase, bell, noise,
-  stoch (stands for stochastic), sample, repeat, and once.
+<P>  There are eleven voice types in discord.  These are binaural,
+  chronaural, pulse (a variation of chronaural), phase, fm (a
+  variation of phase or vice versa), bell, noise, stoch (stands for
+  stochastic), sample, repeat, and once.
 
 
 <P>  Voice type description
@@ -96,6 +99,14 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
   channel at a specified beat frequency and to a specified phase
   offset between 0 and 360 degrees.  Phase tones are allowed to slide
   into the next phase on carrier, beat, amplitude, and phase.
+
+<P><STRONG><FONT COLOR=#FF7F00>fm</FONT></STRONG>
+
+<P>  Fm stands for frequency modulation.  Generate a beat by shifting the
+  frequency of either the left or right channel or both at a specified
+  beat frequency and to a specified frequency offset.  Fm tones are
+  allowed to slide into the next phase on carrier, beat, amplitude,
+  band, and phase.
 
 <P><STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG>
 
@@ -551,14 +562,52 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 
 <P>  Example
 <P><PRE>
-    phase''''400.0''''+10.01''5''2.9
-      |       |        |      |    |
-    name  carrier   beat  phase  amplitude  left percent vary  right
-      |       |        |     |   |                    |        |
-    phase''''60.0''''-10.01''5''1.0''''0.5''''0.5''''10.0''''10.0'&gt;
+    phase''''400.0''''+10.01''2.9''''180
+      |       |        |      |      |
+    name  carrier   beat  amplitude phase left percent vary  right
+      |       |        |     |      |                 |        |
+    phase''''60.0''''-10.01''1.0''''5''0.5''''0.5''''10.0''''10.0'&gt;
           |                             |       |                 |
       field separators   left amplitude beat   right              |
            |     |                                            slide
+    &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
+    |    |    |         |
+    | steps slide time  fuzz percent
+    step slide
+    ~,,,,5''''20  (slide with ~ instead of &gt;)
+    |    |    |
+    | steps slide time
+    vary slide
+</PRE>
+
+<P>  Fields for <STRONG><FONT COLOR=#FF7F00>fm</FONT></STRONG> 
+  are name, carrier frequency, beat, amplitude, band,
+  channels, and phase.  Band is the frequency that defines the upper
+  limit of the range that the frequency modulation will use.  The
+  frequency will oscillate between carrier and carrier plus band at
+  the beat rate.  Channels is the channel to generate the voice in.
+  It can be L, R, or B for left, right, or both.  Phase is the maximum
+  phase difference in degrees between the left and right channel, from
+  -360 to 360.  If the phase is positive, the right channel leads and
+  will be phase shifted between 0 and the phase at the beat rate.  If
+  the phase is negative, the left channel leads and will be phase
+  shifted between 0 and the phase at the beat rate.  Optional fields
+  are a left and right amplitude frequency variation and a left and
+  right percentage to vary.  Optional fields must be at the end,
+  before the slide indicator if they are present.
+
+<P>  Example
+<P><PRE>
+    name   carrier  beat  amplitude  band  channel  phase
+     |       |       |      |        |        |     | 
+    fm''''400.0''''10.01''''2.9''''10.0'''''''L''''180
+                    amplitude         phase                                            
+    name  carrier  beat  | band channel|   left percent vary  right
+     |       |       |   |    |  |     |               |        |
+    fm''''60.0''''10.01''1.0'17''B''-150''0.5''0.5''''10.0''''10.0'&gt;
+       |                                  |     |                  |
+      field separators   left amplitude beat   right               |
+           |     |   |                                         slide
     &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
     |    |    |         |
     | steps slide time  fuzz percent
