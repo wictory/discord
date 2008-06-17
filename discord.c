@@ -1437,7 +1437,7 @@ set_options (saved_option *SO)
             every = 5;
           }
           else                  // there was an error
-            error ("--every/-e expects numeric seconds");
+            error ("--every/-e expects integer seconds, %s", sow->option_string);
         }
         else
           every = (int) fabs (opt_e_arg);
@@ -1455,7 +1455,7 @@ set_options (saved_option *SO)
             fast_mult = 1;
           }
           else                  // there was an error
-            error ("--fast/-f expects numeric multiplier");
+            error ("--fast/-f expects numeric multiplier, %s", sow->option_string);
         }
         else
           fast_mult = (int) fabs (opt_f_arg);
@@ -1480,7 +1480,7 @@ set_options (saved_option *SO)
           modify = opt_m_arg;  // save in variable
         }
         else                  // there was an error
-          error ("--modify/-m expects positive numeric percentage");
+          error ("--modify/-m expects positive numeric percentage %s", sow->option_string);
         break;
       case 'o':  // output file format
         opt_o = 1;
@@ -1510,7 +1510,7 @@ set_options (saved_option *SO)
         errno = 0;
         out_rate = (int) strtol (sow->option_string, (char **) NULL, 10);
         if (errno != 0)
-          error ("Expecting an integer after --rate/-r");
+          error ("Expecting an integer after --rate/-r %s", sow->option_string);
         break;
       case 't':                // thread sound play
         opt_t = 1;
@@ -1881,6 +1881,7 @@ setup_play_seq ()
 void
 setup_binaural (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -1903,6 +1904,7 @@ setup_binaural (char *token, void **work)
   binaural1->steps = 0;  // no steps
   binaural1->slide_time = 0.0;  // no slide between steps
   binaural1->fuzz = 0.0;  // no fuzziness around step frequency
+  original = StrDup (token);
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -1911,13 +1913,12 @@ setup_binaural (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
-  if (carrier == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier for binaural cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier for binaural had an error.\n");
-  }
+  if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Carrier for binaural had an error.\n%s\n%s", subtoken, original);
+  else if (carrier <= 0.0)  // no errors, but less than equal to zero
+    error ("Carrier for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = carrier * modify;  // amount of possible variance
@@ -1930,11 +1931,10 @@ setup_binaural (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double beat = strtod (subtoken, &endptr);
-  if (beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Beat for binaural had an error.\n");
-  }
+  if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beat for binaural had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = (fabs (beat)) * modify;  // amount of possible variance
@@ -1947,11 +1947,12 @@ setup_binaural (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp = strtod (subtoken, &endptr);
-  if (amp == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude for binaural had an error.\n");
-  }
+  if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Amplitude for binaural had an error.\n%s\n%s", subtoken, original);
+  else if (amp < 0.0)  // no errors, but less than zero
+    error ("Amplitude for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
   binaural1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -1965,31 +1966,34 @@ setup_binaural (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for binaural had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     binaural1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for binaural had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     binaural1->slide_time = slide_time;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double fuzz = strtod (subtoken, &endptr);
-    if (fuzz == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Fuzz for binaural had an error.\n");
-    }
+    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Fuzz for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (fuzz < 0.0)  // no errors, but less than zero
+      error ("Fuzz for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
     binaural1->fuzz = AMP_AD(fuzz);
   }
   else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
@@ -2000,62 +2004,68 @@ setup_binaural (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for binaural had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     binaural1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for binaural had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     binaural1->slide_time = slide_time;
   }
   else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
   {
     errno = 0;
     double amp_beat1 = strtod (subtoken, &endptr);
-    if (amp_beat1 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude beat1 for binaural had an error.\n");
-    }
+    if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude beat1 for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (amp_beat1 < 0.0)  // no errors, but less than zero
+      error ("Amplitude beat1 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
     binaural1->amp_beat1 = amp_beat1;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_beat2 = strtod (subtoken, &endptr);
-    if (amp_beat2 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude beat2 for binaural had an error.\n");
-    }
+    if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude beat2 for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (amp_beat2 < 0.0)  // no errors, but less than zero
+      error ("Amplitude beat2 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
     binaural1->amp_beat2 = amp_beat2;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_pct1 = strtod (subtoken, &endptr);
-    if (amp_pct1 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude adj1 for binaural had an error.\n");
-    }
+    if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude adj1 for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (amp_pct1 < 0.0)  // no errors, but less than zero
+      error ("Amplitude adj1 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
     binaural1->amp_pct1 = AMP_AD(amp_pct1);
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_pct2 = strtod (subtoken, &endptr);
-    if (amp_pct2 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude adj2 for binaural had an error.\n");
-    }
+    if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude adj2 for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (amp_pct2 < 0.0)  // no errors, but less than zero
+      error ("Amplitude adj2 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
     binaural1->amp_pct2 = AMP_AD(amp_pct2);
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -2069,31 +2079,34 @@ setup_binaural (char *token, void **work)
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double steps = strtod (subtoken, &endptr);
-      if (steps == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Step count for binaural had an error.\n");
-      }
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       binaural1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
-      if (slide_time == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Slide time for binaural had an error.\n");
-      }
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       binaural1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
-      if (fuzz == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Fuzz for binaural had an error.\n");
-      }
+      if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Fuzz for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (fuzz < 0.0)  // no errors, but less than zero
+        error ("Fuzz for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
       binaural1->fuzz = AMP_AD(fuzz);
     }
     else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
@@ -2104,23 +2117,27 @@ setup_binaural (char *token, void **work)
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double steps = strtod (subtoken, &endptr);
-      if (steps == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Step count for binaural had an error.\n");
-      }
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       binaural1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
-      if (slide_time == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Slide time for binaural had an error.\n");
-      }
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       binaural1->slide_time = slide_time;
     }
+    else if (subtoken != NULL) // invalid slide indicator
+      error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
   }
 }
 
@@ -2129,6 +2146,7 @@ setup_binaural (char *token, void **work)
 void
 setup_bell (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2140,6 +2158,7 @@ setup_bell (char *token, void **work)
   bell1->next = NULL;
   bell1->type = 2;
   bell1->off1 = 0;  // begin at 0 degrees
+  original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2147,133 +2166,133 @@ setup_bell (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
-  if (carrier == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier for bell cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier for bell had an error.\n");
-  }
+  if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Carrier for bell had an error.\n%s\n%s", subtoken, original);
+  else if (carrier <= 0.0)  // no errors, but less than equal to zero
+    error ("Carrier for bell cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   bell1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
-  if (amp_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_min for bell had an error.\n");
-  }
+  if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum amplitude for bell had an error.\n%s\n%s", subtoken, original);
+  else if (amp_min < 0.0 || amp_min > 100.0)  // no errors, but less than zero, greater than 100
+    error ("Minimum amplitude for bell cannot be less than 0 or greater than 100.\n%s\n%s", subtoken, original);
   bell1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
-  if (amp_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_max for bell had an error.\n");
-  }
+  if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum amplitude for bell had an error.\n%s\n%s", subtoken, original);
+  else if (amp_max < amp_min || amp_max > 100.0)  // no errors, but less than amp_min, greater than 100
+    error ("Maximum amplitude for bell cannot be less than minimum amplitude or greater than 100.\n%s\n%s", subtoken, original);
   bell1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for bell had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for bell had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for bell cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   bell1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for bell had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for bell had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for bell cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   bell1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low < 0.0 || split_low > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for bell had an error.\n");
-    else
-      split_low = 0.5;
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for bell had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for bell cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   bell1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high < 0.0 || split_high > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for bell had an error.\n");
-    else
-      split_high = 0.5;
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for bell had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for bell cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   bell1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double length_min = strtod (subtoken, &endptr);
-  if (length_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Length_min for bell had an error.\n");
-  }
+  if ((length_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum time for bell had an error.\n%s\n%s", subtoken, original);
+  else if (length_min < 0.0)  // no errors, but less than 0
+    error ("Minimum time for bell cannot be less than 0.\n%s\n%s", subtoken, original);
   bell1->length_min = (int_64) (length_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double length_max = strtod (subtoken, &endptr);
-  if (length_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Length_max for bell had an error.\n");
-  }
+  if ((length_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum time for bell had an error.\n%s\n%s", subtoken, original);
+  else if (length_max < length_min)  // no errors, but less than minimum time
+    error ("Maximum time for bell cannot be less than minimum time.\n%s\n%s", subtoken, original);
   bell1->length_max = (int_64) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double repeat_min = strtod (subtoken, &endptr);
-  if (repeat_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Repeat_min for bell had an error.\n");
-  }
+  if ((repeat_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum repeat interval for bell had an error.\n%s\n%s", subtoken, original);
+  else if (repeat_min < 0.0)  // no errors, but less than 0
+    error ("Minimum repeat interval for bell cannot be less than 0.\n%s\n%s", subtoken, original);
   bell1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double repeat_max = strtod (subtoken, &endptr);
-  if (repeat_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Repeat_max for bell had an error.\n");
-  }
+  if ((repeat_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum repeat interval for bell had an error.\n%s\n%s", subtoken, original);
+  else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
+    error ("Maximum repeat interval for bell cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
   bell1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double behave = strtod (subtoken, &endptr);
-  if (behave <= 0.0 || behave >= 6.0)
-  {
-    if (errno != 0)             //  error
-      error ("Behave for bell had an error.\n");
-    else
-      behave = 3;
-  }
+  if ((behave == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Tone behavior for bell had an error.\n%s\n%s", subtoken, original);
+  else if (behave < 1.0 || behave > 5.0)  // no errors, but outside behavior range
+    error ("Tone behavior for bell cannot be less than 1 or greater than 5.\n%s\n%s", subtoken, original);
   bell1->behave = (int) behave;   // convert to int
 
   /* create the time to first play of bell */
@@ -2284,7 +2303,7 @@ setup_bell (char *token, void **work)
   {
       // frames to next play random piece of possible interval
     int_64 delta = (int_64) ( (drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
-    bell1->next_play = delta/2;
+    bell1->next_play = delta/2;  // bias towards sooner
   }
   bell1->sofar = 0LL;
 }
@@ -2294,6 +2313,7 @@ setup_bell (char *token, void **work)
 int
 setup_noise (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2305,6 +2325,7 @@ setup_noise (char *token, void **work)
   noise1->next = NULL;
   noise1->type = 3;
   noise1->off1 = 0;  // begin at 0 degrees
+  original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2312,154 +2333,157 @@ setup_noise (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier_min = strtod (subtoken, &endptr);
-  if (carrier_min == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier_min for noise cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier_min for noise had an error.\n");
-  }
+  if ((carrier_min == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum carrier for noise had an error.\n%s\n%s", subtoken, original);
+  else if (carrier_min <= 0.0)  // no errors, but less than equal to zero
+    error ("Minimum carrier for noise cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   noise1->carrier_min = carrier_min;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double carrier_max = strtod (subtoken, &endptr);
-  if (carrier_max == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier_max for noise cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier_max for noise had an error.\n");
-  }
+  if ((carrier_max == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum carrier for noise had an error.\n%s\n%s", subtoken, original);
+  else if (carrier_max < carrier_min)  // no errors, but less than carrier min
+    error ("Maximum carrier for noise cannot be less than minimum carrier.\n%s\n%s", subtoken, original);
   noise1->carrier_max = carrier_max;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
-  if (amp_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_min for noise had an error.\n");
-  }
+  if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum amplitude for noise had an error.\n%s\n%s", subtoken, original);
+  else if (amp_min <= 0.0)  // no errors, but less than equal to zero
+    error ("Minimum amplitude for noise cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   noise1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
-  if (amp_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_max for noise had an error.\n");
-  }
+  if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum amplitude for noise had an error.\n%s\n%s", subtoken, original);
+  else if (amp_max < amp_min)  // no errors, but less than minimum amplitude
+    error ("Maximum amplitude for noise cannot be less than maximum amplitude.\n%s\n%s", subtoken, original);
   noise1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for noise had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for noise had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for noise cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   noise1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for noise had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for noise had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for noise cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   noise1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for noise had an error.\n");
-    else
-      split_low = 0.5;
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for noise had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for noise cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   noise1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for noise had an error.\n");
-    else
-      split_high = 0.5;
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for noise had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for noise cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   noise1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double length_min = strtod (subtoken, &endptr);
-  if (length_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Length_min for noise had an error.\n");
-  }
+  if ((length_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum time for noise had an error.\n%s\n%s", subtoken, original);
+  else if (length_min < 0.0)  // no errors, but less than 0
+    error ("Minimum time for noise cannot be less than 0.\n%s\n%s", subtoken, original);
   noise1->length_min = (int_64) (length_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double length_max = strtod (subtoken, &endptr);
-  if (length_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Length_max for noise had an error.\n");
-  }
+  if ((length_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum time for noise had an error.\n%s\n%s", subtoken, original);
+  else if (length_max < length_min)  // no errors, but less than minimum time
+    error ("Maximum time for noise cannot be less than minimum time.\n%s\n%s", subtoken, original);
   noise1->length_max = (int_64) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double repeat_min = strtod (subtoken, &endptr);
-  if (repeat_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Repeat_min for noise had an error.\n");
-  }
+  if ((repeat_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum repeat interval for noise had an error.\n%s\n%s", subtoken, original);
+  else if (repeat_min < 0.0)  // no errors, but less than 0
+    error ("Minimum repeat interval for noise cannot be less than 0.\n%s\n%s", subtoken, original);
   noise1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double repeat_max = strtod (subtoken, &endptr);
-  if (repeat_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Repeat_max for noise had an error.\n");
-  }
+  if ((repeat_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum repeat interval for noise had an error.\n%s\n%s", subtoken, original);
+  else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
+    error ("Maximum repeat interval for noise cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
   noise1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double behave_low = strtod (subtoken, &endptr);
-  if (behave_low == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Behave_low for noise had an error.\n");
-  }
+  if ((behave_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Tone behavior lower limit for noise had an error.\n%s\n%s", subtoken, original);
+  else if (behave_low < 1.0 || behave_low > 21.0)  // no errors, but outside behavior range
+    error ("Tone behavior lower limit for noise cannot be less than 1 or greater than 21.\n%s\n%s", subtoken, original);
   noise1->behave_low = (int) behave_low;   // convert to int
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double behave_high = strtod (subtoken, &endptr);
-  if (behave_high == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Behave_high for noise had an error.\n");
-  }
+  if ((behave_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Tone behavior upper limit for noise had an error.\n%s\n%s", subtoken, original);
+  else if (behave_high < behave_low || behave_high > 21.0)  // no errors, but outside behavior range
+    error ("Tone behavior upper limit for noise cannot be less than lower limit, greater than 21.\n%s\n%s", subtoken, original);
   noise1->behave_high = (int) behave_high;         // convert to int
+
     /* possible multiplier for a noise voice */
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   double multiple = 0.0;
@@ -2467,13 +2491,12 @@ setup_noise (char *token, void **work)
   {
     errno = 0;
     multiple = strtod (subtoken, &endptr);
-    if (multiple == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Multiple for noise had an error.\n");
-      else
-        multiple = 1.0;
-    }
+    if ((multiple == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Multiplier for noise had an error.\n%s\n%s", subtoken, original);
+    else if (multiple < 1.0)  // no errors, but less than 1
+      error ("Multiplier for noise cannot be less than 1.\n%s\n%s", subtoken, original);
   }
   else
     multiple = 1.0;
@@ -2496,6 +2519,7 @@ setup_noise (char *token, void **work)
 void
 setup_stoch (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2509,6 +2533,7 @@ setup_stoch (char *token, void **work)
   stoch1->next = NULL;
   stoch1->type = 4;
   stoch1->off1 = 0;
+  original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2525,86 +2550,92 @@ setup_stoch (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
-  if (amp_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_min for stoch had an error.\n");
-  }
+  if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum amplitude for stoch had an error.\n%s\n%s", subtoken, original);
+  else if (amp_min < 0.0 || amp_min > 100.0)  // no errors, but less than zero, greater than 100
+    error ("Minimum amplitude for stoch cannot be less than 0 or greater than 100.\n%s\n%s", subtoken, original);
   stoch1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
-  if (amp_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_max for stoch had an error.\n");
-  }
+  if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum amplitude for stoch had an error.\n%s\n%s", subtoken, original);
+  else if (amp_max < amp_min || amp_max > 100.0)  // no errors, but less than amp_min, greater than 100
+    error ("Maximum amplitude for stoch cannot be less than minimum amplitude or greater than 100.\n%s\n%s", 
+                                                                subtoken, original);
   stoch1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for stoch had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for stoch had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for stoch cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   stoch1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for stoch had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for stoch had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for stoch cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   stoch1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for stoch had an error.\n");
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for stoch had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for stoch cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   stoch1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for stoch had an error.\n");
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for stoch had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for stoch cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   stoch1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double repeat_min = strtod (subtoken, &endptr);
-  if (repeat_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Repeat_min for stoch had an error.\n");
-  }
+  if ((repeat_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum repeat interval for stoch had an error.\n%s\n%s", subtoken, original);
+  else if (repeat_min < 0.0)  // no errors, but less than 0
+    error ("Minimum repeat interval for stoch cannot be less than 0.\n%s\n%s", subtoken, original);
   stoch1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double repeat_max = strtod (subtoken, &endptr);
-  if (repeat_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Repeat_max for stoch had an error.\n");
-  }
+  if ((repeat_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum repeat interval for stoch had an error.\n%s\n%s", subtoken, original);
+  else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
+    error ("Maximum repeat interval for stoch cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
   stoch1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
+
   /* set up frames till first play of stoch */
   if (stoch1->repeat_min == stoch1->repeat_max)
   {
@@ -2622,6 +2653,7 @@ setup_stoch (char *token, void **work)
 void
 setup_sample (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2634,6 +2666,7 @@ setup_sample (char *token, void **work)
   *work = sample1;
   sample1->next = NULL;
   sample1->type = 5;
+  original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2650,77 +2683,81 @@ setup_sample (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
-  if (amp_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_min for sample had an error.\n");
-  }
+  if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum amplitude for sample had an error.\n%s\n%s", subtoken, original);
+  else if (amp_min < 0.0 || amp_min > 100.0)  // no errors, but less than zero, greater than 100
+    error ("Minimum amplitude for sample cannot be less than 0 or greater than 100.\n%s\n%s", subtoken, original);
   sample1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
-  if (amp_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_max for sample had an error.\n");
-  }
+  if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum amplitude for sample had an error.\n%s\n%s", subtoken, original);
+  else if (amp_max < amp_min || amp_max > 100.0)  // no errors, but less than amp_min, greater than 100
+    error ("Maximum amplitude for sample cannot be less than minimum amplitude or greater than 100.\n%s\n%s", 
+                                                                 subtoken, original);
   sample1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for sample had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for sample had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for sample cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   sample1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for sample had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for sample had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for sample cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   sample1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for sample had an error.\n");
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for sample had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for sample cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   sample1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for sample had an error.\n");
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for sample had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for sample cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   sample1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
-  double size = strtod (subtoken, &endptr);
+  double sample_size = strtod (subtoken, &endptr);
+  if ((sample_size == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Sample size for sample had an error.\n%s\n%s", subtoken, original);
+  else if (sample_size < 0.0)  // no errors, but less than zero
+    error ("Sample size for sample cannot be less than 0.\n%s\n%s", subtoken, original);
+  sample1->size = (int_64) (sample_size * out_rate);  // convert from seconds to frames 
 
-  if (size == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Play size for sample had an error.\n");
-  }
-  sample1->size = (int_64) (size * out_rate);  // convert from seconds to frames 
   /* Set some defaults so sample position is determined randomly at start of generate frames */
   sample1->play = 0LL;  // start out with zero play size, let generate frames determine
   sample1->off1 = 0LL;  // set in generate frames when play is zero.
@@ -2731,6 +2768,7 @@ setup_sample (char *token, void **work)
 void
 setup_repeat (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2743,6 +2781,7 @@ setup_repeat (char *token, void **work)
   *work = repeat1;
   repeat1->next = NULL;
   repeat1->type = 6;
+  original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2759,65 +2798,70 @@ setup_repeat (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
-  if (amp_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_min for repeat had an error.\n");
-  }
+  if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum amplitude for repeat had an error.\n%s\n%s", subtoken, original);
+  else if (amp_min < 0.0 || amp_min > 100.0)  // no errors, but less than zero, greater than 100
+    error ("Minimum amplitude for repeat cannot be less than 0 or greater than 100.\n%s\n%s", subtoken, original);
   repeat1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
-  if (amp_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_max for repeat had an error.\n");
-  }
+  if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum amplitude for repeat had an error.\n%s\n%s", subtoken, original);
+  else if (amp_max < amp_min || amp_max > 100.0)  // no errors, but less than amp_min, greater than 100
+    error ("Maximum amplitude for repeat cannot be less than minimum amplitude or greater than 100.\n%s\n%s", 
+                                                                 subtoken, original);
   repeat1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for repeat had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for repeat had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for repeat cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   repeat1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for repeat had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for repeat had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for repeat cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   repeat1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for repeat had an error.\n");
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for repeat had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for repeat cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   repeat1->split_low = split_low;
+
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for repeat had an error.\n");
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for repeat had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for repeat cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   repeat1->split_high = split_high;
+
   /* set play to initialize in generate frames */
   repeat1->play = 0LL;  // how much has played so far
 }
@@ -2827,6 +2871,7 @@ setup_repeat (char *token, void **work)
 void
 setup_once (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2841,6 +2886,7 @@ setup_once (char *token, void **work)
   once1->type = 7;
   once1->off1 = 0;
   once1->not_played = 1;  // haven't played yed
+  original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
@@ -2857,75 +2903,78 @@ setup_once (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
-  if (amp_min == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_min for once had an error.\n");
-  }
+  if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Minimum amplitude for once had an error.\n%s\n%s", subtoken, original);
+  else if (amp_min < 0.0 || amp_min > 100.0)  // no errors, but less than zero, greater than 100
+    error ("Minimum amplitude for once cannot be less than 0 or greater than 100.\n%s\n%s", subtoken, original);
   once1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
-  if (amp_max == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude_max for once had an error.\n");
-  }
+  if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Maximum amplitude for once had an error.\n%s\n%s", subtoken, original);
+  else if (amp_max < amp_min || amp_max > 100.0)  // no errors, but less than amp_min, greater than 100
+    error ("Maximum amplitude for once cannot be less than minimum amplitude or greater than 100.\n%s\n%s", subtoken, original);
   once1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for once had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for once had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for once cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   once1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for once had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for once had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for once cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   once1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for once had an error.\n");
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for once had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for once cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   once1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for once had an error.\n");
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for once had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for once cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   once1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double play_when = strtod (subtoken, &endptr);
-  if (play_when == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Play_when for once had an error.\n");
-  }
+  if ((play_when == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Play time for once had an error.\n%s\n%s", subtoken, original);
+  else if (play_when < 0.0)  // no errors, but less than 0
+    error ("Play time for once cannot be less than 0.\n%s\n%s", subtoken, original);
   once1->play_when = (int_64) (play_when * out_rate);      // convert to frames from seconds
 
   /* set up play of once */
@@ -2937,6 +2986,7 @@ setup_once (char *token, void **work)
 void
 setup_chronaural (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -2958,6 +3008,7 @@ setup_chronaural (char *token, void **work)
   chronaural1->steps = 0;  // no steps
   chronaural1->slide_time = 0.0;  // no slide between steps
   chronaural1->fuzz = 0.0;  // no fuzziness around step frequency
+  original = StrDup (token);
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -2966,13 +3017,12 @@ setup_chronaural (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
-  if (carrier == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier for chronaural cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier for chronaural had an error.\n");
-  }
+  if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Carrier for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (carrier <= 0.0)  // no errors, but less than equal to zero
+    error ("Carrier for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = carrier * modify;  // amount of possible variance
@@ -2985,11 +3035,10 @@ setup_chronaural (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double beat = strtod (subtoken, &endptr);
-  if (beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Beat for chronaural had an error.\n");
-  }
+  if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beat for chronaural had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = (fabs (beat)) * modify;  // amount of possible variance
@@ -3002,101 +3051,102 @@ setup_chronaural (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp = strtod (subtoken, &endptr);
-  if (amp == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude for chronaural had an error.\n");
-  }
+  if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Amplitude for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (amp < 0.0)  // no errors, but less than zero
+    error ("Amplitude for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
   chronaural1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double phase = strtod (subtoken, &endptr);
-  if (phase == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Phase for chronaural had an error.\n");
-  }
-  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
-      error ("Phase for chronaural cannot be less than 0 or greater than 360.\n");
+  if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Phase for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (phase < 0.0 || phase > 360.0)  // no errors, but less than zero or greater than 360
+    error ("Phase for chronaural cannot be less than 0 or greater than 360.\n%s\n%s", subtoken, original);
   chronaural1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double sin_threshold = strtod (subtoken, &endptr);
-  if (sin_threshold == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Sin threshold for chronaural had an error.\n");
-  }
+  if ((sin_threshold == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Sin threshold for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (sin_threshold < 0.0 || sin_threshold >= 1.0)  // no errors, but less than zero or greater than 1
+    error ("Sin threshold for chronaural cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   chronaural1->sin_threshold = sin_threshold;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double beat_behave = strtod (subtoken, &endptr);
-  if (beat_behave == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Beat amplitude behave for chronaural had an error.\n");
-  }
+  if ((beat_behave == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beat behavior for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (beat_behave < 1.0 || beat_behave > 4.0)  // no errors, but outside behavior range
+    error ("Beat behavior for chronaural cannot be less than 1 or greater than 4.\n%s\n%s", subtoken, original);
   chronaural1->beat_behave = beat_behave;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for chronaural had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for chronaural cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", 
+                                                                   subtoken, original);
   chronaural1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for chronaural had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for chronaural cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   chronaural1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low < 0.0 || split_low > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for chronaural had an error.\n");
-    else
-      split_low = 0.5;
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for chronaural cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   chronaural1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high < 0.0 || split_high > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for chronaural had an error.\n");
-    else
-      split_high = 0.5;
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for chronaural cannot be less than low split limit or greater than 1.\n%s\n%s", 
+                                                                    subtoken, original);
   chronaural1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_beat = strtod (subtoken, &endptr);
-  if (split_beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split beat for chronaural had an error.\n");
-  }
+  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Split beat for chronaural had an error.\n%s\n%s", subtoken, original);
+  else if (split_beat < 0.0)  // no errors, but less than 0
+    error ("Split beat for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
   chronaural1->split_beat = split_beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3111,31 +3161,34 @@ setup_chronaural (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for chronaural had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for chronaural had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     chronaural1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for chronaural had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for chronaural had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     chronaural1->slide_time = slide_time;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double fuzz = strtod (subtoken, &endptr);
-    if (fuzz == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Fuzz for chronaural had an error.\n");
-    }
+    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Fuzz for chronaural had an error.\n%s\n%s", subtoken, original);
+    else if (fuzz < 0.0)  // no errors, but less than zero
+      error ("Fuzz for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
     chronaural1->fuzz = AMP_AD(fuzz);
   }
   else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there a vary, no amp variation
@@ -3146,23 +3199,27 @@ setup_chronaural (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for chronaural had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for chronaural had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     chronaural1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for chronaural had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for chronaural had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     chronaural1->slide_time = slide_time;
   }
+  else if (subtoken != NULL) // invalid slide indicator
+    error ("Slide indicator for chronaural had an error.\n%s\n%s", subtoken, original);
 }
 
 /* Set up a pulse sequence */
@@ -3170,6 +3227,7 @@ setup_chronaural (char *token, void **work)
 void
 setup_pulse (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -3191,6 +3249,7 @@ setup_pulse (char *token, void **work)
   pulse1->steps = 0;  // no steps
   pulse1->slide_time = 0.0;  // no slide between steps
   pulse1->fuzz = 0.0;  // no fuzziness around step frequency
+  original = StrDup (token);
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -3199,13 +3258,12 @@ setup_pulse (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
-  if (carrier == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier for pulse cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier for pulse had an error.\n");
-  }
+  if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Carrier for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (carrier <= 0.0)  // no errors, but less than equal to zero
+    error ("Carrier for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = carrier * modify;  // amount of possible variance
@@ -3218,11 +3276,10 @@ setup_pulse (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double beat = strtod (subtoken, &endptr);
-  if (beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Beat for pulse had an error.\n");
-  }
+  if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beat for pulse had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = (fabs (beat)) * modify;  // amount of possible variance
@@ -3235,91 +3292,89 @@ setup_pulse (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp = strtod (subtoken, &endptr);
-  if (amp == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude for pulse had an error.\n");
-  }
+  if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Amplitude for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (amp < 0.0)  // no errors, but less than zero
+    error ("Amplitude for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
   pulse1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double phase = strtod (subtoken, &endptr);
-  if (phase == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Phase for pulse had an error.\n");
-  }
-  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
-      error ("Phase for pulse cannot be less than 0 or greater than 360.\n");
+  if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Phase for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (phase < 0.0 || phase > 360.0)  // no errors, but less than zero or greater than 360
+    error ("Phase for pulse cannot be less than 0 or greater than 360.\n%s\n%s", subtoken, original);
   pulse1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double time = strtod (subtoken, &endptr);
-  if (time == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Pulse time for pulse had an error.\n");
-  }
+  if ((time == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Pulse time for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (time < 0.0)  // no errors, but less than zero
+    error ("Pulse time for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
   pulse1->time = time;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_begin for pulse had an error.\n");
-    else
-      split_begin = 0.5;
-  }
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for pulse had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for pulse cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   pulse1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
-  if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_end for pulse had an error.\n");
-    else
-      split_end = 0.5;
-  }
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for pulse had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for pulse cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
   pulse1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
-  if (split_low < 0.0 || split_low > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_low for pulse had an error.\n");
-    else
-      split_low = 0.5;
-  }
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for pulse cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
   pulse1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
-  if (split_high < 0.0 || split_high > 1.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split_high for pulse had an error.\n");
-    else
-      split_high = 0.5;
-  }
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for pulse cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   pulse1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double split_beat = strtod (subtoken, &endptr);
-  if (split_beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Split beat for pulse had an error.\n");
-  }
+  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Split beat for pulse had an error.\n%s\n%s", subtoken, original);
+  else if (split_beat < 0.0)  // no errors, but less than 0
+    error ("Split beat for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
   pulse1->split_beat = split_beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3334,31 +3389,34 @@ setup_pulse (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for pulse had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for pulse had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     pulse1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for pulse had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for pulse had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     pulse1->slide_time = slide_time;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double fuzz = strtod (subtoken, &endptr);
-    if (fuzz == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Fuzz for pulse had an error.\n");
-    }
+    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Fuzz for pulse had an error.\n%s\n%s", subtoken, original);
+    else if (fuzz < 0.0)  // no errors, but less than zero
+      error ("Fuzz for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
     pulse1->fuzz = AMP_AD(fuzz);
   }
   else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // a vary slide
@@ -3369,23 +3427,27 @@ setup_pulse (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for pulse had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for pulse had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     pulse1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for pulse had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for pulse had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     pulse1->slide_time = slide_time;
   }
+  else if (subtoken != NULL) // invalid slide indicator
+    error ("Slide indicator for pulse had an error.\n%s\n%s", subtoken, original);
 }
 
 /* Set up a phase sequence */
@@ -3393,6 +3455,7 @@ setup_pulse (char *token, void **work)
 void
 setup_phase (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -3418,6 +3481,7 @@ setup_phase (char *token, void **work)
   phase1->steps = 0;  // no steps
   phase1->slide_time = 0.0;  // no slide between steps
   phase1->fuzz = 0.0;  // no fuzziness around step frequency
+  original = StrDup (token);
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -3426,13 +3490,12 @@ setup_phase (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
-  if (carrier == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier for phase cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier for phase had an error.\n");
-  }
+  if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Carrier for phase had an error.\n%s\n%s", subtoken, original);
+  else if (carrier <= 0.0)  // no errors, but less than equal to zero
+    error ("Carrier for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = carrier * modify;  // amount of possible variance
@@ -3445,11 +3508,10 @@ setup_phase (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double beat = strtod (subtoken, &endptr);
-  if (beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Beat for phase had an error.\n");
-  }
+  if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beat for phase had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = (fabs (beat)) * modify;  // amount of possible variance
@@ -3462,23 +3524,23 @@ setup_phase (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp = strtod (subtoken, &endptr);
-  if (amp == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude for phase had an error.\n");
-  }
+  if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Amplitude for phase had an error.\n%s\n%s", subtoken, original);
+  else if (amp < 0.0)  // no errors, but less than zero
+    error ("Amplitude for phase cannot be less than 0.\n%s\n%s", subtoken, original);
   phase1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double phase = strtod (subtoken, &endptr);
-  if (phase == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Phase for phase had an error.\n");
-  }
-  else if (errno == 0 && (phase < 0.0 || phase > 360.0)) // no errors, invalid value
-      error ("Phase for phase cannot be less than 0 or greater than 360.\n");
+  if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Phase for phase had an error.\n%s\n%s", subtoken, original);
+  else if (phase < 0.0 || phase > 360.0)  // no errors, but less than zero or greater than 360
+    error ("Phase for phase cannot be less than 0 or greater than 360.\n%s\n%s", subtoken, original);
   phase1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3492,31 +3554,34 @@ setup_phase (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for phase had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for phase had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     phase1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for phase had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for phase had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     phase1->slide_time = slide_time;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double fuzz = strtod (subtoken, &endptr);
-    if (fuzz == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Fuzz for phase had an error.\n");
-    }
+    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Fuzz for phase had an error.\n%s\n%s", subtoken, original);
+    else if (fuzz < 0.0)  // no errors, but less than zero
+      error ("Fuzz for phase cannot be less than 0.\n%s\n%s", subtoken, original);
     phase1->fuzz = AMP_AD(fuzz);
   }
   else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
@@ -3527,62 +3592,68 @@ setup_phase (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for phase had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for phase had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     phase1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for phase had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for phase had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     phase1->slide_time = slide_time;
   }
   else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
   {
     errno = 0;
     double amp_beat1 = strtod (subtoken, &endptr);
-    if (amp_beat1 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude beat1 for phase had an error.\n");
-    }
+    if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude beat1 for phase had an error.\n%s\n%s", subtoken, original);
+    else if (amp_beat1 < 0.0)  // no errors, but less than zero
+      error ("Amplitude beat1 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
     phase1->amp_beat1 = amp_beat1;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_beat2 = strtod (subtoken, &endptr);
-    if (amp_beat2 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude beat2 for phase had an error.\n");
-    }
+    if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude beat2 for phase had an error.\n%s\n%s", subtoken, original);
+    else if (amp_beat2 < 0.0)  // no errors, but less than zero
+      error ("Amplitude beat2 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
     phase1->amp_beat2 = amp_beat2;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_pct1 = strtod (subtoken, &endptr);
-    if (amp_pct1 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude adj1 for phase had an error.\n");
-    }
+    if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude adj1 for phase had an error.\n%s\n%s", subtoken, original);
+    else if (amp_pct1 < 0.0)  // no errors, but less than zero
+      error ("Amplitude adj1 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
     phase1->amp_pct1 = AMP_AD(amp_pct1);
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_pct2 = strtod (subtoken, &endptr);
-    if (amp_pct2 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude adj2 for phase had an error.\n");
-    }
+    if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude adj2 for phase had an error.\n%s\n%s", subtoken, original);
+    else if (amp_pct2 < 0.0)  // no errors, but less than zero
+      error ("Amplitude adj2 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
     phase1->amp_pct2 = AMP_AD(amp_pct2);
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3596,31 +3667,34 @@ setup_phase (char *token, void **work)
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double steps = strtod (subtoken, &endptr);
-      if (steps == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Step count for phase had an error.\n");
-      }
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for phase had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       phase1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
-      if (slide_time == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Slide time for phase had an error.\n");
-      }
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for phase had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       phase1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
-      if (fuzz == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Fuzz for phase had an error.\n");
-      }
+      if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Fuzz for phase had an error.\n%s\n%s", subtoken, original);
+      else if (fuzz < 0.0)  // no errors, but less than zero
+        error ("Fuzz for phase cannot be less than 0.\n%s\n%s", subtoken, original);
       phase1->fuzz = AMP_AD(fuzz);
     }
     else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
@@ -3631,23 +3705,27 @@ setup_phase (char *token, void **work)
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double steps = strtod (subtoken, &endptr);
-      if (steps == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Step count for phase had an error.\n");
-      }
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for phase had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       phase1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
-      if (slide_time == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Slide time for phase had an error.\n");
-      }
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for phase had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       phase1->slide_time = slide_time;
     }
+    else if (subtoken != NULL) // invalid slide indicator
+      error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
   }
 }
 
@@ -3656,6 +3734,7 @@ setup_phase (char *token, void **work)
 void
 setup_fm (char *token, void **work)
 {
+  char *original;
   char *endptr;
   char *subtoken;
   char *str2 = NULL;
@@ -3682,6 +3761,7 @@ setup_fm (char *token, void **work)
   fm1->steps = 0;  // no steps
   fm1->slide_time = 0.0;  // no slide between steps
   fm1->fuzz = 0.0;  // no fuzziness around step frequency
+  original = StrDup (token);
   str2 = token;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -3690,13 +3770,12 @@ setup_fm (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
-  if (carrier == 0.0)
-  {
-    if (errno == 0)             // no errors
-      error ("Carrier for freq cannot be 0.\n");
-    else                        // there was an error
-      error ("Carrier for freq had an error.\n");
-  }
+  if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Carrier for fm had an error.\n%s\n%s", subtoken, original);
+  else if (carrier <= 0.0)  // no errors, but less than equal to zero
+    error ("Carrier for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = carrier * modify;  // amount of possible variance
@@ -3709,12 +3788,12 @@ setup_fm (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double beat = strtod (subtoken, &endptr);
-  if (beat == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Beat for freq had an error.\n");
-  }
-  beat = fabs (beat);  // make beat always positive
+  if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beat for fm had an error.\n%s\n%s", subtoken, original);
+  else if (beat < 0.0)  // no errors, but less than zero
+    error ("Beat for fm cannot be less than 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
     double band = beat * modify;  // amount of possible variance
@@ -3727,21 +3806,23 @@ setup_fm (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double amp = strtod (subtoken, &endptr);
-  if (amp == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Amplitude for freq had an error.\n");
-  }
+  if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Amplitude for fm had an error.\n%s\n%s", subtoken, original);
+  else if (amp < 0.0)  // no errors, but less than zero
+    error ("Amplitude for fm cannot be less than 0.\n%s\n%s", subtoken, original);
   fm1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double band = strtod (subtoken, &endptr);
-  if (band == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Band for freq had an error.\n");
-  }
+  if ((band == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Band for fm had an error.\n%s\n%s", subtoken, original);
+  else if (band < 0.0)  // no errors, but less than zero
+    error ("Band for fm cannot be less than 0.\n%s\n%s", subtoken, original);
   fm1->band = band;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3752,18 +3833,17 @@ setup_fm (char *token, void **work)
   else if (subtoken != NULL && strcmp (subtoken, "B") == 0)  // both channels
     fm1->channel = 3;
   else  // unrecognized, print error message
-    error ("Channel for freq had an error.  Only L, R, B allowed, was %s.\n", subtoken);
+    error ("Channel for freq had an error.  Only L, R, B allowed.\n%s\n%s", subtoken, original);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double phase = strtod (subtoken, &endptr);
-  if (phase == 0.0)
-  {
-    if (errno != 0)             //  error
-      error ("Phase for freq had an error.\n");
-  }
-  else if (errno == 0 && (phase < -360.0 || phase > 360.0)) // no errors, invalid value
-      error ("Phase for freq cannot be less than -360 or greater than 360.\n");
+  if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Phase for fm had an error.\n%s\n%s", subtoken, original);
+  else if (phase < -360.0 || phase > 360.0)  // no errors, but less than zero or greater than 360
+    error ("Phase for fm cannot be less than -360 or greater than 360.\n%s\n%s", subtoken, original);
   fm1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3777,31 +3857,34 @@ setup_fm (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for freq had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for fm had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     fm1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for freq had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for fm had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     fm1->slide_time = slide_time;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double fuzz = strtod (subtoken, &endptr);
-    if (fuzz == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Fuzz for freq had an error.\n");
-    }
+    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Fuzz for fm had an error.\n%s\n%s", subtoken, original);
+    else if (fuzz < 0.0)  // no errors, but less than zero
+      error ("Fuzz for fm cannot be less than 0.\n%s\n%s", subtoken, original);
     fm1->fuzz = AMP_AD(fuzz);
   }
   else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
@@ -3812,63 +3895,70 @@ setup_fm (char *token, void **work)
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double steps = strtod (subtoken, &endptr);
-    if (steps == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Step count for freq had an error.\n");
-    }
+    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Step count for fm had an error.\n%s\n%s", subtoken, original);
+    else if (steps <= 0.0)  // no errors, but less than equal to zero
+      error ("Step count for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     fm1->steps = (int) steps;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double slide_time = strtod (subtoken, &endptr);
-    if (slide_time == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Slide time for freq had an error.\n");
-    }
+    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Slide time for fm had an error.\n%s\n%s", subtoken, original);
+    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+      error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
     fm1->slide_time = slide_time;
   }
   else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
   {
     errno = 0;
     double amp_beat1 = strtod (subtoken, &endptr);
-    if (amp_beat1 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude beat1 for freq had an error.\n");
-    }
+    if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude beat1 for fm had an error.\n%s\n%s", subtoken, original);
+    else if (amp_beat1 < 0.0)  // no errors, but less than zero
+      error ("Amplitude beat1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
     fm1->amp_beat1 = amp_beat1;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_beat2 = strtod (subtoken, &endptr);
-    if (amp_beat2 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude beat2 for freq had an error.\n");
-    }
+    if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude beat2 for fm had an error.\n%s\n%s", subtoken, original);
+    else if (amp_beat2 < 0.0)  // no errors, but less than zero
+      error ("Amplitude beat2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
     fm1->amp_beat2 = amp_beat2;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_pct1 = strtod (subtoken, &endptr);
-    if (amp_pct1 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude adj1 for freq had an error.\n");
-    }
+    if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude adj1 for fm had an error.\n%s\n%s", subtoken, original);
+    else if (amp_pct1 < 0.0)  // no errors, but less than zero
+      error ("Amplitude adj1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
     fm1->amp_pct1 = AMP_AD(amp_pct1);
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
     double amp_pct2 = strtod (subtoken, &endptr);
-    if (amp_pct2 == 0.0)
-    {
-      if (errno != 0)             //  error
-        error ("Amplitude adj2 for freq had an error.\n");
-    }
+    if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
+        || (*endptr != '\0')
+        || errno != 0)
+      error ("Amplitude adj2 for fm had an error.\n%s\n%s", subtoken, original);
+    else if (amp_pct2 < 0.0)  // no errors, but less than zero
+      error ("Amplitude adj2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
     fm1->amp_pct2 = AMP_AD(amp_pct2);
+
     /* check if there is a slide after amp beat */
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
@@ -3881,31 +3971,34 @@ setup_fm (char *token, void **work)
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double steps = strtod (subtoken, &endptr);
-      if (steps == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Step count for freq had an error.\n");
-      }
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for fm had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       fm1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
-      if (slide_time == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Slide time for freq had an error.\n");
-      }
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for fm had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       fm1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
-      if (fuzz == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Fuzz for freq had an error.\n");
-      }
+      if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Fuzz for fm had an error.\n%s\n%s", subtoken, original);
+      else if (fuzz < 0.0)  // no errors, but less than zero
+        error ("Fuzz for fm cannot be less than 0.\n%s\n%s", subtoken, original);
       fm1->fuzz = AMP_AD(fuzz);
     }
     else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
@@ -3916,23 +4009,27 @@ setup_fm (char *token, void **work)
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double steps = strtod (subtoken, &endptr);
-      if (steps == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Step count for freq had an error.\n");
-      }
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for fm had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       fm1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
-      if (slide_time == 0.0)
-      {
-        if (errno != 0)             //  error
-          error ("Slide time for freq had an error.\n");
-      }
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for fm had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       fm1->slide_time = slide_time;
     }
+    else if (subtoken != NULL) // invalid slide indicator
+      error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
   }
 }
 
