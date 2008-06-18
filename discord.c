@@ -3924,7 +3924,10 @@ setup_fm (char *token, void **work)
       error ("Amplitude beat1 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_beat1 < 0.0)  // no errors, but less than zero
       error ("Amplitude beat1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_beat1 = amp_beat1;
+    if (fm1->channel != 2)  // not right channel only
+      fm1->amp_beat1 = amp_beat1;
+    else  // right channel only
+      fm1->amp_beat1 = 0.0;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
@@ -3935,7 +3938,10 @@ setup_fm (char *token, void **work)
       error ("Amplitude beat2 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_beat2 < 0.0)  // no errors, but less than zero
       error ("Amplitude beat2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_beat2 = amp_beat2;
+    if (fm1->channel != 1)  // not left channel only
+      fm1->amp_beat2 = amp_beat2;
+    else  // left channel only
+      fm1->amp_beat2 = 0.0;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
@@ -3946,7 +3952,10 @@ setup_fm (char *token, void **work)
       error ("Amplitude adj1 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_pct1 < 0.0)  // no errors, but less than zero
       error ("Amplitude adj1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_pct1 = AMP_AD(amp_pct1);
+    if (fm1->channel != 2)  // not right channel only
+      fm1->amp_pct1 = AMP_AD(amp_pct1);
+    else  // right channel only
+      fm1->amp_pct1 = 0.0;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
@@ -3957,7 +3966,10 @@ setup_fm (char *token, void **work)
       error ("Amplitude adj2 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_pct2 < 0.0)  // no errors, but less than zero
       error ("Amplitude adj2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_pct2 = AMP_AD(amp_pct2);
+    if (fm1->channel != 1)  // not left channel only
+      fm1->amp_pct2 = AMP_AD(amp_pct2);
+    else  // left channel only
+      fm1->amp_pct2 = 0.0;
 
     /* check if there is a slide after amp beat */
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -9223,6 +9235,10 @@ fprint_voice (FILE *fp, void *this)
           amp1 += ((amp1 * fm1->amp_pct1) * sin_table[fm1->amp_off1]);
         if (fm1->amp_beat2 > 0.0)
           amp2 += ((amp2 * fm1->amp_pct2) * sin_table[fm1->amp_off2]);
+        if (fm1->channel == 1)  // left channel only
+          amp2 = 0.0;
+        else if (fm1->channel == 2)  // right channel only
+          amp1 = 0.0;
         char_count += fprintf (fp, "   fm %.3f  %+.3f   %.3f   %.3f", 
                       fm1->carrier, fm1->beat, AMP_DA (amp1), AMP_DA (amp2));
         char_count += fprintf (fp, "   %.3f\n", fm1->shift);
