@@ -647,7 +647,7 @@ void setup_chronaural (char *token, void **work);
 void setup_pulse (char *token, void **work);
 void setup_phase (char *token, void **work);
 void setup_fm (char *token, void **work);
-void init_binaural ();
+void finish_beat_voice_setup ();
 snd_buffer * process_sound_file (char *filename);
 void play_loop ();
 void save_loop ();
@@ -1872,7 +1872,7 @@ setup_play_seq ()
       sndstream1 = sndstream2;
     }
   }
-  init_binaural ();  // complete binaural, chronaural, and pulse setup now that sequences are known
+  finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
   return 0;
 }
 
@@ -4045,10 +4045,10 @@ setup_fm (char *token, void **work)
   }
 }
 
-/*  Initialize all values possible for each voice */
+/*  Initialize all values possible for each beat voice */
 
 void
-init_binaural ()
+finish_beat_voice_setup ()
 {
   sndstream *snd1, *snd2;
   stub *stub1 = NULL, *stub2 = NULL;
@@ -7362,7 +7362,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else // split beat so oscillates between begin and end
             {
               double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
-                /* assumes split_end > split_begin, this is done in init_binaural */
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
               if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
               {
                 double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
@@ -7702,7 +7702,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else // split beat so oscillates between begin and end
             {
               double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
-                /* assumes split_end > split_begin, this is done in init_binaural */
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
               if (chronaural1->split_now > chronaural1->split_end)  // larger than end
               {
                 double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
@@ -7877,7 +7877,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else // split beat so oscillates between begin and end
             {
               double split_dist = fabs (pulse1->split_end - pulse1->split_begin);
-                /* assumes split_end > split_begin, this is done in init_binaural */
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
               if (pulse1->split_now >= pulse1->split_end)  // larger than end
               {
                 double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
@@ -8070,7 +8070,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else // split beat so oscillates between begin and end
             {
               double split_dist = fabs (pulse1->split_end - pulse1->split_begin);
-                /* assumes split_end > split_begin, this is done in init_binaural */
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
               if (pulse1->split_now > pulse1->split_end)  // larger than end
               {
                 double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
