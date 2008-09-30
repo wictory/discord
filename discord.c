@@ -10121,20 +10121,48 @@ alsa_write_double (snd_pcm_t *alsa_dev, double *data, int frames, int channels)
 {	static	int epipe_count = 0 ;
 
 	snd_pcm_status_t *status ;
+  struct timespec time_to_wait, time_left; 
 	int total = 0 ;
 	int retval ;
+	int wait_retval ;
 
 	if (epipe_count > 0)
 		epipe_count -- ;
 
 	while (total < frames)
   {	
-    retval = snd_pcm_writei (alsa_dev, data + total * channels, frames - total) ;
-
+    retval = snd_pcm_writei (alsa_dev, (data + (total * channels)), (frames - total)) ;
 		if (retval >= 0)
 		{	total += retval ;
 			if (total == frames)
 				return total ;
+      else
+      {
+        int frames_left = frames - total;  // all the frames didn't get written, how many are left to write?
+        double time_for_frames = (double) frames_left / (double) out_rate;  // how long to play that many frames?
+        long nanoseconds = floor ((time_for_frames * 1000000.));  // how many nanoseconds is that?
+        time_to_wait.tv_sec = 0;  // buffer size less than second
+        time_to_wait.tv_nsec = nanoseconds;  // set the nanoseconds
+        wait_retval = nanosleep (&time_to_wait, &time_left);  // wait for that many nanoseconds
+        if (wait_retval < 0)  // an error occurred, zero if no error
+        { 
+          switch (wait_retval)
+          { 
+            case -EFAULT :
+							fprintf (stderr, "nanosleep: execution fault\n") ;
+              continue ;
+              break ;
+            case -EINTR :
+							fprintf (stderr, "nanosleep: signal interrupt with %ld nanoseconds left\n", time_left.tv_nsec) ;
+              continue ;
+              break ;
+            default :
+              fprintf (stderr, "nanosleep: unknown error wait_retval = %d\n", wait_retval) ;
+              continue ;
+              break ;
+          } ; /* nanosleep switch */
+        }
+      }
 			continue ;
     } ;
 
@@ -10213,7 +10241,7 @@ file_write (void *call_parms)
 
   // allow main to call again, locked by save_loop
   pthread_mutex_unlock (&mtx_write);
-} /* alsa_write */
+} /* file_write */
 
 long
 check_samplerate (char *inname)
