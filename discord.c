@@ -8738,6 +8738,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 out_buffer[ii] += (amp1 * sin_table[phase_shifted_offset]);  // left leads right
                 out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
               }
+              else  // no phase shift
+              {
+                out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
+                out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
+              }
             }
               /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second */
             double shift_adjust = ((2. * fm1->band * fm1->beat) / out_rate);  // 2 because back and forth
@@ -8890,6 +8895,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               else if (fm1->phase < 0.0)  // add the phase shift to the left channel
               {
                 out_buffer[ii] += (amp1 * sin_table[phase_shifted_offset]);  // left leads right
+                out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
+              }
+              else  // no phase shift
+              {
+                out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
                 out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
               }
             }
@@ -9355,7 +9365,7 @@ fprint_voice_all (FILE *fp, void *this)
 
         fm1 = (fm *) this;
         char_count += fprintf (fp, "   fm %.3f %+.3f", fm1->carrier, fm1->beat);
-        char_count += fprintf (fp, " %.3f %.3f %c %.3f", 
+        char_count += fprintf (fp, " %.3f %.3f %d %.3f", 
                                     AMP_DA (fm1->amp), fm1->band, fm1->channel, fm1->phase);
         char_count += fprintf (fp, " %.3f %.3f", fm1->amp_beat1, fm1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (fm1->amp_pct1), AMP_DA (fm1->amp_pct2));
@@ -9377,7 +9387,7 @@ fprint_voice_all (FILE *fp, void *this)
 
         fm1 = (fm *) this;
         char_count += fprintf (fp, "   fm %.3f %+.3f", fm1->carrier, fm1->beat);
-        char_count += fprintf (fp, " %.3f %.3f %c %.3f", 
+        char_count += fprintf (fp, " %.3f %.3f %d %.3f", 
                                     AMP_DA (fm1->amp), fm1->band, fm1->channel, fm1->phase);
         char_count += fprintf (fp, " %.3f %.3f", fm1->amp_beat1, fm1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (fm1->amp_pct1), AMP_DA (fm1->amp_pct2));
