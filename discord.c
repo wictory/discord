@@ -4928,9 +4928,13 @@ finish_beat_voice_setup ()
                 {
                   double fraction = drand48 ();  // random fraction of interval
                   next_carrier = chronaural1->carrier + (carr_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_beat = chronaural1->beat + (beat_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_phase = chronaural1->phase + (phase_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_amp = chronaural1->amp + (amp_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_split_beat = chronaural1->split_beat + (split_beat_diff * fraction);
                 }
                 chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
