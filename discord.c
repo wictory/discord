@@ -441,6 +441,7 @@ struct chronaural
   double split_begin, split_end, split_now;      // left fraction for chronaural, .5 means evenly split L and R
   double split_low, split_high; // range for split, .5 means evenly split L and R
   double split_beat;   // Split variation frequency, defaults to beat
+  double split_dist;   // Split distance between split_begin and split_end.  Used only when there is a split_beat.
   int slide;     // 1 if this sequence slides into the next (binaurals and chronaurals slide)
   int inc1, off1;               // for chronaural tones, offset + increment into sine table for carrier of left channel
   int inc3, off3;               // for chronaural tones, offset + increment into sine table for carrier of right channel
@@ -4193,26 +4194,38 @@ finish_beat_voice_setup ()
             {
               double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
               chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+              while (fabs (chronaural1->split_begin - chronaural1->split_end) == 0.0)
+              {  // difference equal to zero?  Repeat until larger.  
+                delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+              }
             }
             if (chronaural1->split_beat == 0.0 && chronaural1->split_beat_adj == 0.0)
-                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
+            {
+                /* No split beat in this voice and not sliding to split beat in next voice, so pan.
+                 * The pan can go from left to right or right to left. */
+              chronaural1->split_dist = 0.0;  // set split distance to zero, not used to generate frames for pan
               chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                                               / (double) snd1->tot_frames);  // adjust per frame
-            else  // is split beat
+            }
+            else  // is split beat, split_begin and split_end are constant for duration of voice node
             {
               if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
               {
                 double split_hold = chronaural1->split_begin;  // swap begin and end
                 chronaural1->split_begin = chronaural1->split_end;
                 chronaural1->split_end = split_hold;
+                chronaural1->split_now = chronaural1->split_begin; // set working split to the new begin
               }
+              /* set split distance to the difference */
+              chronaural1->split_dist = chronaural1->split_end - chronaural1->split_begin;
               double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
                 /* adjust to do that cycle, sign oscillates in generate_frames 
                  * Note that split_adj is being used differently than above, 
                  * There it is the adjustment to reach the end split over the course of the voice period.
                  * Here it is the adjustment so that the split oscillates between split_begin and split_end
                  * at the split_beat rate.  This works because the two are mutually exclusive. */
-              chronaural1->split_adj = ((2.*(chronaural1->split_end - chronaural1->split_begin)) / frames_per_cycle);  
+              chronaural1->split_adj = ((2.*(chronaural1->split_dist)) / frames_per_cycle);  
             }
             break;
           }
@@ -4386,6 +4399,46 @@ finish_beat_voice_setup ()
             double phase_diff = (chronaural2->phase - chronaural1->phase);
             double amp_diff = (chronaural2->amp - chronaural1->amp);
             double split_beat_diff = (chronaural2->split_beat - chronaural1->split_beat);
+            int user_set_splits;  // Are the begin and end splits random or fixed?
+            if (chronaural1->split_begin == -1.0 || chronaural1->split_end == -1.0)
+            {  // split start random or split end random
+              user_set_splits = 0;  // even if only 1 is random, treat as random for setup purposes
+            }
+            else  // both begin and end split are user specified
+            {
+              user_set_splits = 1;  // both begin and end splits specified by the user
+              if (split_beat_diff != 0 || chronaural1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {
+                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  chronaural1->split_begin = chronaural1->split_end;
+                  chronaural1->split_end = split_hold;
+                }
+                /* Set split distance to the difference.  Not used for generating frames for pan, only split beat */
+                chronaural1->split_dist = chronaural1->split_end - chronaural1->split_begin;  
+                double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than for pan, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                chronaural1->split_adj = ((2.*(chronaural1->split_dist)) / frames_per_cycle);  
+                chronaural1->split_now = chronaural1->split_begin;      // set working split to begin at
+              }
+              else  // there is a pan
+              {
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan 
+                   * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
+                   * end of list.
+                   */
+                chronaural1->split_dist = 0.0;
+                chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) / (double) snd1->tot_frames);
+                /* Set the ending split */
+                chronaural1->split_end = chronaural1->split_begin + (chronaural1->tot_frames * chronaural1->split_adj);
+              }
+            }
+            /*  These are used to transfer the values at the end of a slide to the next step */
             double next_carrier = 0.0;
             double next_beat = 0.0;
             double next_phase = 0.0;
@@ -4410,6 +4463,7 @@ finish_beat_voice_setup ()
                   next_beat = chronaural2->beat;
                   next_phase = chronaural2->phase;
                   next_amp = chronaural2->amp;
+                  next_split_beat = chronaural2->split_beat;
                   chronaural3->step_next = NULL;  // last node, no next node
                 }
                 else  // internal slide
@@ -4449,97 +4503,199 @@ finish_beat_voice_setup ()
                 chronaural3->split_beat = next_split_beat;
                 chronaural3->split_beat_adj = 0.0;  //steps are constant
               }
-                /* Set up the split logic here as it applies throughout the voice period.
+                /* Set up the random split logic here, the case where begin and end split specified
+                 * taken care of above and housekeeping done for pan here.
                  * Use chronaural1 to determine branching as it won't be changed until list is complete.
-                   Don't need to worry about overwriting begin and end splits as they are only used once
-                   Same logic for slides and steps */
-              if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                 * Don't need to worry about overwriting begin and end splits as they are only used once
+                 * Works like this:  
+                 * If fixed begin split and end split with no split beat, pan occurs across all steps and 
+                 * slides at a constant rate.  This was handled above.
+                 * If fixed begin and end with split beat, the same begin and end are used for all nodes.
+                 * This was handled above
+                 * If random begin and/or end, then pan is a chain that runs through each voice node so
+                 * that end in one node is begin in the next until the last.  Handled below.
+                 * If it is random with a split beat, the begin and end are set anew in each node.  Handled below.
+                 * Same logic for slides and steps
+                 */
+              if (! user_set_splits)  // at least one random split
               {
-                if (chronaural4 != chronaural1)  // previous node not first node in chain
-                  chronaural3->split_begin = chronaural4->split_end; // begin split is previous node end split
-                else  // first node after start of chain
-                {  /* begin split is random and will become first nodes end split below */
-                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                  chronaural3->split_begin = chronaural1->split_low + delta;
-                }
-              }
-              chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
-              if (chronaural1->split_end == -1.0)  // chronaural split end random
-              {
-                if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
-                {
-                  if (chronaural2->split_begin == -1.0)  //random
+                if (split_beat_diff != 0 || chronaural1->split_beat > 0.0)  // there is a split beat or slide to split beat
+                {  /* Since split_begin and split_end don't change if there is a split
+                    * beat, check if they are random and set them now.  If it is constant
+                    * it has already been set by the memcpy above.
+                    */
+                  if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                  {
+                     /* begin split is random */
+                    double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural3->split_begin = chronaural1->split_low + delta;
+                  }
+                  if (chronaural1->split_end == -1.0)  // chronaural split end random
                   {
                     double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
                     chronaural3->split_end = chronaural1->split_low + delta; // end split for this chronaural
-                    chronaural2->split_begin = chronaural3->split_end;  // set this as begin split for next voice
+                    while (fabs (chronaural3->split_begin - chronaural3->split_end) == 0.0)
+                    {  // difference equal to zero?  Repeat until larger.  
+                      delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                      chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                    }
                   }
-                  else  // fixed split in next voice
-                    chronaural3->split_end = chronaural2->split_begin; // ending split is next voice begin split
+                  if (chronaural3->split_end < chronaural3->split_begin)  // end always larger for split beat, swap if not
+                  {
+                    double split_hold = chronaural3->split_begin;  // swap begin and end
+                    chronaural3->split_begin = chronaural3->split_end;
+                    chronaural3->split_end = split_hold;
+                  }
+                  chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
+                  /* set split distance to the difference */
+                  chronaural3->split_dist = chronaural3->split_end - chronaural3->split_begin;
+                  /* frames in a back and forth cycle */
+                  double frames_per_cycle = ((double) out_rate / chronaural3->split_beat);
+                    /* adjust to do that cycle, sign oscillates in generate_frames 
+                     * Note that split_adj is being used differently than above, 
+                     * There it is the adjustment to reach the end split over the course of the voice period.
+                     * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                     * at the split_beat rate.  This works because the two are mutually exclusive. */
+                  chronaural3->split_adj = ((2.*(chronaural3->split_dist)) / frames_per_cycle);  
                 }
-                else  // internal 
+                else
                 {
-                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                  chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                  /* If it is a pan and split_begin or split_end are random, 
+                   * change them for each voice node.
+                   * If they aren't random, they are already set by the memcpy above.
+                   */
+                  if (chronaural1->split_begin == -1.0)  // chronaural split start random for pan
+                  {
+                    if (chronaural4 != chronaural1 && chronaural1->split_end == -1.0)  
+                        // previous node not first node in chain, chronaural1 not set till end, both begin and end random
+                      chronaural3->split_begin = chronaural4->split_end; // begin split is previous node end split
+                    else  // first node after start of chain
+                    {  /* begin split is random and will become first nodes end split below for pans */
+                      double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                      chronaural3->split_begin = chronaural1->split_low + delta;
+                    }
+                  }
+                  chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
+                  if (chronaural1->split_end == -1.0)  // chronaural split end random for pan
+                  {
+                    if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
+                    {
+                      if (chronaural2->split_begin == -1.0)  //random
+                      {
+                        double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                        chronaural3->split_end = chronaural1->split_low + delta; // end split for this chronaural
+                        chronaural2->split_begin = chronaural3->split_end;  // set this as begin split for next voice
+                      }
+                      else  // fixed split in next voice
+                        chronaural3->split_end = chronaural2->split_begin; // ending split is next voice begin split
+                    }
+                    else  // internal 
+                    {
+                      double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                      chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                    }
+                  }
+                  chronaural3->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                    /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                  chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
+                                                          / (double) chronaural3->tot_frames);  // adjust per frame
                 }
               }
-              if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
-                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
-                chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
-                                                        / (double) chronaural3->tot_frames);  // adjust per frame
-              else
-              {
-                if (chronaural3->split_end < chronaural3->split_begin)  // end always larger for split beat, swap if not
-                {
-                  double split_hold = chronaural3->split_begin;  // swap begin and end
-                  chronaural3->split_begin = chronaural3->split_end;
-                  chronaural3->split_end = split_hold;
-                }
-                double frames_per_cycle = ((double) out_rate / chronaural3->split_beat);  // frames in a back and forth cycle
-                  /* adjust to do that cycle, sign oscillates in generate_frames 
-                   * Note that split_adj is being used differently than above, 
-                   * There it is the adjustment to reach the end split over the course of the voice period.
-                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
-                   * at the split_beat rate.  This works because the two are mutually exclusive. */
-                chronaural3->split_adj = ((2.*(chronaural3->split_end - chronaural3->split_begin)) / frames_per_cycle);  
+              /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+              else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+              {  // there is no split beat or slide to split beat
+                chronaural3->split_begin =  chronaural4->split_end + chronaural4->split_adj;  // starting split for this node
+                /* ending split */
+                chronaural3->split_end =  chronaural3->split_begin + (chronaural3->tot_frames * chronaural3->split_adj);
+                /* set working split to beginning split so adjust takes to end */
+                chronaural3->split_now = chronaural3->split_begin;
               }
-              chronaural4->step_next = chronaural3;  // set list pointer for previous node
-              chronaural3->last_off1 = &(chronaural4->off1);  // each node starts where last left off as offset
-              chronaural3->last_off3 = &(chronaural4->off3);  // each node starts where last left off as offset
+              /* set list pointer of previous node for next node in list to current node */
+              chronaural4->step_next = chronaural3;
+              /* each node starts where last left off as offset into sin table */
+              chronaural3->last_off1 = &(chronaural4->off1);
+              chronaural3->last_off3 = &(chronaural4->off3);
               chronaural3->last_off2 = &(chronaural4->off2);
               chronaural4 = chronaural3;  // make current node previous node
             }
               /* Now set up the split logic for chronaural1 as it applies throughout the voice period.
                  Don't need to worry about overwriting begin and end splits as they are only used once
-                 and the rest of the step slide list is done */
-            if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                 and the rest of the step slide list is done now so we don't need them as flags */
+            if (! user_set_splits)  // at least one random split
             {
-              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-              chronaural1->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
-            }
-            chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
-            if (chronaural1->split_end == -1.0)  // chronaural split end random
-                /* end split for this chronaural is begin split from next chronaural in chain set above */
-              chronaural1->split_end = chronaural1->step_next->split_begin;
-            if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
-                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
-              chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
-                                        / (double) chronaural1->tot_frames);  // adjust per frame
-            else  // split beat
-            {
-              if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
-              {
-                double split_hold = chronaural1->split_begin;  // swap begin and end
-                chronaural1->split_begin = chronaural1->split_end;
-                chronaural1->split_end = split_hold;
+              if (split_beat_diff != 0 || chronaural1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {  /* Since split_begin and split_end don't change if there is a split
+                  * beat, check if they are random and set them now.  If it is constant
+                  * it has already been set by the setup above.
+                  */
+                if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                {
+                   /* begin split is random */
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_begin = chronaural1->split_low + delta;
+                }
+                if (chronaural1->split_end == -1.0)  // chronaural split end random
+                {
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_end = chronaural1->split_low + delta; // end split for this chronaural
+                  while (fabs (chronaural1->split_begin - chronaural1->split_end) == 0.0)
+                  {  // difference equal to zero?  Repeat until larger.  
+                    delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                  }
+                }
+                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  chronaural1->split_begin = chronaural1->split_end;
+                  chronaural1->split_end = split_hold;
+                }
+                chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+                /* set split distance to the difference */
+                chronaural1->split_dist = chronaural1->split_end - chronaural1->split_begin;
+                double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than for pan, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                chronaural1->split_adj = ((2.*(chronaural1->split_dist)) / frames_per_cycle);  
               }
-              double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-                /* adjust to do the cycle, sign oscillates in generate_frames 
-                 * Note that split_adj is being used differently than above, 
-                 * There it is the adjustment to reach the end split over the course of the voice period.
-                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
-                 * at the split_beat rate.  This works because the two are mutually exclusive. */
-              chronaural1->split_adj = (2. * (chronaural1->split_end - chronaural1->split_begin) / frames_per_cycle);  
+              else
+              {
+                /* If it is a pan and split_begin or split_end are random, 
+                 * change them for each voice node.
+                 * If they aren't random, they are already set by the memcpy above.
+                 */
+                if (chronaural1->split_end == -1.0)  // chronaural split end random for pan
+                {
+                  if (chronaural1->split_begin == -1.0)  // if both random, set end to next step node begin 
+                    chronaural1->split_end = (chronaural1->step_next)->split_begin;
+                  else
+                  { /* begin split is fixed  */
+                    double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                  }
+                }
+                if (chronaural1->split_begin == -1.0)  // chronaural split start random for pan
+                {
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_begin = chronaural1->split_low + delta;
+                }
+                chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+                chronaural1->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
+                                                        / (double) chronaural1->tot_frames);  // adjust per frame
+              }
+            }
+            /* have to take care of pan across nodes here, so that each node starts at end of previous.  */
+            else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+            { /* there is no split beat or slide to split beat */
+              /* split_begin and split_end already set above, no need to modify here 
+               * set working split to beginning split so adjust takes to end
+               */
+              chronaural1->split_now = chronaural1->split_begin;
             }
             break;
           }
@@ -4701,6 +4857,46 @@ finish_beat_voice_setup ()
             double phase_diff = (chronaural2->phase - chronaural1->phase);
             double amp_diff = (chronaural2->amp - chronaural1->amp);
             double split_beat_diff = (chronaural2->split_beat - chronaural1->split_beat);
+            int user_set_splits;  // Are the begin and end splits random or fixed?
+            if (chronaural1->split_begin == -1.0 || chronaural1->split_end == -1.0)
+            {    // split start random or split end random
+              user_set_splits = 0;  // even if only 1 is random, treat as random for setup purposes
+            }
+            else  // both begin and end split are user specified
+            {
+              user_set_splits = 1;  // both begin and end splits specified by the user
+              if (split_beat_diff != 0.0 || chronaural1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {
+                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  chronaural1->split_begin = chronaural1->split_end;
+                  chronaural1->split_end = split_hold;
+                }
+                /* Set split distance to the difference.  Not used for generating frames for pan, only split beat */
+                chronaural1->split_dist = chronaural1->split_end - chronaural1->split_begin;  
+                double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than for pan, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                chronaural1->split_adj = ((2.*(chronaural1->split_dist)) / frames_per_cycle);  
+                chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+              }
+              else  // there is a pan
+              {
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan 
+                   * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
+                   * end of list.
+                   */
+                chronaural1->split_dist = 0.0;
+                chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) / (double) snd1->tot_frames);
+                /* ending split */
+                chronaural1->split_end = chronaural1->split_begin + (chronaural1->tot_frames * chronaural1->split_adj);
+              }
+            }
+            /*  These are used to transfer the values at the end of a slide to the next step */
             double next_carrier = 0.0;
             double next_beat = 0.0;
             double next_phase = 0.0;
@@ -4725,6 +4921,7 @@ finish_beat_voice_setup ()
                   next_beat = chronaural2->beat;
                   next_phase = chronaural2->phase;
                   next_amp = chronaural2->amp;
+                  next_split_beat = chronaural2->split_beat;
                   chronaural3->step_next = NULL;  // last node, no next node
                 }
                 else  // internal slide
@@ -4756,97 +4953,190 @@ finish_beat_voice_setup ()
                 chronaural3->split_beat = next_split_beat;
                 chronaural3->split_beat_adj = 0.0;  //steps are constant
               }
-                /* Set up the split logic here as it applies throughout the voice period for both slide and step.
+                /* Set up the random split logic here, the case where begin and end split specified
+                 * taken care of above and housekeeping done for pan here.
                  * Use chronaural1 to determine branching as it won't be changed until list is complete.
-                   Don't need to worry about overwriting begin and end splits as they are only used once
-                   Same logic for slides and steps */
-              if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                 * Don't need to worry about overwriting begin and end splits as they are only used once
+                 * Works like this:  
+                 * If fixed begin split and end split with no split beat, pan occurs across all steps and 
+                 * slides at a constant rate.  This was handled above.
+                 * If fixed begin and end with split beat, the same begin and end are used for all nodes.
+                 * This was handled above
+                 * If random begin and/or end, then pan is a chain that runs through each voice node so
+                 * that end in one node is begin in the next until the last.  Handled below.
+                 * If it is random with a split beat, the begin and end are set anew in each node.  Handled below.
+                 * Same logic for slides and steps
+                 */
+              if (! user_set_splits)  // at least one random split
               {
-                if (chronaural4 != chronaural1)  // previous node not first node in chain
-                  chronaural3->split_begin = chronaural4->split_end; // begin split is previous node end split
-                else  // first node after start of chain
-                {  /* begin split is random and will become first nodes end split below */
-                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                  chronaural3->split_begin = chronaural1->split_low + delta;
-                }
-              }
-              chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
-              if (chronaural1->split_end == -1.0)  // chronaural split end random
-              {
-                if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
-                {
-                  if (chronaural2->split_begin == -1.0)  //random
+                if (split_beat_diff != 0 || chronaural1->split_beat > 0.0)  // there is a split beat or slide to split beat
+                {  /* Since split_begin and split_end don't change if there is a split
+                    * beat, check if they are random and set them now.  If it is constant
+                    * it has already been set by the memcpy above.
+                    */
+                  if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                  {
+                     /* begin split is random */
+                    double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural3->split_begin = chronaural1->split_low + delta;
+                  }
+                  if (chronaural1->split_end == -1.0)  // chronaural split end random
                   {
                     double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
                     chronaural3->split_end = chronaural1->split_low + delta; // end split for this chronaural
-                    chronaural2->split_begin = chronaural3->split_end;  // set this as begin split for next voice
+                    while (fabs (chronaural3->split_begin - chronaural3->split_end) == 0.0)
+                    {  // difference equal to zero?  Repeat until larger.  
+                      delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                      chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                    }
                   }
-                  else  // fixed split in next voice
-                    chronaural3->split_end = chronaural2->split_begin; // ending split is next voice begin split
+                  if (chronaural3->split_end < chronaural3->split_begin)  // end always larger for split beat, swap if not
+                  {
+                    double split_hold = chronaural3->split_begin;  // swap begin and end
+                    chronaural3->split_begin = chronaural3->split_end;
+                    chronaural3->split_end = split_hold;
+                  }
+                  chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
+                  /* set split distance to the difference */
+                  chronaural3->split_dist = chronaural3->split_end - chronaural3->split_begin;
+                  /* frames in a back and forth cycle */
+                  double frames_per_cycle = ((double) out_rate / chronaural3->split_beat);
+                    /* adjust to do that cycle, sign oscillates in generate_frames 
+                     * Note that split_adj is being used differently than for pan.
+                     * There it is the adjustment to reach the end split over the course of the voice period.
+                     * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                     * at the split_beat rate.  This works because the two are mutually exclusive. */
+                  chronaural3->split_adj = ((2.*(chronaural3->split_dist)) / frames_per_cycle);  
                 }
-                else  // internal 
+                else
                 {
-                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-                  chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                  /* If it is a pan and split_begin or split_end are random, 
+                   * change them for each voice node.
+                   * If they aren't random, they are already set by the memcpy above.
+                   */
+                  if (chronaural1->split_begin == -1.0)  // chronaural split start random for pan
+                  {
+                     /* begin split is random */
+                    double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural3->split_begin = chronaural1->split_low + delta;
+                  }
+                  chronaural3->split_now = chronaural3->split_begin;      // set working split to begin
+                  if (chronaural1->split_end == -1.0)  // chronaural split end random for pan
+                  {
+                    if (ii == total_nodes - 1)  // last slide, to next time sequence voice chronaural2
+                    {
+                      if (chronaural2->split_begin == -1.0)  //random
+                      {
+                        double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                        chronaural3->split_end = chronaural1->split_low + delta; // end split for this chronaural
+                        chronaural2->split_begin = chronaural3->split_end;  // set this as begin split for next voice
+                      }
+                      else  // fixed split in next voice
+                        chronaural3->split_end = chronaural2->split_begin; // ending split is next voice begin split
+                    }
+                    else  // internal 
+                    {
+                      double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                      chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                    }
+                  }
+                  chronaural3->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                    /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                  chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
+                                                          / (double) chronaural3->tot_frames);  // adjust per frame
                 }
               }
-              if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
-                  /* no split beat in this voice and not sliding to split beat in next voice, so pan */
-                chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
-                                                        / (double) chronaural3->tot_frames);  // adjust per frame
-              else
-              {
-                if (chronaural3->split_end < chronaural3->split_begin)  // end always larger for split beat, swap if not
-                {
-                  double split_hold = chronaural3->split_begin;  // swap begin and end
-                  chronaural3->split_begin = chronaural3->split_end;
-                  chronaural3->split_end = split_hold;
-                }
-                double frames_per_cycle = ((double) out_rate / chronaural3->split_beat);  // frames in a back and forth cycle
-                  /* adjust to do that cycle, sign oscillates in generate_frames 
-                   * Note that split_adj is being used differently than above, 
-                   * There it is the adjustment to reach the end split over the course of the voice period.
-                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
-                   * at the split_beat rate.  This works because the two are mutually exclusive. */
-                chronaural3->split_adj = ((2.*(chronaural3->split_end - chronaural3->split_begin)) / frames_per_cycle);  
+              /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+              else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+              {// there is no split beat or slide to split beat
+                chronaural3->split_begin =  chronaural4->split_end + chronaural4->split_adj;  // starting split for this node
+                /* determine the ending split */
+                chronaural3->split_end =  chronaural3->split_begin + (chronaural3->tot_frames * chronaural3->split_adj);
+                /* set working split to beginning split so adjust takes to end */
+                chronaural3->split_now = chronaural3->split_begin;
               }
-              chronaural4->step_next = chronaural3;  // set list pointer for previous node
-              chronaural3->last_off1 = &(chronaural4->off1);  // each node starts where last left off as offset
-              chronaural3->last_off3 = &(chronaural4->off3);  // each node starts where last left off as offset
+              /* set list pointer of previous node for next node in list to current node */
+              chronaural4->step_next = chronaural3;
+              /* each node starts where last left off as offset into sin table */
+              chronaural3->last_off1 = &(chronaural4->off1);
+              chronaural3->last_off3 = &(chronaural4->off3);
               chronaural3->last_off2 = &(chronaural4->off2);
               chronaural4 = chronaural3;  // make current node previous node
             }
               /* Now set up the split logic for chronaural1 as it applies throughout the voice period.
                  Don't need to worry about overwriting begin and end splits as they are only used once
                  and the rest of the step slide list is done */
-            if (chronaural1->split_begin == -1.0)  // chronaural split start random
+            if (! user_set_splits)  // at least one random split
             {
-              double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
-              chronaural1->split_begin = chronaural1->split_low + delta;      // starting split for chronaural
-            }
-            chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
-            if (chronaural1->split_end == -1.0)  // chronaural split end random
-                /* end split for this chronaural is begin split from next chronaural in chain set above */
-              chronaural1->split_end = chronaural1->step_next->split_begin;
-            if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
-                /* no split beat in this voice and not sliding to split beat in next voice, so pan */
-              chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
-                                        / (double) chronaural1->tot_frames);  // adjust per frame
-            else  // split beat
-            {
-              if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
-              {
-                double split_hold = chronaural1->split_begin;  // swap begin and end
-                chronaural1->split_begin = chronaural1->split_end;
-                chronaural1->split_end = split_hold;
+              if (split_beat_diff != 0 || chronaural1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {  /* Since split_begin and split_end don't change if there is a split
+                  * beat, check if they are random and set them now.  If it is constant
+                  * it has already been set by the setup above.
+                  */
+                if (chronaural1->split_begin == -1.0)  // chronaural split start random
+                {
+                   /* begin split is random */
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_begin = chronaural1->split_low + delta;
+                }
+                if (chronaural1->split_end == -1.0)  // chronaural split end random
+                {
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_end = chronaural1->split_low + delta; // end split for this chronaural
+                  while (fabs (chronaural1->split_begin - chronaural1->split_end) == 0.0)
+                  {  // difference equal to zero?  Repeat until larger.  
+                    delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                    chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                  }
+                }
+                if (chronaural1->split_end < chronaural1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = chronaural1->split_begin;  // swap begin and end
+                  chronaural1->split_begin = chronaural1->split_end;
+                  chronaural1->split_end = split_hold;
+                }
+                chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+                /* set split distance to the difference */
+                chronaural1->split_dist = chronaural1->split_end - chronaural1->split_begin;
+                /* frames in a back and forth cycle */
+                double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than above, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                chronaural1->split_adj = ((2.*(chronaural1->split_dist)) / frames_per_cycle);  
               }
-              double frames_per_cycle = ((double) out_rate / chronaural1->split_beat);  // frames in a back and forth cycle
-                /* adjust to do the cycle, sign oscillates in generate_frames 
-                 * Note that split_adj is being used differently than above, 
-                 * There it is the adjustment to reach the end split over the course of the voice period.
-                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
-                 * at the split_beat rate.  This works because the two are mutually exclusive. */
-              chronaural1->split_adj = (2. * (chronaural1->split_end - chronaural1->split_begin) / frames_per_cycle);  
+              else
+              {
+                /* If it is a pan and split_begin or split_end are random, 
+                 * change them for each voice node.
+                 * If they aren't random, they are already set by the memcpy above.
+                 */
+                if (chronaural1->split_begin == -1.0)  // chronaural split start random for pan
+                {
+                  /* begin split is random and will become first nodes end split below for pans */
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_begin = chronaural1->split_low + delta;
+                }
+                if (chronaural1->split_end == -1.0)  // chronaural split end random for pan
+                {
+                  double delta = ( (drand48 ()) * (chronaural1->split_high - chronaural1->split_low));
+                  chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
+                }
+                chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
+                chronaural1->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
+                                                        / (double) chronaural1->tot_frames);  // adjust per frame
+              }
+            }
+            /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+            else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
+            {  // there is no split beat or slide to split beat
+              /* split_begin and split_end already set above, no need to modify here */
+              /* set working split to beginning split so adjust takes to end */
+              chronaural1->split_now = chronaural1->split_begin;
             }
             break;
           }
