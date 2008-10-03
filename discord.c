@@ -448,6 +448,7 @@ struct chronaural
   int off2;               // offset into sine table for beat
   double inc2;            // increment of offset into sine table for beat
   double carr_adj, beat_adj, amp_adj, phase_adj;   // continuous adjustment if desired
+  double sin_threshold_adj;   // continuous adjustment if desired
   double split_beat_adj, split_adj;   // continuous adjustment if desired
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
         starting offset for this voice.  Store a pointer to it during setup.
@@ -4163,14 +4164,19 @@ finish_beat_voice_setup ()
                 chronaural2->last_off3 = &(chronaural1->off3);
                 chronaural2->last_off2 = &(chronaural1->off2);
                 if (chronaural1->slide == 0)
-                  (chronaural1->carr_adj = chronaural1->beat_adj = chronaural1->phase_adj
-                                      = chronaural1->amp_adj = chronaural1->split_beat_adj = 0.0);
+                {
+                  chronaural1->carr_adj = chronaural1->beat_adj = chronaural1->phase_adj = 0.0;
+                  chronaural1->amp_adj = chronaural1->split_beat_adj = 0.0;
+                  chronaural1->sin_threshold_adj = 0.0;
+                }
                 else  // slide to next chronaural in stream
                 {
                   chronaural1->carr_adj = (chronaural2->carrier - chronaural1->carrier)/ (double) snd1->tot_frames;
                   chronaural1->beat_adj = (chronaural2->beat - chronaural1->beat)/ (double) snd1->tot_frames;
                   chronaural1->phase_adj = (chronaural2->phase - chronaural1->phase)/ (double) snd1->tot_frames;
                   chronaural1->amp_adj = (chronaural2->amp - chronaural1->amp)/ (double) snd1->tot_frames;
+                  chronaural1->sin_threshold_adj = (chronaural2->sin_threshold - chronaural1->sin_threshold)
+                                                                                / (double) snd1->tot_frames;
                   chronaural1->split_beat_adj = (chronaural2->split_beat - chronaural1->split_beat) 
                                                                                             / (double) snd1->tot_frames;
                 }
@@ -4374,6 +4380,7 @@ finish_beat_voice_setup ()
             chronaural1->inc2 = 0.0;
              /* First step is always the input frequency, so no adjust. */
             chronaural1->carr_adj = chronaural1->beat_adj = chronaural1->phase_adj = chronaural1->amp_adj = 0.0;
+            chronaural1->sin_threshold_adj = 0.0;
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
@@ -4398,6 +4405,7 @@ finish_beat_voice_setup ()
             double beat_diff = (chronaural2->beat - chronaural1->beat);
             double phase_diff = (chronaural2->phase - chronaural1->phase);
             double amp_diff = (chronaural2->amp - chronaural1->amp);
+            double sin_threshold_diff = (chronaural2->sin_threshold - chronaural1->sin_threshold);
             double split_beat_diff = (chronaural2->split_beat - chronaural1->split_beat);
             int user_set_splits;  // Are the begin and end splits random or fixed?
             if (chronaural1->split_begin == -1.0 || chronaural1->split_end == -1.0)
@@ -4443,6 +4451,7 @@ finish_beat_voice_setup ()
             double next_beat = 0.0;
             double next_phase = 0.0;
             double next_amp = 0.0;
+            double next_sin_threshold = 0.0;
             double next_split_beat = 0.0;
             chronaural4 = chronaural1;  // set last node processed
             int total_nodes = (2 * chronaural1->steps);
@@ -4463,6 +4472,7 @@ finish_beat_voice_setup ()
                   next_beat = chronaural2->beat;
                   next_phase = chronaural2->phase;
                   next_amp = chronaural2->amp;
+                  next_sin_threshold = chronaural2->sin_threshold;
                   next_split_beat = chronaural2->split_beat;
                   chronaural3->step_next = NULL;  // last node, no next node
                 }
@@ -4473,6 +4483,7 @@ finish_beat_voice_setup ()
                   next_beat = chronaural1->beat + (beat_diff * fraction);
                   next_phase = chronaural1->phase + (phase_diff * fraction);
                   next_amp = chronaural1->amp + (amp_diff * fraction);
+                  next_sin_threshold = chronaural1->sin_threshold + (sin_threshold_diff * fraction);
                   next_split_beat = chronaural1->split_beat + (split_beat_diff * fraction);
                   if (chronaural1->fuzz > 0.0)  // fuzz the interval
                   {
@@ -4481,12 +4492,14 @@ finish_beat_voice_setup ()
                     next_beat += ((beat_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
                     next_phase += ((phase_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
                     next_amp += ((amp_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
+                    next_sin_threshold += ((sin_threshold_diff/chronaural1->steps) * chronaural1->fuzz * adjust);
                   }
                 }
                 chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
                 chronaural3->beat_adj = (next_beat - chronaural4->beat)/ chronaural3->tot_frames;
                 chronaural3->phase_adj = (next_phase - chronaural4->phase)/ chronaural3->tot_frames;
                 chronaural3->amp_adj = (next_amp - chronaural4->amp)/ chronaural3->tot_frames;
+                chronaural3->sin_threshold_adj = (next_sin_threshold - chronaural4->sin_threshold)/ chronaural3->tot_frames;
                    /* change split beat only in slides */
                 chronaural3->split_beat_adj = (next_split_beat - chronaural4->split_beat)/ chronaural3->tot_frames;
               } 
@@ -4500,6 +4513,7 @@ finish_beat_voice_setup ()
                 chronaural3->beat = next_beat;
                 chronaural3->phase = next_phase;
                 chronaural3->amp = next_amp;
+                chronaural3->sin_threshold = next_sin_threshold;
                 chronaural3->split_beat = next_split_beat;
                 chronaural3->split_beat_adj = 0.0;  //steps are constant
               }
@@ -4832,6 +4846,7 @@ finish_beat_voice_setup ()
             chronaural1->inc2 = 0.0;
              /* First step is always the input frequency, so no adjust. */
             chronaural1->carr_adj = chronaural1->beat_adj = chronaural1->phase_adj = chronaural1->amp_adj = 0.0;
+            chronaural1->sin_threshold_adj = 0.0;
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
@@ -4856,6 +4871,7 @@ finish_beat_voice_setup ()
             double beat_diff = (chronaural2->beat - chronaural1->beat);
             double phase_diff = (chronaural2->phase - chronaural1->phase);
             double amp_diff = (chronaural2->amp - chronaural1->amp);
+            double sin_threshold_diff = (chronaural2->sin_threshold - chronaural1->sin_threshold);
             double split_beat_diff = (chronaural2->split_beat - chronaural1->split_beat);
             int user_set_splits;  // Are the begin and end splits random or fixed?
             if (chronaural1->split_begin == -1.0 || chronaural1->split_end == -1.0)
@@ -4901,6 +4917,7 @@ finish_beat_voice_setup ()
             double next_beat = 0.0;
             double next_phase = 0.0;
             double next_amp = 0.0;
+            double next_sin_threshold = 0.0;
             double next_split_beat = 0.0;
             chronaural4 = chronaural1;  // set last node processed
             int total_nodes = (2 * chronaural1->steps);
@@ -4921,6 +4938,7 @@ finish_beat_voice_setup ()
                   next_beat = chronaural2->beat;
                   next_phase = chronaural2->phase;
                   next_amp = chronaural2->amp;
+                  next_sin_threshold = chronaural2->sin_threshold;
                   next_split_beat = chronaural2->split_beat;
                   chronaural3->step_next = NULL;  // last node, no next node
                 }
@@ -4935,12 +4953,15 @@ finish_beat_voice_setup ()
                   fraction = drand48 ();  // random fraction of interval
                   next_amp = chronaural1->amp + (amp_diff * fraction);
                   fraction = drand48 ();  // random fraction of interval
+                  next_sin_threshold = chronaural1->sin_threshold + (sin_threshold_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_split_beat = chronaural1->split_beat + (split_beat_diff * fraction);
                 }
                 chronaural3->carr_adj = (next_carrier - chronaural4->carrier)/ chronaural3->tot_frames;
                 chronaural3->beat_adj = (next_beat - chronaural4->beat)/ chronaural3->tot_frames;
                 chronaural3->phase_adj = (next_phase - chronaural4->phase)/ chronaural3->tot_frames;
                 chronaural3->amp_adj = (next_amp - chronaural4->amp)/ chronaural3->tot_frames;
+                chronaural3->sin_threshold_adj = (next_sin_threshold - chronaural4->sin_threshold)/ chronaural3->tot_frames;
                    /* change split beat only in slides */
                 chronaural3->split_beat_adj = (next_split_beat - chronaural4->split_beat)/ chronaural3->tot_frames;
               } 
@@ -4954,6 +4975,7 @@ finish_beat_voice_setup ()
                 chronaural3->beat = next_beat;
                 chronaural3->phase = next_phase;
                 chronaural3->amp = next_amp;
+                chronaural3->sin_threshold = next_sin_threshold;
                 chronaural3->split_beat = next_split_beat;
                 chronaural3->split_beat_adj = 0.0;  //steps are constant
               }
@@ -7965,6 +7987,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             chronaural1->amp += (chronaural1->amp_adj * fast_mult);  // amplitude to sound at
             if (chronaural1->amp < 0.0)  // no negative amplitudes
               chronaural1->amp = 0.0;
+            chronaural1->sin_threshold += (chronaural1->sin_threshold_adj * fast_mult);
           }
         }
         break;
@@ -8305,6 +8328,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             chronaural1->amp += (chronaural1->amp_adj * fast_mult);  // amplitude to sound at
             if (chronaural1->amp < 0.0)  // no negative amplitudes
               chronaural1->amp = 0.0;
+            chronaural1->sin_threshold += (chronaural1->sin_threshold_adj * fast_mult);
             chronaural1->cur_frames += 1 * fast_mult;  
           }
         }
@@ -9502,8 +9526,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %d", chronaural1->inc3, chronaural1->off3);
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->beat_adj, chronaural1->amp_adj);
-        char_count += fprintf (fp, " %.3f", chronaural1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f",
+        char_count += fprintf (fp, " %.3e", chronaural1->sin_threshold_adj);
+        char_count += fprintf (fp, " %.3f\n", chronaural1->split_now );
+        char_count += fprintf (fp, "         %.3f %.3f %.3f %.3f",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
         char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
                       chronaural1->fade_sinval, chronaural1->fade_sinval2, chronaural1->fade_factor, chronaural1->fade_factor2);
@@ -9548,8 +9573,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %d", chronaural1->inc3, chronaural1->off3);
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->beat_adj, chronaural1->amp_adj);
-        char_count += fprintf (fp, " %.3f", chronaural1->split_now );
-        char_count += fprintf (fp, " %.3f %.3f\n         %.3f %.3f",
+        char_count += fprintf (fp, " %.3e", chronaural1->sin_threshold_adj);
+        char_count += fprintf (fp, " %.3f\n", chronaural1->split_now );
+        char_count += fprintf (fp, "         %.3f %.3f %.3f %.3f",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
         char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
                       chronaural1->fade_sinval, chronaural1->fade_sinval2, chronaural1->fade_factor, chronaural1->fade_factor2);
@@ -9811,6 +9837,7 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   %.3f", chronaural1->beat);
         char_count += fprintf (fp, "   %.3f", AMP_DA (chronaural1->amp * amp_comp (chronaural1->carrier)));
         char_count += fprintf (fp, "   %.3f", chronaural1->phase);
+        char_count += fprintf (fp, "   %.3f", chronaural1->sin_threshold); 
         char_count += fprintf (fp, "   %.3f", chronaural1->split_now);
         char_count += fprintf (fp, "   %.3e  %.3f\n", chronaural1->split_adj, chronaural1->split_beat); 
         break;
