@@ -7952,34 +7952,63 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             else // split beat so oscillates between begin and end
             {
-              double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
-                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
-              if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
+              if (chronaural1->split_dist != 0.0)  // protect against division by zero below
               {
-                double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
-                if (delta > split_dist) // overshoot too large, set to end
-                  chronaural1->split_now = chronaural1->split_end;
-                else // overshoot smaller than overall split, reflect from end
-                  chronaural1->split_now = chronaural1->split_end - delta;
-                chronaural1->split_adj *= -1.;  // swap direction
+                  /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+                if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
+                {
+                  double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
+                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
+                  {
+                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                    int counter = (int) floor (quotient);  // integer number of wraps
+                    delta -= (double) counter;  // remainder after wraps taken away
+                    if (counter % 2 == 0)  // even number of wraps
+                    { 
+                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                    }
+                    else  // direction stays the same
+                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
+                  }
+                  else // overshoot smaller than overall split, reflect from end
+                  {
+                    chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                    chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                  }
+                }
+                else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
+                {
+                  double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
+                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
+                  {
+                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                    int counter = (int) floor (quotient);  // integer number of wraps
+                    delta -= (double) counter;  // remainder after wraps taken away
+                    if (counter % 2 == 0)  // even number of wraps
+                    { 
+                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
+                    }
+                    else  // direction stays the same
+                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                  }
+                  else // overshoot smaller than overall split, reflect from end
+                  {
+                    chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                    chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
+                  }
+                }
               }
-              else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
-              {
-                double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
-                if (delta > split_dist) // overshoot too large, set to begin
-                  chronaural1->split_now = chronaural1->split_begin;
-                else // overshoot smaller than overall split, reflect from begin
-                  chronaural1->split_now = chronaural1->split_begin + delta;
-                chronaural1->split_adj *= -1.;  // swap direction
-              }
-              /* Adjust the split beat and split adjust.  Second difference equation. */
+              /* Adjust the split beat and split adjust. */
               chronaural1->split_beat += (chronaural1->split_beat_adj * fast_mult);
-              double sign_adjust = 1.0;  // default to positive when split_adj == 0.0
-              if (chronaural1->split_adj != 0.0)
-                sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
-              chronaural1->split_adj = fabs(chronaural1->split_adj) 
-                                            + (chronaural1->split_beat_adj * (2.* split_dist) / (double) out_rate);  
-              chronaural1->split_adj *= sign_adjust;
+              double sign_hold;  // variable to hold the current sign of the split adjustment for split beat oscillation
+              if (chronaural1->split_adj < 0.0)
+                sign_hold = -1.0;
+              else
+                sign_hold = 1.0;
+              chronaural1->split_adj = ((chronaural1->split_beat * 2. * chronaural1->split_dist) / (double) out_rate);  
+              chronaural1->split_adj *= sign_hold;
             }  
             chronaural1->carrier += (chronaural1->carr_adj * fast_mult);  // tone to sound if time
             chronaural1->beat += (chronaural1->beat_adj * fast_mult);  // beat of the amplitude
@@ -8293,34 +8322,63 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             else // split beat so oscillates between begin and end
             {
-              double split_dist = fabs (chronaural1->split_end - chronaural1->split_begin);
-                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
-              if (chronaural1->split_now > chronaural1->split_end)  // larger than end
+              if (chronaural1->split_dist != 0.0)  // protect against division by zero below
               {
-                double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
-                if (delta > split_dist) // overshoot too large, set to end
-                  chronaural1->split_now = chronaural1->split_end;
-                else // overshoot smaller than overall split, reflect from end
-                  chronaural1->split_now = chronaural1->split_end - delta;
-                chronaural1->split_adj *= -1.;  // swap direction
+                  /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+                if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
+                {
+                  double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
+                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
+                  {
+                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                    int counter = (int) floor (quotient);  // integer number of wraps
+                    delta -= (double) counter;  // remainder after wraps taken away
+                    if (counter % 2 == 0)  // even number of wraps
+                    { 
+                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                    }
+                    else  // direction stays the same
+                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
+                  }
+                  else // overshoot smaller than overall split, reflect from end
+                  {
+                    chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                    chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                  }
+                }
+                else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
+                {
+                  double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
+                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
+                  {
+                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                    int counter = (int) floor (quotient);  // integer number of wraps
+                    delta -= (double) counter;  // remainder after wraps taken away
+                    if (counter % 2 == 0)  // even number of wraps
+                    { 
+                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
+                    }
+                    else  // direction stays the same
+                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                  }
+                  else // overshoot smaller than overall split, reflect from end
+                  {
+                    chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                    chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
+                  }
+                }
               }
-              else if (chronaural1->split_now < chronaural1->split_begin)  // smaller than begin
-              {
-                double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
-                if (delta > split_dist) // overshoot too large, set to begin
-                  chronaural1->split_now = chronaural1->split_begin;
-                else // overshoot smaller than overall split, reflect from begin
-                  chronaural1->split_now = chronaural1->split_begin + delta;
-                chronaural1->split_adj *= -1.;  // swap direction
-              }
-              /* Adjust the split beat and split adjust.  Second difference equation. */
+              /* Adjust the split beat and split adjust. */
               chronaural1->split_beat += (chronaural1->split_beat_adj * fast_mult);
-              double sign_adjust = 1.0;  // default to positive when split_adj == 0.0
-              if (chronaural1->split_adj != 0.0)
-                sign_adjust = fabs(chronaural1->split_adj) / chronaural1->split_adj;
-              chronaural1->split_adj = fabs(chronaural1->split_adj) 
-                                            + ((chronaural1->split_beat_adj * (2. * split_dist)) / (double) out_rate);  
-              chronaural1->split_adj *= sign_adjust;
+              double sign_hold;  // variable to hold the current sign of the split adjustment for split beat oscillation
+              if (chronaural1->split_adj < 0.0)
+                sign_hold = -1.0;
+              else
+                sign_hold = 1.0;
+              chronaural1->split_adj = ((chronaural1->split_beat * 2. * chronaural1->split_dist) / (double) out_rate);  
+              chronaural1->split_adj *= sign_hold;
             }  
             chronaural1->carrier += (chronaural1->carr_adj * fast_mult);  // tone to sound if time
             chronaural1->beat += (chronaural1->beat_adj * fast_mult);  // beat of the amplitude
