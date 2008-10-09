@@ -4210,7 +4210,7 @@ finish_beat_voice_setup ()
             {
                 /* No split beat in this voice and not sliding to split beat in next voice, so pan.
                  * The pan can go from left to right or right to left. */
-              chronaural1->split_dist = 0.0;  // set split distance to zero, not used to generate frames for pan
+              chronaural1->split_dist = 0.0;  // set split distance to zero, used as flag for pan in generate frames
               chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                                               / (double) snd1->tot_frames);  // adjust per frame
             }
@@ -4440,7 +4440,7 @@ finish_beat_voice_setup ()
                    * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
                    * end of list.
                    */
-                chronaural1->split_dist = 0.0;
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) / (double) snd1->tot_frames);
                 /* Set the ending split */
                 chronaural1->split_end = chronaural1->split_begin + (chronaural1->tot_frames * chronaural1->split_adj);
@@ -4697,7 +4697,7 @@ finish_beat_voice_setup ()
                   chronaural1->split_begin = chronaural1->split_low + delta;
                 }
                 chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
-                chronaural1->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
                   /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                                         / (double) chronaural1->tot_frames);  // adjust per frame
@@ -4906,7 +4906,7 @@ finish_beat_voice_setup ()
                    * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
                    * end of list.
                    */
-                chronaural1->split_dist = 0.0;
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) / (double) snd1->tot_frames);
                 /* ending split */
                 chronaural1->split_end = chronaural1->split_begin + (chronaural1->tot_frames * chronaural1->split_adj);
@@ -5066,7 +5066,7 @@ finish_beat_voice_setup ()
                       chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
                     }
                   }
-                  chronaural3->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                  chronaural3->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
                     /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                   chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
                                                           / (double) chronaural3->tot_frames);  // adjust per frame
@@ -5151,7 +5151,7 @@ finish_beat_voice_setup ()
                   chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
                 }
                 chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
-                chronaural1->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
                   /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                                         / (double) chronaural1->tot_frames);  // adjust per frame
@@ -7898,41 +7898,42 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
                 amp1 = chronaural1->amp;
+              amp1 *= 2.;  // like binaural, double so each channel at amp with split
               if (chronaural1->beat_behave == 1)  // sin wave, adjust by sin value
               {
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * sinval2 * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval2 * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 2)      // square wave, full volume
               {
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval2, 5.); // quint the sin to make pseudo dirac
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 4)  // extreme dirac delta approximation
               {
                 double filter = pow(sinval2, 15.); // 15th power of the sin to make extreme pseudo dirac
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
@@ -7943,8 +7944,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             /*  Adjust split or split beat even when not playing beat */
             chronaural1->split_now += chronaural1->split_adj * fast_mult;
-            if (chronaural1->split_beat == 0.0 && chronaural1->split_beat_adj == 0.0)
-            {  // no split beat adjust, adjust split towards split_end
+            if (chronaural1->split_dist == 0.0)  // no split dist, must be pan, adjust split towards split_end
+            {
               if (chronaural1->split_now < 0.0)
                 chronaural1->split_now = 0.0;
               else if (chronaural1->split_now > 1.0)
@@ -7952,52 +7953,49 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             else // split beat so oscillates between begin and end
             {
-              if (chronaural1->split_dist != 0.0)  // protect against division by zero below
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+              if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
               {
-                  /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
-                if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
+                double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
+                if (delta > chronaural1->split_dist) // overshoot greater than split_dist
                 {
-                  double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
-                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
-                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
                     chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
                 }
-                else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
+                else // overshoot smaller than overall split, reflect from end
                 {
-                  double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
-                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
-                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                  chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                }
+              }
+              else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
+                if (delta > chronaural1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
                     chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                  chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
                 }
               }
               /* Adjust the split beat and split adjust. */
@@ -8270,39 +8268,39 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               amp1 *= 2.;  // like binaural, double so each channel at amp with split
               if (chronaural1->beat_behave == 1)  // sin wave, adjust by sin value
               {
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * sinval2 * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval2 * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 2)      // square wave, full volume
               {
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval2, 5.); // quint the sin to make pseudo dirac
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 4)  // extreme dirac delta approximation
               {
                 double filter = pow(sinval2, 15.); // 15th power of the sin to make extreme pseudo dirac
-                if (chronaural1->beat < 0.0)  // left channel no phase shift
+                if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
-                else if (chronaural1->beat > 0.0)  // right channel no phase shift
+                else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
                                                           * sin_table[chronaural1->off3]);
               }
@@ -8313,7 +8311,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             /*  Adjust split or split beat even when not playing beat */
             chronaural1->split_now += chronaural1->split_adj * fast_mult;
-            if (chronaural1->split_beat == 0.0)  // no split beat, adjust split towards split_end
+            if (chronaural1->split_dist == 0.0)  // no split dist, must be pan, adjust split towards split_end
             {
               if (chronaural1->split_now < 0.0)
                 chronaural1->split_now = 0.0;
@@ -8322,52 +8320,49 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             else // split beat so oscillates between begin and end
             {
-              if (chronaural1->split_dist != 0.0)  // protect against division by zero below
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+              if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
               {
-                  /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
-                if (chronaural1->split_now >= chronaural1->split_end)  // larger than end
+                double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
+                if (delta > chronaural1->split_dist) // overshoot greater than split_dist
                 {
-                  double delta = fabs (chronaural1->split_now - chronaural1->split_end);  // overshoot
-                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
-                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
                     chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
                 }
-                else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
+                else // overshoot smaller than overall split, reflect from end
                 {
-                  double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
-                  if (delta > chronaural1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
-                      chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                  chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                }
+              }
+              else if (chronaural1->split_now <= chronaural1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (chronaural1->split_begin - chronaural1->split_now);  // overshoot
+                if (delta > chronaural1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/chronaural1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
                     chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    chronaural1->split_now = chronaural1->split_end - delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  chronaural1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                  chronaural1->split_now = chronaural1->split_begin + delta;  // rebound amount
                 }
               }
               /* Adjust the split beat and split adjust. */
