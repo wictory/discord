@@ -4609,7 +4609,7 @@ finish_beat_voice_setup ()
                       chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
                     }
                   }
-                  chronaural3->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                  chronaural3->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                     /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                   chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
                                                           / (double) chronaural3->tot_frames);  // adjust per frame
@@ -4618,6 +4618,7 @@ finish_beat_voice_setup ()
               /* have to take care of pan across nodes here, so that each node starts at end of previous. */
               else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
               {  // there is no split beat or slide to split beat
+                chronaural3->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                 chronaural3->split_begin =  chronaural4->split_end + chronaural4->split_adj;  // starting split for this node
                 /* ending split */
                 chronaural3->split_end =  chronaural3->split_begin + (chronaural3->tot_frames * chronaural3->split_adj);
@@ -4706,6 +4707,7 @@ finish_beat_voice_setup ()
             /* have to take care of pan across nodes here, so that each node starts at end of previous.  */
             else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
             { /* there is no split beat or slide to split beat */
+              chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
               /* split_begin and split_end already set above, no need to modify here 
                * set working split to beginning split so adjust takes to end
                */
@@ -5075,6 +5077,7 @@ finish_beat_voice_setup ()
               /* have to take care of pan across nodes here, so that each node starts at end of previous. */
               else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
               {// there is no split beat or slide to split beat
+                chronaural3->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                 chronaural3->split_begin =  chronaural4->split_end + chronaural4->split_adj;  // starting split for this node
                 /* determine the ending split */
                 chronaural3->split_end =  chronaural3->split_begin + (chronaural3->tot_frames * chronaural3->split_adj);
@@ -5160,6 +5163,7 @@ finish_beat_voice_setup ()
             /* have to take care of pan across nodes here, so that each node starts at end of previous. */
             else if (split_beat_diff == 0.0 && chronaural1->split_beat == 0.0)
             {  // there is no split beat or slide to split beat
+              chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
               /* split_begin and split_end already set above, no need to modify here */
               /* set working split to beginning split so adjust takes to end */
               chronaural1->split_now = chronaural1->split_begin;
