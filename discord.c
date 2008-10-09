@@ -4440,7 +4440,7 @@ finish_beat_voice_setup ()
                    * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
                    * end of list.
                    */
-                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) / (double) snd1->tot_frames);
                 /* Set the ending split */
                 chronaural1->split_end = chronaural1->split_begin + (chronaural1->tot_frames * chronaural1->split_adj);
@@ -4697,7 +4697,7 @@ finish_beat_voice_setup ()
                   chronaural1->split_begin = chronaural1->split_low + delta;
                 }
                 chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
-                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                   /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                                         / (double) chronaural1->tot_frames);  // adjust per frame
@@ -4906,7 +4906,7 @@ finish_beat_voice_setup ()
                    * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
                    * end of list.
                    */
-                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) / (double) snd1->tot_frames);
                 /* ending split */
                 chronaural1->split_end = chronaural1->split_begin + (chronaural1->tot_frames * chronaural1->split_adj);
@@ -5066,7 +5066,7 @@ finish_beat_voice_setup ()
                       chronaural3->split_end = chronaural1->split_low + delta;      // ending split for chronaural
                     }
                   }
-                  chronaural3->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
+                  chronaural3->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                     /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                   chronaural3->split_adj = ((chronaural3->split_end - chronaural3->split_begin) 
                                                           / (double) chronaural3->tot_frames);  // adjust per frame
@@ -5151,7 +5151,7 @@ finish_beat_voice_setup ()
                   chronaural1->split_end = chronaural1->split_low + delta;      // ending split for chronaural
                 }
                 chronaural1->split_now = chronaural1->split_begin;      // set working split to begin
-                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in gnerate frames
+                chronaural1->split_dist = 0.0;  // use split_dist as flag to indicate that this is a pan in generate frames
                   /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                 chronaural1->split_adj = ((chronaural1->split_end - chronaural1->split_begin) 
                                                         / (double) chronaural1->tot_frames);  // adjust per frame
@@ -5226,7 +5226,7 @@ finish_beat_voice_setup ()
             {
                 /* No split beat in this voice and not sliding to split beat in next voice, so pan.
                  * The pan can go from left to right or right to left. */
-              pulse1->split_dist = 0.0;  // set split distance to zero, not used to generate frames for pan
+              pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
               pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) 
                                                               / (double) snd1->tot_frames);  // adjust per frame
             }
@@ -5318,7 +5318,7 @@ finish_beat_voice_setup ()
                    * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
                    * end of list.
                    */
-                pulse1->split_dist = 0.0;
+                pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                 pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) / (double) snd1->tot_frames);
                 pulse1->split_end = pulse1->split_begin + (pulse1->tot_frames * pulse1->split_adj);  // ending split
               }
@@ -5485,7 +5485,7 @@ finish_beat_voice_setup ()
                       pulse3->split_end = pulse1->split_low + delta;      // ending split for pulse
                     }
                   }
-                  pulse3->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                  pulse3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                     /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                   pulse3->split_adj = ((pulse3->split_end - pulse3->split_begin) 
                                                           / (double) pulse3->tot_frames);  // adjust per frame
@@ -5494,6 +5494,7 @@ finish_beat_voice_setup ()
               /* have to take care of pan across nodes here, so that each node starts at end of previous. */
               else if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)  // there is no split beat or slide to split beat
               {
+                pulse3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                 pulse3->split_begin =  pulse4->split_end + pulse4->split_adj;  // starting split for this node
                 pulse3->split_end =  pulse3->split_begin + (pulse3->tot_frames * pulse3->split_adj);  // ending split
                 pulse3->split_now = pulse3->split_begin;  // set working split to beginning split so adjust takes to end
@@ -5568,7 +5569,7 @@ finish_beat_voice_setup ()
                   pulse1->split_begin = pulse1->split_low + delta;
                 }
                 pulse1->split_now = pulse1->split_begin;      // set working split to begin
-                pulse1->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                   /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                 pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) 
                                                         / (double) pulse1->tot_frames);  // adjust per frame
@@ -5577,6 +5578,7 @@ finish_beat_voice_setup ()
             /* have to take care of pan across nodes here, so that each node starts at end of previous. */
             else if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)  // there is no split beat or slide to split beat
             {
+              pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
               /* split_begin and split_end already set above, no need to modify here */
               pulse1->split_now = pulse1->split_begin;  // set working split to beginning split so adjust takes to end
             }
@@ -5650,7 +5652,7 @@ finish_beat_voice_setup ()
                    * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
                    * end of list.
                    */
-                pulse1->split_dist = 0.0;
+                pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                 pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) / (double) snd1->tot_frames);
                 pulse1->split_end = pulse1->split_begin + (pulse1->tot_frames * pulse1->split_adj);  // ending split
               }
@@ -5807,7 +5809,7 @@ finish_beat_voice_setup ()
                       pulse3->split_end = pulse1->split_low + delta;      // ending split for pulse
                     }
                   }
-                  pulse3->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                  pulse3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                     /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                   pulse3->split_adj = ((pulse3->split_end - pulse3->split_begin) 
                                                           / (double) pulse3->tot_frames);  // adjust per frame
@@ -5816,6 +5818,7 @@ finish_beat_voice_setup ()
               /* have to take care of pan across nodes here, so that each node starts at end of previous. */
               else if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)  // there is no split beat or slide to split beat
               {
+                pulse3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                 pulse3->split_begin =  pulse4->split_end + pulse4->split_adj;  // starting split for this node
                 pulse3->split_end =  pulse3->split_begin + (pulse3->tot_frames * pulse3->split_adj);  // ending split
                 pulse3->split_now = pulse3->split_begin;  // set working split to beginning split so adjust takes to end
@@ -5886,7 +5889,7 @@ finish_beat_voice_setup ()
                   pulse1->split_end = pulse1->split_low + delta;      // ending split for pulse
                 }
                 pulse1->split_now = pulse1->split_begin;      // set working split to begin
-                pulse1->split_dist = 0.0;  // set split distance to 0.0 for a pan, unused in generate frames
+                pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
                   /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
                 pulse1->split_adj = ((pulse1->split_end - pulse1->split_begin) 
                                                         / (double) pulse1->tot_frames);  // adjust per frame
@@ -5895,6 +5898,7 @@ finish_beat_voice_setup ()
             /* have to take care of pan across nodes here, so that each node starts at end of previous. */
             else if (split_beat_diff == 0.0 && pulse1->split_beat == 0.0)  // there is no split beat or slide to split beat
             {
+              pulse1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
               /* split_begin and split_end already set above, no need to modify here */
               pulse1->split_now = pulse1->split_begin;  // set working split to beginning split so adjust takes to end
             }
@@ -8513,8 +8517,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             /*  Adjust split or split beat even when not playing beat */
             pulse1->split_now += pulse1->split_adj * fast_mult;
-            if (pulse1->split_beat == 0.0 && pulse1->split_beat_adj == 0.0)
-            {  // no split beat adjust, adjust split towards split_end
+            if (pulse1->split_dist == 0.0)  // split dist set to zero during setup as flag for pan
+            {
               if (pulse1->split_now < 0.0)
                 pulse1->split_now = 0.0;
               else if (pulse1->split_now > 1.0)
@@ -8522,52 +8526,49 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             else // split beat so oscillates between begin and end, and begin and end are fixed
             {
-              if (pulse1->split_dist != 0.0)  // protect against division by zero below
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+              if (pulse1->split_now >= pulse1->split_end)  // larger than end
               {
-                  /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
-                if (pulse1->split_now >= pulse1->split_end)  // larger than end
+                double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
+                if (delta > pulse1->split_dist) // overshoot greater than split_dist
                 {
-                  double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
-                  if (delta > pulse1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
-                      pulse1->split_now = pulse1->split_end - delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
                     pulse1->split_now = pulse1->split_end - delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
                 }
-                else if (pulse1->split_now <= pulse1->split_begin)  // smaller than begin
+                else // overshoot smaller than overall split, reflect from end
                 {
-                  double delta = fabs (pulse1->split_begin - pulse1->split_now);  // overshoot
-                  if (delta > pulse1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_end
-                      pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      pulse1->split_now = pulse1->split_end - delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                  pulse1->split_now = pulse1->split_end - delta;  // rebound amount
+                }
+              }
+              else if (pulse1->split_now <= pulse1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (pulse1->split_begin - pulse1->split_now);  // overshoot
+                if (delta > pulse1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_end
                     pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    pulse1->split_now = pulse1->split_end - delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                  pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
                 }
               }
               /* Adjust the split beat and split adjust. */
@@ -8735,7 +8736,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             /*  Adjust split or split beat even when not playing beat */
             pulse1->split_now += pulse1->split_adj * fast_mult;
-            if (pulse1->split_beat == 0.0)  // no split beat, adjust split towards split_end
+            if (pulse1->split_dist == 0.0)  // split dist set to zero during setup as flag for pan
             {
               if (pulse1->split_now < 0.0)
                 pulse1->split_now = 0.0;
@@ -8744,52 +8745,49 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             else // split beat so oscillates between begin and end
             {
-              if (pulse1->split_dist != 0.0)  // protect against division by zero below
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+              if (pulse1->split_now >= pulse1->split_end)  // larger than end
               {
-                  /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
-                if (pulse1->split_now >= pulse1->split_end)  // larger than end
+                double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
+                if (delta > pulse1->split_dist) // overshoot greater than split_dist
                 {
-                  double delta = fabs (pulse1->split_now - pulse1->split_end);  // overshoot
-                  if (delta > pulse1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
-                      pulse1->split_now = pulse1->split_end - delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
                     pulse1->split_now = pulse1->split_end - delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
                 }
-                else if (pulse1->split_now <= pulse1->split_begin)  // smaller than begin
+                else // overshoot smaller than overall split, reflect from end
                 {
-                  double delta = fabs (pulse1->split_begin - pulse1->split_now);  // overshoot
-                  if (delta > pulse1->split_dist) // overshoot greater than split_dist
-                  {
-                    double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
-                    int counter = (int) floor (quotient);  // integer number of wraps
-                    delta -= (double) counter;  // remainder after wraps taken away
-                    if (counter % 2 == 0)  // even number of wraps
-                    { 
-                      pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_end
-                      pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
-                    }
-                    else  // direction stays the same
-                      pulse1->split_now = pulse1->split_end - delta;  // rebound amount
-                  }
-                  else // overshoot smaller than overall split, reflect from end
-                  {
+                  pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                  pulse1->split_now = pulse1->split_end - delta;  // rebound amount
+                }
+              }
+              else if (pulse1->split_now <= pulse1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (pulse1->split_begin - pulse1->split_now);  // overshoot
+                if (delta > pulse1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/pulse1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
                     pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_end
                     pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
                   }
+                  else  // direction stays the same
+                    pulse1->split_now = pulse1->split_end - delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  pulse1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                  pulse1->split_now = pulse1->split_begin + delta;  // rebound amount
                 }
               }
               /* Adjust the split beat and split adjust. */
