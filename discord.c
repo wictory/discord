@@ -9581,9 +9581,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %d", chronaural1->inc3, chronaural1->off3);
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->beat_adj, chronaural1->amp_adj);
-        char_count += fprintf (fp, " %.3e", chronaural1->sin_threshold_adj);
-        char_count += fprintf (fp, " %.3f\n", chronaural1->split_now );
-        char_count += fprintf (fp, "         %.3f %.3f %.3f %.3f",
+        char_count += fprintf (fp, " %.3e\n", chronaural1->sin_threshold_adj);
+        char_count += fprintf (fp, "         %.3f", chronaural1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
         char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
                       chronaural1->fade_sinval, chronaural1->fade_sinval2, chronaural1->fade_factor, chronaural1->fade_factor2);
@@ -9628,9 +9628,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %d %d", chronaural1->inc3, chronaural1->off3);
         char_count += fprintf (fp, " %.3f %d", chronaural1->inc2, chronaural1->off2);
         char_count += fprintf (fp, " %.3e %.3e %.3e", chronaural1->carr_adj, chronaural1->beat_adj, chronaural1->amp_adj);
-        char_count += fprintf (fp, " %.3e", chronaural1->sin_threshold_adj);
-        char_count += fprintf (fp, " %.3f\n", chronaural1->split_now );
-        char_count += fprintf (fp, "         %.3f %.3f %.3f %.3f",
+        char_count += fprintf (fp, " %.3e\n", chronaural1->sin_threshold_adj);
+        char_count += fprintf (fp, "         %.3f", chronaural1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
                         chronaural1->split_begin, chronaural1->split_end, chronaural1->split_low, chronaural1->split_high);
         char_count += fprintf (fp, " %.3f %.3f %.3f %.3f",
                       chronaural1->fade_sinval, chronaural1->fade_sinval2, chronaural1->fade_factor, chronaural1->fade_factor2);
