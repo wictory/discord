@@ -520,10 +520,10 @@ struct phase
   double carrier;               // Carrier freq
   double beat;                  // Phase shift frequency, equivalent to beat freq
   double amp;                   // Amplitude level 0-100%, stored as decimal. i.e. .06
-  double phase;                 // Phase between left and right channel, 0 to 360 degrees.
+  double phase;                 // Phase between left and right channel, only positive or zero allowed.
                                 // Beat +ve, left starts at zero, right channel phase shifts.
                                 // Beat -ve, right starts at zero, left channel phase shifts.
-                                // 0 or 360 means in phase.
+                                // 0 or multiple of 360 means in phase.
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for phase tones, offset + increment into sin table for each channel
@@ -3542,8 +3542,8 @@ setup_phase (char *token, void **work)
       || (*endptr != '\0')
       || errno != 0)
     error ("Phase for phase had an error.\n%s\n%s", subtoken, original);
-  else if (phase < 0.0 || phase > 360.0)  // no errors, but less than zero or greater than 360
-    error ("Phase for phase cannot be less than 0 or greater than 360.\n%s\n%s", subtoken, original);
+  else if (phase < 0.0)  // no errors, but less than zero
+    error ("Phase for phase cannot be less than 0.\n%s\n%s", subtoken, original);
   phase1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -8837,7 +8837,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (phase1->last_shift != NULL)  // there *is* a previous shift to use
               phase1->shift = *phase1->last_shift;  // to eliminate crackle from discontinuity in phase shift wave
             if (phase1->last_direction != NULL)  // there *is* a previous direction to use
-              phase1->direction = *phase1->last_direction;  // to eliminate crackle from discontinuity in phase shift direction
+              phase1->direction = *phase1->last_direction; // to eliminate crackle from discontinuity in phase shift direction
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
