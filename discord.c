@@ -123,8 +123,8 @@ struct comp_pt
 compensate[32];                 // List of maximum 32 (freq,adj) pairs, freq-increasing order
 int opt_d;                      // display sequence only
 int opt_e;                      // print status every x seconds
-int opt_e_arg = 5;              // store argument to opt_e_arg
-int every = 5;                  // default to every five seconds
+double opt_e_arg = 5.;          // store argument to opt_e_arg
+double every = 5.;              // default to every five seconds
 int opt_f;                      // run fast, at integer multiple of time
 int opt_f_arg = 1;              // run fast, at integer multiple of time
 int fast_mult = 1;              // default to normal speed
@@ -1437,13 +1437,13 @@ set_options (saved_option *SO)
           {
             if (!opt_q)  // quiet
               fprintf (stderr, "Seconds for --every/-e cannot be 0.  Setting to 5.\n");
-            every = 5;
+            every = 5.;
           }
           else                  // there was an error
-            error ("--every/-e expects integer seconds, %s", sow->option_string);
+            error ("--every/-e expects numeric seconds value, %s", sow->option_string);
         }
         else
-          every = (int) fabs (opt_e_arg);
+          every = fabs (opt_e_arg);
         break;
       case 'f':  // fast, move through at multiple of time
         opt_f = 1;
@@ -6767,7 +6767,7 @@ void
 play_loop ()
 {
   struct sndstream *snd1, *snd2;
-  int display_count = every*out_rate;  // Print every 5 seconds or so
+  int display_count = (int) (every * (double) out_rate);  // Print every x seconds
   double fade_val = 0.0, fade_incr = 0.0;
   long display_frames = 0L;
   int_64 remaining_frames = 0;
@@ -6899,7 +6899,7 @@ void
 save_loop ()
 {
   struct sndstream *snd1, *snd2;
-  int display_count = every*out_rate;  // Print every 5 seconds or so
+  int display_count = (int) (every * (double) out_rate);  // Print every x seconds
   double fade_val = 0.0, fade_incr = 0.0;
   long display_frames = 0L;
   int_64 remaining_frames = 0;
