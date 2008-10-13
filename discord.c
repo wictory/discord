@@ -139,6 +139,7 @@ int opt_q;                      // quiet run, no display of sequence
 int opt_r;                      // samples per second requested
 int out_rate = 44100;           // samples per second, default to cd standard
 int opt_t;                      // use thread to play sound instead of blocking function call
+int opt_v;                      // write verbose output as discord is playing
 int opt_w;                      // write file instead of sound
 char *out_filename;           // write file instead of sound
 const char *separators = "='|,;";  // separators for time sequences, mix and match, multiples ok
@@ -657,7 +658,7 @@ void save_loop ();
 int generate_frames (struct sndstream *snd1, double *out_buffer, int at_offset, int frame_count);
 inline double round (double num);
 void status (sndstream * snd1, FILE * fp);
-void *status_t (void *call_parms); // version for threading
+void status_t (void *call_parms); // version for threading
 void sprintTime (char **p);
 int fprint_time (FILE *fp);
 void sprintVoiceAll (char **p, void *this);
@@ -785,7 +786,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "a:b:c:de:f:hkm:o:qr:tw:";
+  const char *ostr = "a:b:c:de:f:hkm:o:qr:tvw:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -804,6 +805,7 @@ parse_argv_options (int argc, char **argv)
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
       {"thread", 0, 0, 't'},
+      {"verbose", 0, 0, 'v'},
       {"write", 1, 0, 'w'},
       {0, 0, 0, 0}
     };
@@ -839,6 +841,7 @@ parse_argv_options (int argc, char **argv)
       case 'q':
       case 'r':
       case 't':
+      case 'v':
       case 'w':
         soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
         soh->next = NULL;
@@ -912,7 +915,7 @@ parse_argv_configs (int argc, char **argv)
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hkm:o:qr:tw:";
+  const char *ostr = "a:b:c:de:f:hkm:o:qr:tvw:";
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -934,6 +937,7 @@ append_options (saved_option **SO, char *config_options)
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
       {"thread", 0, 0, 't'},
+      {"verbose", 0, 0, 'v'},
       {"write", 1, 0, 'w'},
       {0, 0, 0, 0}
     };
@@ -1518,6 +1522,9 @@ set_options (saved_option *SO)
       case 't':                // thread sound play
         opt_t = 1;
         break;
+      case 'v':                // verbose output, use long form while playing
+        opt_v = 1;
+        break;
       case 'w':  // write to file
         opt_w = 1;
         if (sow->option_string != NULL)
@@ -1707,6 +1714,7 @@ help ()
           "          -q --quiet        Don't display running status"NL
           "          -r --rate         Select the output rate (default is 44100 Hz)"NL
           "          -t --thread       Use thread to play sound instead of blocking function call"NL
+          "          -v --verbose      Use verbose form for output while playing"NL
           "          -w --write        Write an output file instead of playing through sound card"NL);
   exit (0);
 }
@@ -6859,24 +6867,36 @@ play_loop ()
         if (opt_t)  // use thread to play
         {
           sound_slice->frames = offset; // number of frames in buffer
+          memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to play
             /* block until previous play operation complete, unlocked in alsa_write */
           pthread_mutex_lock (&mtx_play);  
-          memcpy (play_buffer, buffer, sizeof(buffer));  // copy frames to play
               /* this create is non blocking, continue creating frames to play */
           pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
         }
         else  // blocking function call
-            /* send doubles to alsa-lib to translate to sound card format and play */
-          alsa_write_retval = alsa_write_double (alsa_dev, buffer, offset, channels) ;
+        {
+            /* send doubles to alsa-lib to translate to sound card format and play with blocking function call */
+          int written = alsa_write_double (alsa_dev, buffer, offset, channels) ;
+          if (!opt_q && written != offset)
+            fprintf (stderr, "not all frames played to soundcard, %d instead of %d\n", written, offset);
+        }
       }
       display_frames += (fade_length * fast_mult);  // adjust display frames
       if (!opt_q && display_frames >= display_count)   // not quiet,  time to display
       {
-          /* block until previous status operation complete, unlocked in status_t */
-        pthread_mutex_lock (&mtx_status);
-          /* this create is non blocking, continue creating frames to play */
-        pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-        display_frames = 0L;
+        if (opt_t)  // use thread to write display of voices
+        {
+            /* block until previous status operation complete, unlocked in status_t */
+          pthread_mutex_lock (&mtx_status);
+            /* this create is non blocking, continue creating frames to play */
+          pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
+          display_frames = 0L;
+        }
+        else  // blocking function call to write display of voices
+        {
+          status (snd1, stderr);
+          display_frames = 0L;
+        }
       }
       offset = 0;
     }
@@ -6991,23 +7011,41 @@ save_loop ()
         }
       }
       snd1->cur_frames += (fade_length * fast_mult);  // adjust frames so far in this sound stream
-      if (!opt_d)
+      if (!opt_d)  // not display only
       {
-        sound_slice->frames = offset; // number of frames in buffer
-          /* block until previous write operation complete, released by file_write */
-        pthread_mutex_lock (&mtx_write);
-        memcpy (write_buffer, buffer, sizeof(buffer));  // copy frames to write
-            /* this create is non blocking, continue creating frames to write */
-        pthread_create (&pth_write, &attr_write, (void *) &file_write, (void *) sound_slice);
+        if (opt_t)  // use thread to write frames to file
+        {
+          sound_slice->frames = offset; // number of frames in buffer
+          memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to write
+            /* block until previous file write operation complete, released by file_write */
+          pthread_mutex_lock (&mtx_write);
+              /* this create is non blocking, continue creating frames to write */
+          pthread_create (&pth_write, &attr_write, (void *) &file_write, (void *) sound_slice);
+        }
+        else  // blocking function call
+        {
+            /* write the frames to file with a blocking function call */
+          int written = sf_writef_double (sndfile, buffer, offset);
+          if (!opt_q && written != offset)
+            fprintf (stderr, "not all frames written to file, %d instead of %d\n", written, offset);
+        }
       }
       display_frames += (fade_length * fast_mult);  // adjust display frames
       if (!opt_q && display_frames >= display_count)  // not quiet and time to display
       {
-          /* block until previous status operation complete, released by status_t */
-        pthread_mutex_lock (&mtx_status);
-          /* this create is non blocking, continue creating frames to write */
-        pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-        display_frames = 0L;
+        if (opt_t)  // use thread to write display of voices
+        {
+            /* block until previous status operation complete, unlocked in status_t */
+          pthread_mutex_lock (&mtx_status);
+            /* this create is non blocking, continue creating frames to play */
+          pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
+          display_frames = 0L;
+        }
+        else  // blocking function call to write display of voices
+        {
+          status (snd1, stderr);
+          display_frames = 0L;
+        }
       }
       offset = 0;
     }
@@ -9369,39 +9407,43 @@ inline double round (double num)
 
 //
 // Update a status line
-// Threaded version
+// non-threaded version
 //
 
-void *
-status_t (void *call_parms)
+void
+status (sndstream *snd1, FILE *fp)
 {
-  void *this, *next;
+  void *this;
   stub *stub1;
-  static sndstream *prev = NULL;
-  status_t_retval = 0;
-
-  /* extract calling parameters from passed in structure */
-  point_in_time *snd_point = (point_in_time *) call_parms;
-  sndstream * snd1 = snd_point->snd1;
-  FILE *fp = snd_point->fp;
 
   fprint_time (fp);  // add the time
   this = snd1->voices;  // point to first voice
   while (this != NULL)
   {
-    if (snd1 == prev)  // already seen
-      fprint_voice (fp, this);  // add each voice
-    else  // first time
-      fprint_voice_all (fp, this);  // add each voice
+    if (opt_v)  // verbose output
+      fprint_voice_all (fp, this);  // add all struct values for this voice
+    else  // summary of important values 
+      fprint_voice (fp, this);  // add this voice
     stub1 = (stub *) this;
-    next = stub1->next;
-    this = next;
+    this = stub1->next;  // go to next voice in list
   }
-  prev = snd1;
-  fflush (fp);
+}
+
+//
+// Update a status line
+// Threaded version
+//
+
+void
+status_t (void *call_parms)
+{
+  /* extract calling parameters from passed in structure */
+  point_in_time *snd_point = (point_in_time *) call_parms;
+  sndstream * snd1 = snd_point->snd1;
+  FILE *fp = snd_point->fp;
+  status (snd1, fp); 
   // allow main to call again, locked by caller
   pthread_mutex_unlock (&mtx_status);
-  return &status_t_retval;
 }
 
 int
