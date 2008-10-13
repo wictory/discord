@@ -610,17 +610,6 @@ struct slice
 pthread_mutex_t mtx_play = PTHREAD_MUTEX_INITIALIZER;  // mutex for play thread
 pthread_mutex_t mtx_write = PTHREAD_MUTEX_INITIALIZER;  // mutex for write thread
 
-/* structure for displaying a point in time of the current sound stream, arguments to status */
-typedef struct point_in_time point_in_time;
-struct point_in_time
-{
-  sndstream *snd1;  // pointer to the current sound stream
-  //void *voice;  // pointer to the first voice of the current sound stream
-  FILE *fp;  // pointer to the device on which to display (can be file)
-} ;
-/* mutexe for the status thread, allow maximum utilization of cpu */
-pthread_mutex_t mtx_status = PTHREAD_MUTEX_INITIALIZER; // mutex for status thread
-
 int main (int argc, char **argv);
 void init_sin_table ();
 void debug (char *fmt, ...);
@@ -658,7 +647,6 @@ void save_loop ();
 int generate_frames (struct sndstream *snd1, double *out_buffer, int at_offset, int frame_count);
 inline double round (double num);
 void status (sndstream * snd1, FILE * fp);
-void status_t (void *call_parms); // version for threading
 void sprintTime (char **p);
 int fprint_time (FILE *fp);
 void sprintVoiceAll (char **p, void *this);
@@ -6786,9 +6774,8 @@ play_loop ()
 	snd_pcm_t *alsa_dev = NULL ;
   int channels = 2;  // always output stereo
   slice *sound_slice;  // holds arguments for alsa_play_*
-  point_in_time *snd_point;  // holds arguments for status_t
-  pthread_t pth_play, pth_status;  // threads for play and status
-  pthread_attr_t attr_play, attr_status;  // attributes for play and status
+  pthread_t pth_play;  // thread for play
+  pthread_attr_t attr_play;  // attributes for play
 
       /* open alsa default via libsndfile */
   alsa_dev = alsa_open (alsa_dev, channels, (unsigned) out_rate, SF_FALSE); 
@@ -6805,25 +6792,11 @@ play_loop ()
   pthread_attr_destroy (&attr_play);  // destroy attributes
   pthread_attr_init (&attr_play);  // initialize attributes
   pthread_attr_setdetachstate (&attr_play, PTHREAD_CREATE_DETACHED);  // run detached
-      /* set up the file device in the point_in_time structure that will be passed to status */
-  snd_point = (point_in_time *) Alloc (sizeof (point_in_time) * 1);
-  snd_point->fp = stderr; // file device to write to
-      /* set up the thread attributes that will be used for each thread invocation of status */
-  pthread_attr_destroy (&attr_status);  // destroy attributes
-  pthread_attr_init (&attr_status);  // initialize attributes
-  pthread_attr_setdetachstate (&attr_status, PTHREAD_CREATE_DETACHED);  // run detached
   snd1 = play_seq;  // start of voice sequence linked list
   if (!opt_q && snd1 != NULL)  // not quiet, sound to display
-  {
-      /* block until previous status operation complete, unlocked in status_t */
-    pthread_mutex_lock (&mtx_status);
-    snd_point->snd1 = snd1;  // sound stream to status
-    pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-  }
+    status (snd1, stderr);  // initial before any play
   while (1)
   {
-      /* set the sound stream in the point_in_time structure that will be passed to status */
-    snd_point->snd1 = snd1;  // sound stream to status
     if (snd1->fade == 1)  // fade in
     {
       fade_val = 0.0;  // start at zero amplitude
@@ -6883,20 +6856,9 @@ play_loop ()
       }
       display_frames += (fade_length * fast_mult);  // adjust display frames
       if (!opt_q && display_frames >= display_count)   // not quiet,  time to display
-      {
-        if (opt_t)  // use thread to write display of voices
-        {
-            /* block until previous status operation complete, unlocked in status_t */
-          pthread_mutex_lock (&mtx_status);
-            /* this create is non blocking, continue creating frames to play */
-          pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-          display_frames = 0L;
-        }
-        else  // blocking function call to write display of voices
-        {
-          status (snd1, stderr);
-          display_frames = 0L;
-        }
+      { // blocking function call to write display of voices
+        status (snd1, stderr);
+        display_frames = 0L;
       }
       offset = 0;
     }
@@ -6931,9 +6893,8 @@ save_loop ()
   SF_INFO sfinfo;
   int channels = 2;  // always output stereo
   slice *sound_slice;  // holds arguments for write_file
-  point_in_time *snd_point;  // holds arguments for status_t
-  pthread_t pth_write, pth_status;  // threads for file and status
-  pthread_attr_t attr_write, attr_status;  // attributes for file and status
+  pthread_t pth_write;  // threads for file
+  pthread_attr_t attr_write;  // attributes for file
 
   sfinfo.samplerate = out_rate;  // sample frames per second
   sfinfo.channels = 2;  // always write stereo
@@ -6955,24 +6916,11 @@ save_loop ()
   pthread_attr_destroy (&attr_write);  // destroy attributes
   pthread_attr_init (&attr_write);  // initialize attributes
   pthread_attr_setdetachstate (&attr_write, PTHREAD_CREATE_DETACHED);  // run detached
-      /* set up the file device in the point_in_time structure that will be passed to status */
-  snd_point = (point_in_time *) Alloc (sizeof (point_in_time) * 1);
-  snd_point->fp = stderr; // file device to write to
-      /* set up the thread attributes that will be used for each thread invocation of status */
-  pthread_attr_destroy (&attr_status);  // destroy attributes
-  pthread_attr_init (&attr_status);  // initialize attributes
-  pthread_attr_setdetachstate (&attr_status, PTHREAD_CREATE_DETACHED);  // run detached
   snd1 = play_seq;  // start of voice sequence linked list
   if (!opt_q && snd1 != NULL)  // not quiet, sound to display
-  {
-    //status (snd1, stderr);
-    snd_point->snd1 = snd1;  // sound stream to status
-    pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-  }
+    status (snd1, stderr);  // initial before any write
   while (1)
   {
-      /* set the sound stream in the point_in_time structure that will be passed to status */
-    snd_point->snd1 = snd1;  // sound stream to status
     if (snd1->fade == 1)  // fade in
     {
       fade_val = 0.0;  // start at zero amplitude
@@ -7032,20 +6980,9 @@ save_loop ()
       }
       display_frames += (fade_length * fast_mult);  // adjust display frames
       if (!opt_q && display_frames >= display_count)  // not quiet and time to display
-      {
-        if (opt_t)  // use thread to write display of voices
-        {
-            /* block until previous status operation complete, unlocked in status_t */
-          pthread_mutex_lock (&mtx_status);
-            /* this create is non blocking, continue creating frames to play */
-          pthread_create (&pth_status, &attr_status, (void *) &status_t, (void *) snd_point);
-          display_frames = 0L;
-        }
-        else  // blocking function call to write display of voices
-        {
-          status (snd1, stderr);
-          display_frames = 0L;
-        }
+      { // blocking function call to write display of voices
+        status (snd1, stderr);
+        display_frames = 0L;
       }
       offset = 0;
     }
@@ -9427,23 +9364,6 @@ status (sndstream *snd1, FILE *fp)
     stub1 = (stub *) this;
     this = stub1->next;  // go to next voice in list
   }
-}
-
-//
-// Update a status line
-// Threaded version
-//
-
-void
-status_t (void *call_parms)
-{
-  /* extract calling parameters from passed in structure */
-  point_in_time *snd_point = (point_in_time *) call_parms;
-  sndstream * snd1 = snd_point->snd1;
-  FILE *fp = snd_point->fp;
-  status (snd1, fp); 
-  // allow main to call again, locked by caller
-  pthread_mutex_unlock (&mtx_status);
 }
 
 int
