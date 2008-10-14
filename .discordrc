@@ -78,7 +78,7 @@
 #--display_only
 #-d
 #
-#      case 'e':  // every, display status every x seconds, integer only, >= 1.
+#      case 'e':  // every, display status every x seconds, decimal > 0.
 #--every=10
 -e 5
 #
@@ -100,16 +100,14 @@
 #-m 1
 #
 #      case 'o':  // output file format, w:wav, f:flac, r:raw, no point to lossy
-#--out_format=f
-#-o f
+#--out_format=w
+#-o w
 #
 #      case 'q':                // quiet, don't display status while running
 #--quiet
 #-q
 #
 #      case 'r':  // frame rate per second, whatever your card can do, 44100 is CD quality
-#                    Higher rates are beneficial on binaurals at high frequencies,
-#                    say 15000 Hz and above.  For low frequencies, 44100 just fine.
 #                    At a command line run the command "amixer [-c cardnumber] | less" to 
 #                    find out more information about your sound card(s) and the 
 #                    hardware frequencies they support.  See "man amixer" or "pinfo amixer".
@@ -122,11 +120,14 @@
 #
 #      case 't':                // thread, use thread to play sound instead of a blocking function call
 #                                  This allows slightly more throughput but is more susceptible to 
-#                                  sound breakage under heavy cpu use.  Does not affect file write
-#                                  or status display threads.
+#                                  sound breakage under heavy cpu use.  Applies to file write
+#                                  but not status display.
 #--thread
 #-t
 #
+#      case 'v':                // verbose output, use long form while playing
+#--verbose
+#-v
 #      case 'w':  // write to file instead of the default, playing via the sound card
 #--write=mindblowing.wav  # same as ./mindblowing.wav, will write in current directory
-#-w  /home/clover/discord/mindblowing.flac
+#-w  /home/clover/discord/mindbending.flac
