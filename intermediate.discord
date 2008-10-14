@@ -5,93 +5,223 @@
 #
 #  Anything after two hash marks (#) will be printed to stderr, if you want to watch parse progress
 #
-#  Options
+#  OPTIONS
 #
-#      case 'a':  // audio device to set as hardware through which to route playback.
-#                     Discord will use only hardware frame rates, so no resampling will occur, though
-#                     the sound format will be converted by alsa to match that of the card.
-#                     If this is not specified, discord will open the default audio device as a plughw plugin.
-#                     At a command line run the command "aplay -lLv" to find out more information about
-#                     your sound card(s) and their devices.  That is not a 1, but a lowercase L.
-#                     See "man aplay" or "pinfo aplay".
-#--audio_device=plughw:0,0  # first card, first device, usually analog out
-#-a plughw:0,1  # first card, second device, usually digital out, IEC958
+#  -a, --audio_device
 #
-#      case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, int and float
-#                     Relevant only when sending output to a file.  All internal processing is 
-#                     done using doubles regardless.
-#--bit_accuracy=16i
-#-b 16i
+#    Specify the audio device to use for playback in alsa plug format.
+#    Discord will automatically create a plughw alsa plugin from the
+#    default audio device if this is not specified.  Discord uses alsa to
+#    do format conversion from internal program representation to what the
+#    card requires, but locks the sample rates to be only those supported
+#    by the card hardware.  This prevents resampling with consequent
+#    distortion and slowdown.  If you try to use a direct hardware link
+#    like "hw:0,0" here it will cause a segmentation fault.  To implement
+#    direct hardware writing discord would have to incorporate all of the
+#    format conversion.  This seems counterproductive.  The first number is
+#    the card number, the second is the device number, both starting at 0.
+#    See the alsa documentation at www.alsa-project.org for a fuller
+#    explanation.  Default is plughw:0,0.
+#    
+#    Examples
+#      --audio_device=plughw:0,0  
+#      -a plughw:0,2
 #
-#      case 'c':  // Compensate for human hearing, low and high freqs need to be louder
-#                    to have the same subjective loudness to the human ear.
-#                    If this is set correctly, a sound at the compensated frequency
-#                    sounds the same loudness as any other sound at its
-#                    compensated frequency.  i.e. It linearizes the range
-#                    This is individual, depends on your hearing, so the below is only a starting
-#                    point for you to play with and tweak.  It has a max of 32 points.
-#                    There is some dispute whether sounds outside the range of hearing
-#                    have any effect.  Of course, that is dependent on
-#                    whether those sounds even get to your ears through the system.  This
-#                    applies to the internally generated sounds: binaural, chronaural, bell, noise.
-#                    If you use compensation, set all amplitudes to a fixed value.
-#                    Or whatever ratio between the loudness you want them to have, as if linear.
-#                    The stochastic, sample, repeat and once voices are not compensated so should be
-#                    set at the amplitude you want.
-#--compensate=5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4
-#--compensate=80=1.3''100=1.2''200=1.2''300=1.2'''400:1.1''500:1
-#--compensate=600:1''700=1''800=1''900=1''1000=1''2000=1''3000=1
-#--compensate=5000=1.0''7000=1.1'',,,9000:1.3,,10000:1.5,,12000:1.5
-#--compensate=13000=3,,16000=5.0,,17000=6.5,,18000=7.5,,19000=8.0,,20000=9.0
--c 5=9''10=6.2''20=4.6''30=3.4''40=2.4''50=1.6''60=1.4''80=1.3''100=1.2
--c 200=1.2''300=1.2'''400:1.1''500:1''600:1''700=1''800=1
--c 900=1''1000=1''2000=1''3000=1''5000=1.0''7000=1.1'',,,9000:1.3
--c 10000:1.5,,12000:1.5,,13000=3,,16000=5.0,,17000=6.5
--c 18000=7.5,,19000=8.0,,20000=9.0
+#  -b, --bit_accuracy
 #
+#    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
+#    f=float.  Only applies if you are sending to a file.  Default is
+#    16i.
+#    
+#    Examples
+#      --bit_accuracy=16i
+#      -b 24i
 #
-#      case 'd':  // display only
-#--display_only
-#-d
+#  -c, --compensate
 #
-#      case 'e':  // every, display status every x seconds
-#--every=10
--e 5
+#    compensate for human hearing, low and high freqs need to be
+#    louder, max 32 adjustment points are allowed.  The compensation
+#    points can all be on the same line or on multiple lines, but each
+#    line must start with the option name.  If this is correct, a sound
+#    at the compensated frequency sounds the same loudness as any other
+#    sound at its compensated frequency.  i.e. It linearizes the range.
+#    This is individual, depends on your hearing, so the above is only
+#    a starting point for you to play with and tweak.  For most people,
+#    sounds from about 800 Hz to 4000 Hz are the loudest and about
+#    equivalent.  Hearing falls off at either end so that the amplitude
+#    has to be higher in order for the sound to have the same loudness
+#    to the ear.  There is dispute about whether sounds outside the
+#    range of hearing have any effect.  If you use compensation, set
+#    all amplitudes to a constant value for binaural, chronaural, bell,
+#    and noise.  Or whatever ratio between the loudness you want them
+#    to have, as if linear.  The stoch, sample, repeat, and once voices
+#    are not compensated so should be set at the amplitude you want.
+#    Default is no compensation.
 #
-#      case 'f':  // fast, move through at multiple of time, 60 ==> 1min becomes 1 sec
-#                    so a 1 hour play sequence will play in 1 minute
-#--fast=60
-#-f 60
+#    Examples  (see also the test script files)
+#      --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0
+#      -c 5=10'''2530=1''',13128=3.5,,,,20000=10.0
+-c 5=7
+-c 10=5.2
+-c 20=4.6
+-c 30=3.4
+-c 40=2.4
+-c 50=1.6
+-c 60=1.4
+-c 80=1.3
+-c 100=1.2
+-c 200=1.2
+-c 300=1.2
+-c 400:1.1
+-c 500:1
+-c 600:1
+-c 700=1
+-c 800=1
+-c 900=1
+-c 1000=1
+-c 2000=1
+-c 3000=1
+-c 5000=1
+-c 7000=1.1
+-c 9000:1.3
+-c 10000:1.4
+-c 12000:1.6
+-c 13000=2
+-c 16000=3
+-c 17000=3.5
+-c 18000=4
+-c 19000=4.5
+-c 20000=5
 #
-#      case 'h':  // help
-#--help
-#-h
+#  -d, --display_only
 #
-#      case 'k':  // keep generated resampled sound files if any
-#--keep
-#-k
+#    display only, don't actually play any sequences.  Default is play.
 #
-#      case 'm':  // modify carrier and beat from script file within a percentage band
-#--modify=2
-#-m 1
+#  -e, --every
 #
-#      case 'o':  // output file format, w:wav, f:flac, r:raw, no point to lossy
-#--out_format=f
-#-o f
+#    display status every x seconds, decimal value > 0.  If you use
+#    values that are too small here, you will get a lot of underruns.
+#    Small values are probably best by redirecting output to a file for
+#    future analysis.  e.g. discord test.discord > save.output 2>&1
+#    Make sure you also write the sound to a file using -b, -o, -w.
+#    Default is 5 seconds.
 #
-#      case 'q':                // quiet, don't display status while running
-#--quiet
-#-q
+#    Examples
+#      --every=10   
+#      -e 5.391
+-e 10
 #
-#      case 'r':  // frame rate per second, whatever your card can do, 44100 is CD quality
-#                    Higher rates are beneficial on binaurals at high frequencies,
-#                    say 15000 Hz and above.  For low frequencies, 44100 just fine.
-#--rate=44100
+#  -f, --fast
+#
+#    fast, move through at multiple of time, 60 ==> 1min becomes 1 sec
+#    so a 1 hour play sequence will play in 1 minute.  Good for
+#    testing a new sequence for correctness, though obviously the
+#    effect won't be the same.  Bell has been tweaked so that the pitch
+#    doesn't change while using this.  Default is 1.
+#
+#    Examples
+#      --fast=60
+#      -f 10
+#
+#  -h, --help
+#
+#    display short help list for options
+#
+#  -k, --keep
+#
+#    keep any files generated by resampling.  Default is to delete the
+#    files when they are no longer needed.
+#
+#  -m, --modify
+#
+#    specify that every carrier and beat for binaural, chronaural,
+#    pulse, phase, and fm voices will be modified from the value in the
+#    input script.  The value is the percent band within which the
+#    random modification will occur, half above the input value, and
+#    half below.  For a carrier of 200 with a modification of 2 per
+#    cent, the modified value will be a random value between 198 and
+#    202.  For a beat of 4 with a modification of 1 per cent, the
+#    modified value will be a random value between 3.98 and 4.02.  The
+#    maximum modification is less than 200, which means a possible
+#    value somewhere between almost zero and twice the input.  This is
+#    a fast way to modify a script without editing.  Default is no
+#    modification.
+#    
+#    Examples 
+#      --modify=2 
+#      -m 0.5
+#
+#  -o, --out_format
+#
+#    output file format, w:wav, f:flac, r:raw.  Default is wav.
+#
+#    Examples
+#      --out_format=w
+#      -o w
+#
+#  -q, --quiet
+#
+#    quiet, don't display status or any other output while running.
+#    Default is to display status every 5 seconds.
+#
+#  -r, --rate
+#
+#    frame rate per second, whatever your card can do, 44100 is CD
+#    quality.  Higher rates might be beneficial on binaurals at high
+#    frequencies, say 15000 Hz and above, or very low beats, < 0.1.
+#    For normal frequencies, 44100 will be just fine.  Note that higher
+#    rates won't do any harm, they will just make the cpu and sound
+#    card work harder.  From Nyquist theory, the sample rate has to be
+#    greater than equal to twice the highest frequency in the sound
+#    being played in order to reproduce it exactly.  Since human
+#    hearing theoretically maxes out for most people at 20 kHz and cd
+#    quality at 44100 frames/second allows up to 22 kHz perfect
+#    reproduction, this isn't really a problem.  While discord is only
+#    pretending to sample and doesn't exactly meet the criteria, it
+#    should be within small tolerances of perfect.  I think the place
+#    where any change might be noticeable is dynamics.  If your sound
+#    card does internal processing in 16 bit integers, that allows a
+#    variation of 32,767 gradations of amplitude.  You will lose a
+#    slight amount of exactness from the doubles that discord uses
+#    internally.  If your card uses 24 bit or 32 bit internally, any
+#    change from conversion will be unnoticeable.  Whatever the rate
+#    you select here, discord will use the closest hardware supported
+#    rate to prevent any resampling, a major source of distortion, far
+#    greater than effects from sample rate or bit representation of
+#    amplitude unless you are using a sample rate of 22 kHz or less or
+#    an 8 bit sound card.  Default is 44100.
+#    
+#    Examples 
+#      --rate=44100 
+#      -r 96000
 -r 44100
 #
-#      case 'w':  // write to file instead of the default, playing via the sound card
-#--write=mindblowing.wav  # same as ./mindblowing.wav, will write in current directory
-#-w  /home/clover/discord/mindblowing.flac
+#  -t, --thread
+#
+#    use nonblocking thread to play sound instead of a blocking
+#    function call.  This allows more throughput, but because the
+#    thread runs with user priority, during heavy cpu usage it can
+#    result in breaks in the sound while other tasks block it.  The
+#    blocking function call is more robust in this situation.  Under
+#    light usage, either is fine.  This only affects threading for
+#    playing sound or writing sound to a file.  Default is no
+#    threading.
+#
+#  -v, --verbose
+#
+#    when writing a status line while playing, use the detailed format
+#    instead of the summary format that is the default. 
+#
+#  -w, --write
+#
+#    write to this file instead of the default, playing via sound
+#    card 0.  You can use this without setting the -b/--bit_rate and
+#    -o/--out_format variables, but you will then get the default of 16
+#    bit and wav format.
+#
+#    Examples
+#      --write=/home/xkdi/mindbending.flac
+#      -w  /home/xkdi/mindblowing.wav
 #
 #  A time sequence may span multiple lines, but a voice (binaural, bell, noise, etc.)
 #  cannot be split across lines.
