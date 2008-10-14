@@ -27,7 +27,7 @@
   output, it will automatically be resampled to the requested rate
   using the highest quality available in libsamplerate.  A copy can be
   retained in the same directory as it was found with the new rate
-  appended to the filename.
+  appended to the filename by specifying the -k/keep option.
 
   While all of the options below can be used on the command line, the
   sequences to play must be defined in a script file.  Options on the
@@ -43,7 +43,9 @@
 
   While discord is very complex, that is part of its purpose.  To
   allow the exploration of auditory beats in new ways, perhaps leading
-  to greater efficacy or new effects.
+  to greater efficacy or new effects.  It also means that there are
+  bugs still lurking in the code because not all combinations have
+  been tested.
 
   There are eleven voice types in discord.  These are binaural,
   chronaural, pulse (a variation of chronaural), phase, fm (a
@@ -67,7 +69,10 @@
   The period is the beat in this case.  In addition, the split or pan
   of the tone can be specified to vary between set values at a rate
   specified.  Chronaural tones are allowed to slide into the next
-  chronaural on carrier, beat, amplitude, phase, and split beat.
+  chronaural on carrier, beat, amplitude, phase,split beat, and sin
+  threshold.  You could think of these tones as equivalent to high
+  tech drum beats, a method human beings have used to enter altered
+  states of consciousness for thousands of years.
 
   pulse
 
@@ -77,14 +82,21 @@
   specified.  Pulse tones are allowed to slide into the next pulse on
   carrier, beat, amplitude, phase, time, and split beat.  The
   difference between this and chronaural is the way the duration is
-  specified.  Pulse is also fixed as using a square wave.
+  specified.  Unlike chronaural, where tone shape may be selected,
+  pulse is fixed as using a square wave.  You could think of these
+  tones as equivalent to high tech drum beats, a method human beings
+  have used to enter altered states of consciousness for thousands of
+  years.
 
   phase
 
   Generate a beat by shifting the phase of either the left or right
   channel at a specified beat frequency and to a specified phase
-  offset between 0 and 360 degrees.  Phase tones are allowed to slide
-  into the next phase on carrier, beat, amplitude, and phase.
+  offset between 0 and a positive number of degrees.  Phase tones are
+  allowed to slide into the next phase on carrier, beat, amplitude,
+  and phase.  This uses the doppler effect to get the attention of the
+  brain.  It seems like something is coming towards and going away from
+  us.
 
   fm
 
@@ -92,7 +104,10 @@
   frequency of either the left or right channel or both at a specified
   beat frequency and to a specified frequency offset.  Fm tones are
   allowed to slide into the next phase on carrier, beat, amplitude,
-  band, and phase.
+  band, and phase.  This uses the doppler effect to get the attention
+  of the brain.  It seems like something is coming towards and going
+  away from us.
+
 
   bell
 
@@ -136,10 +151,11 @@
   options specified.
 
   All internal processing is done in double format so the tones are
-  very precise. The user specified sound files are stored in memory,
-  so you should have lots of memory or use small sound files.  They
-  are stored only once, no matter how many times they occur in the 
-  sequence file.
+  very precise. The user specified sound files are stored in memory
+  for fast access while generating sound, so you should have lots of
+  memory or use small sound files.  They are stored only once, no
+  matter how many times they are used in the script file that
+  specifies the time sequence.
 
   OPTIONS
 
@@ -157,7 +173,7 @@
     format conversion.  This seems counterproductive.  The first number is
     the card number, the second is the device number, both starting at 0.
     See the alsa documentation at www.alsa-project.org for a fuller
-    explanation.
+    explanation.  Default is plughw:0,0.
     
     Examples
       --audio_device=plughw:0,0  
@@ -166,7 +182,8 @@
   -b, --bit_accuracy
 
     bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
-    f=float.  Only applies if you are sending to a file.
+    f=float.  Only applies if you are sending to a file.  Default is
+    16i.
     
     Examples
       --bit_accuracy=16i
@@ -191,6 +208,7 @@
     and noise.  Or whatever ratio between the loudness you want them
     to have, as if linear.  The stoch, sample, repeat, and once voices
     are not compensated so should be set at the amplitude you want.
+    Default is no compensation.
 
     Examples  (see also the test script files)
       --compensate=5=9'''3000=1'''',13000=3,,,,20000=11.0
@@ -198,15 +216,20 @@
 
   -d, --display_only
 
-    display only, don't actually play any sequences
+    display only, don't actually play any sequences.  Default is play.
 
   -e, --every
 
-    display status every x seconds, integer >= 1.
+    display status every x seconds, decimal value > 0.  If you use
+    values that are too small here, you will get a lot of underruns.
+    Small values are probably best by redirecting output to a file for
+    future analysis.  e.g. discord test.discord > save.output 2>&1
+    Make sure you also write the sound to a file using -b, -o, -w.
+    Default is 5 seconds.
 
     Examples
       --every=10   
-      -e 5
+      -e 5.391
 
   -f, --fast
 
@@ -214,7 +237,7 @@
     so a 1 hour play sequence will play in 1 minute.  Good for
     testing a new sequence for correctness, though obviously the
     effect won't be the same.  Bell has been tweaked so that the pitch
-    doesn't change while using this.
+    doesn't change while using this.  Default is 1.
 
     Examples
       --fast=60
@@ -222,7 +245,7 @@
 
   -h, --help
 
-    help
+    display short help list for options
 
   -k, --keep
 
@@ -232,16 +255,17 @@
   -m, --modify
 
     specify that every carrier and beat for binaural, chronaural,
-    pulse, and phase voices will be modified from the value in the
+    pulse, phase, and fm voices will be modified from the value in the
     input script.  The value is the percent band within which the
     random modification will occur, half above the input value, and
     half below.  For a carrier of 200 with a modification of 2 per
     cent, the modified value will be a random value between 198 and
     202.  For a beat of 4 with a modification of 1 per cent, the
-    modified value will be a random value between 3.98 and 4.02.
-    The maximum modification is less than 200, which means a
-    possible value somewhere between almost zero and twice the
-    input.  This is a fast way to modify a script without editing.
+    modified value will be a random value between 3.98 and 4.02.  The
+    maximum modification is less than 200, which means a possible
+    value somewhere between almost zero and twice the input.  This is
+    a fast way to modify a script without editing.  Default is no
+    modification.
     
     Examples 
       --modify=2 
@@ -249,7 +273,7 @@
 
   -o, --out_format
 
-    output file format, w:wav, f:flac, r:raw
+    output file format, w:wav, f:flac, r:raw.  Default is wav.
 
     Examples
       --out_format=w
@@ -257,14 +281,35 @@
 
   -q, --quiet
 
-    quiet, don't display status or any other output while running
+    quiet, don't display status or any other output while running.
+    Default is to display status every 5 seconds.
 
   -r, --rate
 
     frame rate per second, whatever your card can do, 44100 is CD
-    quality.  Higher rates are beneficial on binaurals at high
+    quality.  Higher rates might be beneficial on binaurals at high
     frequencies, say 15000 Hz and above, or very low beats, < 0.1.
-    For normal frequencies, 44100 will be just fine.  
+    For normal frequencies, 44100 will be just fine.  Note that higher
+    rates won't do any harm, they will just make the cpu and sound
+    card work harder.  From Nyquist theory, the sample rate has to be
+    greater than equal to twice the highest frequency in the sound
+    being played in order to reproduce it exactly.  Since human
+    hearing theoretically maxes out for most people at 20 kHz and cd
+    quality at 44100 frames/second allows up to 22 kHz perfect
+    reproduction, this isn't really a problem.  While discord is only
+    pretending to sample and doesn't exactly meet the criteria, it
+    should be within small tolerances of perfect.  I think the place
+    where any change might be noticeable is dynamics.  If your sound
+    card does internal processing in 16 bit integers, that allows a
+    variation of 32,767 gradations of amplitude.  You will lose a
+    slight amount of exactness from the doubles that discord uses
+    internally.  If your card uses 24 bit or 32 bit internally, any
+    change from conversion will be unnoticeable.  Whatever the rate
+    you select here, discord will use the closest hardware supported
+    rate to prevent any resampling, a major source of distortion, far
+    greater than effects from sample rate or bit representation of
+    amplitude unless you are using a sample rate of 22 kHz or less or
+    an 8 bit sound card.  Default is 44100.
     
     Examples 
       --rate=44100 
@@ -277,16 +322,24 @@
     thread runs with user priority, during heavy cpu usage it can
     result in breaks in the sound while other tasks block it.  The
     blocking function call is more robust in this situation.  Under
-    light usage, either is fine.  This does not affect the threads
-    used for writing a file or displaying the status while running.
+    light usage, either is fine.  This only affects threading for
+    playing sound or writing sound to a file.  Default is no
+    threading.
+
+  -v, --verbose
+
+    when writing a status line while playing, use the detailed format
+    instead of the summary format that is the default. 
 
   -w, --write
 
-    write to this file instead of the default, playing via the sound
-    card
+    write to this file instead of the default, playing via sound
+    card 0.  You can use this without setting the -b/--bit_rate and
+    -o/--out_format variables, but you will then get the default of 16
+    bit and wav format.
 
     Examples
-      --write=/home/xkdi/mindblowing.flac
+      --write=/home/xkdi/mindbending.flac
       -w  /home/xkdi/mindblowing.wav
 
 
@@ -444,8 +497,8 @@
 
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.  Split beat is the frequency
-  through time of the oscillation of the left and right split.  Slide
-  indicator must be present or no slide will occur.
+  through time of the oscillation between the left and right split.
+  Slide indicator must be present or no slide will occur.
 
   Example
              carrier         phase     begin split     split beat  slide
@@ -481,8 +534,8 @@
   than .05 and if you don't want immediate fade, greater than .001.
   If beginning split or ending split are -1, they are set randomly
   between lowest split and highest split.  Split beat is the frequency
-  through time of the oscillation of the left and right split.  Slide
-  indicator must be present or no slide will occur.
+  through time of the oscillation between the left and right split.
+  Slide indicator must be present or no slide will occur.
 
   Example
          carrier            time   begin split   high split  slide
@@ -503,13 +556,14 @@
 
   Fields for phase are name, carrier frequency, beat, amplitude, and
   phase.  Phase is the maximum phase difference in degrees between the
-  left and right channel, from 0 to 360.  If the beat is positive, the
-  right channel leads and will be phase shifted between 0 and the
-  phase at the beat rate.  If the beat is negative, the left channel
-  leads and will be phase shifted between 0 and the phase at the beat
-  rate.  Optional fields are a left and right amplitude frequency
-  variation and a left and right percentage to vary.  Optional fields
-  must be at the end, before the slide indicator if they are present.
+  left and right channel, from 0 to a positive number.  If the beat is
+  positive, the right channel leads and will be phase shifted between
+  0 and the phase at the beat rate.  If the beat is negative, the left
+  channel leads and will be phase shifted between 0 and the phase at
+  the beat rate.  Optional fields are a left and right amplitude
+  frequency variation and a left and right percentage to vary.
+  Optional fields must be at the end, before the slide indicator if
+  they are present.
 
   Examples
   phase''''400.0''''+10.01''2.9''''180
@@ -835,9 +889,6 @@ QUESTIONS AND ANSWERS
     
 BUGS
 
-  Error checking is not robust on the input parameters in the
-  script file.
-  
   Have to use Control-C to end the program while it is running.
 
 AUTHOR
