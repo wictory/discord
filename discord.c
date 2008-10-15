@@ -134,7 +134,7 @@ int opt_m = 0;                  // modify carrier and beat in script file by a r
 double opt_m_arg = 0.0;         // percentage in decimal form of modification band for carrier and beat
 double modify = 0.0;            // percentage in decimal form of modification band for carrier and beat
 int opt_o;                      // output format to write
-int outfile_format = SF_FORMAT_FLAC; // default to flac if not specified otherwise, r:raw, f:flac
+int outfile_format = SF_FORMAT_WAV; // default to wav if not specified otherwise, r:raw, f:flac
 int opt_q;                      // quiet run, no display of sequence
 int opt_r;                      // samples per second requested
 int out_rate = 44100;           // samples per second, default to cd standard
@@ -7108,13 +7108,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               {
                 long delta =
                   (long) (( drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
-//                  (long) ( (rand () / (RAND_MAX + 1.0)) *
-//                           (bell1->repeat_max - bell1->repeat_min));
                 bell1->next_play = bell1->repeat_min + delta;      // frames to next bell
               }
-              if ((remaining_frames - bell1->next_play) < bell1->length_min )  // never run past end of voice
+              if ((bell1->next_play + bell1->length_min) >  remaining_frames)  // never run past end of voice
               {
-                bell1->next_play = remaining_frames + 1;
+                bell1->next_play = remaining_frames + 1;  // don't play again
               }
               if (bell1->length_max == bell1->length_min)
               {                   // fixed ring time
