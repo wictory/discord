@@ -5,7 +5,8 @@ learning curve.  Use the test script files as templates and experiment
 with changing the variables to see the effects.  There is a help file
 in text and html format and a man page.  Part of the reason for the
 complexity is that it allows the exploration of scripts that are
-different than any yet used.
+different than any yet used.  And that in turn means there are 
+probably paths I haven't traversed which might have undiscovered bugs.
 
 The packages for libraries libsndfile and libsamplerate have been
 included in the discord package starting with 2.0.2.  The library
@@ -102,8 +103,8 @@ workaround files included.  The html version is also available on the
 discord project web site at sourceforge.net.  The short explanation is
 that the alsa-lib version 1.0.14 final does not support floating point
 formats.  As doubles are the format that discord uses, discord will
-not work with alsa-lib 1.0.14. This should not be an issue now that
-alsa-lib 1.0.15 has been released.
+not work with alsa-lib 1.0.14. This should not be an issue except on
+older systems as alsa-lib-1.0.18 is in the works.
 
 If discord has to resample files you need to run it from a directory
 where you have write permission.  The resample creates a resampled
@@ -120,7 +121,10 @@ regard.  Try "esdctl off" if you can't get the hardware rate you want
 and esound is running.  If it is pulseaudio causing the problem, it
 has probably replaced the default device of ALSA.  Remove the
 pulseaudio-alsa package or find the file pulseaudio-alsa.conf and move
-it to another name while using discord.
+it to another name while using discord.  I haven't taken the time
+to investigate how to coexist peacefully with pulseaudio as I don't
+use it.  If you want to find out, you could go to the official 
+website, http://www.pulseaudio.org.
 
 If you are looking for sound samples to use with discord, one place
 you can look at is freesound at http://www.freesound.org/.  Most
@@ -142,3 +146,6 @@ And make your user member of the audio group.
 
 You will then experience very stable sound and be able to use low latencies!
 ...
+The above seems to have been bypassed in the latest version of Fedora.
+I find that beagled has the same priority as discord while running.  If I get
+irritated enough I'll look into why.
