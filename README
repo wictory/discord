@@ -27,7 +27,7 @@ make install
 
 Then run the following, to enable static linking with whichever
 libraries you want
-./configure --with-static-libsndfile --with-static-libsamplerate
+./configure --enable-static-libsndfile --enable-static-libsamplerate
 make
 su
 cp src/discord /usr/local/bin/
