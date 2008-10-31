@@ -562,7 +562,6 @@ struct fm
   double amp;                   // Amplitude level 0-100%, stored as decimal. i.e. .06
   double band;                  // Frequency band to shift within, Hz relative to carrier 
                                 // Band must be +ve and will shift up from carrier by this amount.
-  char channel;                 // L, R, or B standing for left channel, right channel, or both.
   double phase;                 // Phase between left and right channel, -360 to +360 degrees.
                                 // Phase +ve, right channel phase shifted that amount relative to left.
                                 // Phase -ve, left channel phase shifted that amount relative to right.
@@ -573,11 +572,16 @@ struct fm
   int inc1, off1;               // for fm tones, offset + increment into sin table for each channel
   double shift;                 // cumulative shift for freq adjustment to the carrier, moves between 0 and band
   int direction;                // direction that freq adjust is moving, +ve towards band, -ve towards carrier
+  double split_begin, split_end, split_now;      // left fraction for fm, .5 means evenly split L and R
+  double split_low, split_high; // range for split, .5 means evenly split L and R
+  double split_beat;   // Split variation frequency, defaults to beat
+  double split_dist;   // Split distance between split_begin and split_end.  Used only when there is a split_beat.
   int amp_inc1, amp_off1;       // sin table ofset and increment for left amp
   int amp_inc2, amp_off2;       // sin table ofset and increment for right amp
   double carr_adj, beat_adj, amp_adj, phase_adj;   // continuous adjustment if desired    
   double band_adj;              // continuous adjustment if desired    
-  double amp_beat1_adj, amp_beat2_adj, amp_pct1_adj, amp_pct2_adj;   // amp pulse continuous adjustment if desired
+  double amp_beat1_adj, amp_beat2_adj, amp_pct1_adj, amp_pct2_adj;   // amp fm continuous adjustment if desired
+  double split_beat_adj, split_adj;   // continuous adjustment if desired for pan or pan beat
   int slide;     // 1, 2, or 3 if this sequence slides into the next (only fms slide)
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous voice as
         starting offset for this voice.  Store a pointer to it during setup.
@@ -3825,16 +3829,6 @@ setup_fm (char *token, void **work)
   fm1->band = band;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, "L") == 0)  // left channel only
-    fm1->channel = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "R") == 0)  // right channel only
-    fm1->channel = 2;
-  else if (subtoken != NULL && strcmp (subtoken, "B") == 0)  // both channels
-    fm1->channel = 3;
-  else  // unrecognized, print error message
-    error ("Channel for freq had an error.  Only L, R, B allowed.\n%s\n%s", subtoken, original);
-
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
   double phase = strtod (subtoken, &endptr);
   if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3846,7 +3840,62 @@ setup_fm (char *token, void **work)
   fm1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
+  errno = 0;
+  double split_begin = strtod (subtoken, &endptr);
+  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Beginning split for fm had an error.\n%s\n%s", subtoken, original);
+  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Beginning split for fm cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+  fm1->split_begin = split_begin;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_end = strtod (subtoken, &endptr);
+  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Ending split for fm had an error.\n%s\n%s", subtoken, original);
+  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Ending split for fm cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+  fm1->split_end = split_end;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_low = strtod (subtoken, &endptr);
+  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Low split limit for fm had an error.\n%s\n%s", subtoken, original);
+  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+    error ("Low split limit for fm cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
+  fm1->split_low = split_low;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_high = strtod (subtoken, &endptr);
+  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("High split limit for fm had an error.\n%s\n%s", subtoken, original);
+  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+    error ("High split limit for fm cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
+  fm1->split_high = split_high;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double split_beat = strtod (subtoken, &endptr);
+  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Split beat for fm had an error.\n%s\n%s", subtoken, original);
+  else if (split_beat < 0.0)  // no errors, but less than 0
+    error ("Split beat for fm cannot be less than 0.\n%s\n%s", subtoken, original);
+  fm1->split_beat = split_beat;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there a slide, done, no amp variation
     fm1->slide = 1;
   else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
   {
@@ -3923,10 +3972,7 @@ setup_fm (char *token, void **work)
       error ("Amplitude beat1 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_beat1 < 0.0)  // no errors, but less than zero
       error ("Amplitude beat1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    if (fm1->channel != 2)  // not right channel only
-      fm1->amp_beat1 = amp_beat1;
-    else  // right channel only
-      fm1->amp_beat1 = 0.0;
+    fm1->amp_beat1 = amp_beat1;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
@@ -3937,10 +3983,7 @@ setup_fm (char *token, void **work)
       error ("Amplitude beat2 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_beat2 < 0.0)  // no errors, but less than zero
       error ("Amplitude beat2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    if (fm1->channel != 1)  // not left channel only
-      fm1->amp_beat2 = amp_beat2;
-    else  // left channel only
-      fm1->amp_beat2 = 0.0;
+    fm1->amp_beat2 = amp_beat2;
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
@@ -3951,10 +3994,7 @@ setup_fm (char *token, void **work)
       error ("Amplitude adj1 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_pct1 < 0.0)  // no errors, but less than zero
       error ("Amplitude adj1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    if (fm1->channel != 2)  // not right channel only
-      fm1->amp_pct1 = AMP_AD(amp_pct1);
-    else  // right channel only
-      fm1->amp_pct1 = 0.0;
+    fm1->amp_pct1 = AMP_AD (amp_pct1);
 
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
     errno = 0;
@@ -3965,10 +4005,7 @@ setup_fm (char *token, void **work)
       error ("Amplitude adj2 for fm had an error.\n%s\n%s", subtoken, original);
     else if (amp_pct2 < 0.0)  // no errors, but less than zero
       error ("Amplitude adj2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    if (fm1->channel != 1)  // not left channel only
-      fm1->amp_pct2 = AMP_AD(amp_pct2);
-    else  // left channel only
-      fm1->amp_pct2 = 0.0;
+    fm1->amp_pct2 = AMP_AD (amp_pct2);
 
     /* check if there is a slide after amp beat */
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -6266,26 +6303,22 @@ finish_beat_voice_setup ()
                 fm2->last_amp_off2 = &(fm1->amp_off2);
                 fm2->last_shift = &(fm1->shift);
                 fm2->last_direction = &(fm1->direction);
-              } 
-            } 
-            if (fm1->slide == 0)
-            { 
-              fm1->carr_adj = fm1->beat_adj = fm1->amp_adj = fm1->phase_adj = 0.0;
-              fm1->band_adj = 0.0;
-              fm1->amp_beat1_adj = fm1->amp_beat2_adj = 0.0;
-              fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
-            } 
-            else  // slide to next fm in stream
-            { 
-              if (work2 != NULL)
-              { 
-                if (fm2 != NULL)  // set above if fm, NULL means next voice not fm
-                {
+                if (fm1->slide == 0)  // there is a next node but no slide, set all adjustments to 0
+                { 
+                  fm1->carr_adj = fm1->beat_adj = fm1->amp_adj = fm1->phase_adj = 0.0;
+                  fm1->band_adj = 0.0;
+                  fm1->amp_beat1_adj = fm1->amp_beat2_adj = 0.0;
+                  fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
+                  fm1->split_adj = fm1->split_beat_adj = 0.0;
+                } 
+                else  // slide to next fm in stream
+                { 
                   fm1->carr_adj = (fm2->carrier - fm1->carrier)/ (double) snd1->tot_frames;
                   fm1->beat_adj = (fm2->beat - fm1->beat)/ (double) snd1->tot_frames;
                   fm1->amp_adj = (fm2->amp - fm1->amp)/ (double) snd1->tot_frames;
                   fm1->phase_adj = (fm2->phase - fm1->phase)/ (double) snd1->tot_frames;
                   fm1->band_adj = (fm2->band - fm1->band)/ (double) snd1->tot_frames;
+                  fm1->split_beat_adj = (fm2->split_beat - fm1->split_beat) / (double) snd1->tot_frames;
                   /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
                   if (fm2->amp_beat1 > 0.0)
                     fm1->amp_beat1_adj = (fm2->amp_beat1 - fm1->amp_beat1)/ (double) snd1->tot_frames;
@@ -6305,11 +6338,63 @@ finish_beat_voice_setup ()
                   else  // zero amp_pct2 in next fm
                     fm1->amp_pct2_adj = - fm1->amp_pct2 / (double) snd1->tot_frames;
                 } 
-                else
-                  error ("Slide called for, voice to slide to is not fm.  Position matters!\n");
               } 
-              else
-                error ("Slide called for, no next fm in time sequence!\n");
+              else if (fm1->slide != 0)
+                error ("Slide called for, voice to slide to is not fm.  Position matters!\n");
+            } 
+            else if (fm1->slide != 0)
+              error ("Slide called for, no next voice, fm or otherwise, in next time sequence!\n");
+            else  // there is no next node and no slide, set all adjustments to 0
+            { 
+              fm1->carr_adj = fm1->beat_adj = fm1->amp_adj = fm1->phase_adj = 0.0;
+              fm1->band_adj = 0.0;
+              fm1->amp_beat1_adj = fm1->amp_beat2_adj = 0.0;
+              fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
+              fm1->split_adj = fm1->split_beat_adj = 0.0;
+            } 
+              /* set up the split logic here as it applies throughout the voice period.
+                 don't need to worry about overwriting begin and end splits as they are only used once */
+            if (fm1->split_begin == -1.0)  // fm split start random
+            {
+              double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+              fm1->split_begin = fm1->split_low + delta;      // starting split for fm
+            }
+            fm1->split_now = fm1->split_begin;      // set working split to begin
+            if (fm1->split_end == -1.0)  // fm split end random
+            {
+              double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+              fm1->split_end = fm1->split_low + delta;      // ending split for fm
+              while (fabs (fm1->split_begin - fm1->split_end) == 0.0)
+              {  // difference equal to zero?  Repeat until larger.  
+                delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                fm1->split_end = fm1->split_low + delta;      // ending split for fm
+              }
+            }
+            if (fm1->split_beat == 0.0 && fm1->split_beat_adj == 0.0)
+            {
+                /* No split beat in this voice and not sliding to split beat in next voice, so pan.
+                 * The pan can go from left to right or right to left. */
+              fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+              fm1->split_adj = ((fm1->split_end - fm1->split_begin) 
+                                                              / (double) snd1->tot_frames);  // adjust per frame
+            }
+            else  // is split beat, split_begin and split_end are constant for duration of voice node
+            {
+              if (fm1->split_end < fm1->split_begin)  // end always larger for split beat, swap if not
+              {
+                double split_hold = fm1->split_begin;  // swap begin and end
+                fm1->split_begin = fm1->split_end;
+                fm1->split_end = split_hold;
+                fm1->split_now = fm1->split_begin; // set working split to the new begin
+              }
+              fm1->split_dist = fm1->split_end - fm1->split_begin;  // set split distance to the difference
+              double frames_per_cycle = ((double) out_rate / fm1->split_beat);  // frames in a back and forth cycle
+                /* adjust to do that cycle, sign oscillates in generate_frames 
+                 * Note that split_adj is being used differently than above, 
+                 * There it is the adjustment to reach the end split over the course of the voice period.
+                 * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                 * at the split_beat rate.  This works because the two are mutually exclusive. */
+              fm1->split_adj = ((2.*(fm1->split_dist)) / frames_per_cycle);  
             }
             break;
           }
@@ -6325,6 +6410,7 @@ finish_beat_voice_setup ()
             fm1->band_adj = 0.0;
             fm1->amp_beat1_adj = fm1->amp_beat2_adj = 0.0;
             fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
+            fm1->split_beat_adj = fm1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * fm1->slide_time);  // frames in each slide
             int_64 total_slide = (int_64) (slide_frames * fm1->steps);  //  total slide time
@@ -6343,7 +6429,7 @@ finish_beat_voice_setup ()
                 error ("Step slide called for, voice to slide to is not fm.  Position matters!\n");
             } 
             else
-              error ("Step slide called for, no next fm in time sequence!\n");
+              error ("Step slide called for, no next voice, fm or otherwise, in time sequence!\n");
             double carr_diff = (fm2->carrier - fm1->carrier);
             double beat_diff = (fm2->beat - fm1->beat);
             double amp_diff = (fm2->amp - fm1->amp);
@@ -6353,6 +6439,45 @@ finish_beat_voice_setup ()
             double amp_beat2_diff = (fm2->amp_beat2 - fm1->amp_beat2);
             double amp_pct1_diff = (fm2->amp_pct1 - fm1->amp_pct1);
             double amp_pct2_diff = (fm2->amp_pct2 - fm1->amp_pct2);
+            double split_beat_diff = (fm2->split_beat - fm1->split_beat);
+            int user_set_splits;  // Are the begin and end splits random or fixed?
+            if (fm1->split_begin == -1.0 || fm1->split_end == -1.0)    // split start random or split end random
+            {
+              user_set_splits = 0;  // even if only 1 is random, treat as random for setup purposes
+            }
+            else  // both begin and end split are user specified
+            {
+              user_set_splits = 1;  // both begin and end splits specified by the user
+              if (split_beat_diff != 0 || fm1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {
+                if (fm1->split_end < fm1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = fm1->split_begin;  // swap begin and end
+                  fm1->split_begin = fm1->split_end;
+                  fm1->split_end = split_hold;
+                }
+                /* Set split distance to the difference.  Not used for generating frames for pan, only split beat */
+                fm1->split_dist = fm1->split_end - fm1->split_begin;  
+                double frames_per_cycle = ((double) out_rate / fm1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than for pan, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                fm1->split_adj = ((2.*(fm1->split_dist)) / frames_per_cycle);  
+                fm1->split_now = fm1->split_begin;      // set working split to begin at
+              }
+              else  // there is a pan
+              {
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan 
+                   * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
+                   * end of list.
+                   */
+                fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                fm1->split_adj = ((fm1->split_end - fm1->split_begin) / (double) snd1->tot_frames);
+                fm1->split_end = fm1->split_begin + (fm1->tot_frames * fm1->split_adj);  // ending split
+              }
+            }
             double next_carrier = 0.0;
             double next_beat = 0.0;
             double next_amp = 0.0;
@@ -6362,6 +6487,7 @@ finish_beat_voice_setup ()
             double next_amp_beat2 = 0.0;
             double next_amp_pct1 = 0.0;
             double next_amp_pct2 = 0.0;
+            double next_split_beat = 0.0;
             fm4 = fm1;  // set last node processed
             int total_nodes = (2 * fm1->steps);
             int ii;
@@ -6384,6 +6510,7 @@ finish_beat_voice_setup ()
                   next_amp = fm2->amp;
                   next_phase = fm2->phase;
                   next_band = fm2->band;
+                  next_split_beat = fm2->split_beat;
                   next_amp_beat1 = fm2->amp_beat1;
                   next_amp_beat2 = fm2->amp_beat2;
                   next_amp_pct1 = fm2->amp_pct1;
@@ -6398,6 +6525,7 @@ finish_beat_voice_setup ()
                   next_amp = fm1->amp + (amp_diff * fraction);
                   next_phase = fm1->phase + (phase_diff * fraction);
                   next_band = fm1->band + (band_diff * fraction);
+                  next_split_beat = fm1->split_beat + (split_beat_diff * fraction);
                   next_amp_beat1 = fm1->amp_beat1 + (amp_beat1_diff * fraction);
                   next_amp_beat2 = fm1->amp_beat2 + (amp_beat2_diff * fraction);
                   next_amp_pct1 = fm1->amp_pct1 + (amp_pct1_diff * fraction);
@@ -6410,6 +6538,7 @@ finish_beat_voice_setup ()
                     next_amp += ((amp_diff/fm1->steps) * fm1->fuzz * adjust);
                     next_phase += ((phase_diff/fm1->steps) * fm1->fuzz * adjust);
                     next_band += ((band_diff/fm1->steps) * fm1->fuzz * adjust);
+                    next_split_beat += ((split_beat_diff/fm1->steps) * fm1->fuzz * adjust);
                     next_amp_beat1 += ((amp_beat1_diff/fm1->steps) * fm1->fuzz * adjust);
                     next_amp_beat2 += ((amp_beat2_diff/fm1->steps) * fm1->fuzz * adjust);
                     next_amp_pct1 += ((amp_pct1_diff/fm1->steps) * fm1->fuzz * adjust);
@@ -6421,6 +6550,8 @@ finish_beat_voice_setup ()
                 fm3->amp_adj = (next_amp - fm4->amp)/ fm3->tot_frames;
                 fm3->phase_adj = (next_phase - fm4->phase)/ fm3->tot_frames;
                 fm3->band_adj = (next_band - fm4->band)/ fm3->tot_frames;
+                   /* change split beat only in slides */
+                fm3->split_beat_adj = (next_split_beat - fm4->split_beat)/ fm3->tot_frames;
                 /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
                 if (next_amp_beat1 > 0.0)
                   fm3->amp_beat1_adj = (next_amp_beat1 - fm4->amp_beat1)/ fm3->tot_frames;
@@ -6451,10 +6582,116 @@ finish_beat_voice_setup ()
                 fm3->amp = next_amp;
                 fm3->phase = next_phase;
                 fm3->band = next_band;
+                fm3->split_beat = next_split_beat;
+                fm3->split_beat_adj = 0.0;  //steps are constant for split beat
                 fm3->amp_beat1 = next_amp_beat1;
                 fm3->amp_beat2 = next_amp_beat2;
                 fm3->amp_pct1 = next_amp_pct1;
                 fm3->amp_pct2 = next_amp_pct2;
+              }
+                /* Set up the random split logic here, the case where begin and end split specified
+                 * taken care of above and housekeeping done for pan here.
+                 * Use fm1 to determine branching as it won't be changed until list is complete.
+                 * Don't need to worry about overwriting begin and end splits as they are only used once
+                 * Works like this:  
+                 * If fixed begin split and end split with no split beat, pan occurs across all steps and 
+                 * slides at a constant rate.  This was handled above.
+                 * If fixed begin and end with split beat, the same begin and end are used for all nodes.
+                 * This was handled above
+                 * If random begin and/or end, then pan is a chain that runs through each voice node so
+                 * that end in one node is begin in the next until the last.  Handled below.
+                 * If it is random with a split beat, the begin and end are set anew in each node.  Handled below.
+                 * Same logic for slides and steps
+                 */
+              if (! user_set_splits)  // at least one random split
+              {
+                if (split_beat_diff != 0 || fm1->split_beat > 0.0)  // there is a split beat or slide to split beat
+                {  /* Since split_begin and split_end don't change if there is a split
+                    * beat, check if they are random and set them now.  If it is constant
+                    * it has already been set by the memcpy above.
+                    */
+                  if (fm1->split_begin == -1.0)  // fm split start random
+                  {
+                     /* begin split is random */
+                    double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm3->split_begin = fm1->split_low + delta;
+                  }
+                  if (fm1->split_end == -1.0)  // fm split end random
+                  {
+                    double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm3->split_end = fm1->split_low + delta; // end split for this fm
+                    while (fabs (fm3->split_begin - fm3->split_end) == 0.0)
+                    {  // difference equal to zero?  Repeat until larger.  
+                      delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                      fm3->split_end = fm1->split_low + delta;      // ending split for fm
+                    }
+                  }
+                  if (fm3->split_end < fm3->split_begin)  // end always larger for split beat, swap if not
+                  {
+                    double split_hold = fm3->split_begin;  // swap begin and end
+                    fm3->split_begin = fm3->split_end;
+                    fm3->split_end = split_hold;
+                  }
+                  fm3->split_now = fm3->split_begin;      // set working split to begin
+                  fm3->split_dist = fm3->split_end - fm3->split_begin;  // set split distance to the difference
+                  double frames_per_cycle = ((double) out_rate / fm3->split_beat);  // frames in a back and forth cycle
+                    /* adjust to do that cycle, sign oscillates in generate_frames 
+                     * Note that split_adj is being used differently than above, 
+                     * There it is the adjustment to reach the end split over the course of the voice period.
+                     * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                     * at the split_beat rate.  This works because the two are mutually exclusive. */
+                  fm3->split_adj = ((2.*(fm3->split_dist)) / frames_per_cycle);  
+                }
+                else
+                {
+                  /* If it is a pan and split_begin or split_end are random, 
+                   * change them for each voice node.
+                   * If they aren't random, they are already set by the memcpy above.
+                   */
+                  if (fm1->split_begin == -1.0)  // fm split start random for pan
+                  {
+                    if (fm4 != fm1 && fm1->split_end == -1.0)  
+                        // previous node not first node in chain, fm1 not set till end, both begin and end random
+                      fm3->split_begin = fm4->split_end; // begin split is previous node end split
+                    else  // first node after start of chain
+                    {  /* begin split is random and will become first nodes end split below for pans */
+                      double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                      fm3->split_begin = fm1->split_low + delta;
+                    }
+                  }
+                  fm3->split_now = fm3->split_begin;      // set working split to begin
+                  if (fm1->split_end == -1.0)  // fm split end random for pan
+                  {
+                    if (ii == total_nodes - 1)  // last slide, to next time sequence voice fm2
+                    {
+                      if (fm2->split_begin == -1.0)  //random
+                      {
+                        double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                        fm3->split_end = fm1->split_low + delta; // end split for this fm
+                        fm2->split_begin = fm3->split_end;  // set this as begin split for next voice
+                      }
+                      else  // fixed split in next voice
+                        fm3->split_end = fm2->split_begin; // ending split is next voice begin split
+                    }
+                    else  // internal 
+                    {
+                      double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                      fm3->split_end = fm1->split_low + delta;      // ending split for fm
+                    }
+                  }
+                  fm3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                    /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                  fm3->split_adj = ((fm3->split_end - fm3->split_begin) 
+                                                          / (double) fm3->tot_frames);  // adjust per frame
+                }
+              }
+              /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+              else if (split_beat_diff == 0.0 && fm1->split_beat == 0.0)  // there is no split beat or slide to split beat
+              {
+                fm3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                fm3->split_begin =  fm4->split_end + fm4->split_adj;  // starting split for this node
+                fm3->split_end =  fm3->split_begin + (fm3->tot_frames * fm3->split_adj);  // ending split
+                fm3->split_now = fm3->split_begin;  // set working split to beginning split so adjust takes to end
               }
               fm4->step_next = fm3;  // set list pointer for previous node
               fm3->last_off1 = &(fm4->off1);  // each node starts where last left off as offset
@@ -6463,6 +6700,83 @@ finish_beat_voice_setup ()
               fm3->last_shift = &(fm4->shift);  // each node starts where last left off for phase and direction
               fm3->last_direction = &(fm4->direction);
               fm4 = fm3;  // make current node previous node
+            }
+              /* Now set up the split logic for fm1 as it applies throughout the voice period.
+                 Don't need to worry about overwriting begin and end splits as they are only used once
+                 and the rest of the step slide list is done now so we don't need them as flags */
+            if (! user_set_splits)  // at least one random split
+            {
+              if (split_beat_diff != 0 || fm1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {  /* Since split_begin and split_end don't change if there is a split
+                  * beat, check if they are random and set them now.  If it is constant
+                  * it has already been set by the setup above.
+                  */
+                if (fm1->split_begin == -1.0)  // fm split start random
+                {
+                   /* begin split is random */
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_begin = fm1->split_low + delta;
+                }
+                if (fm1->split_end == -1.0)  // fm split end random
+                {
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_end = fm1->split_low + delta; // end split for this fm
+                  while (fabs (fm1->split_begin - fm1->split_end) == 0.0)
+                  {  // difference equal to zero?  Repeat until larger.  
+                    delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm1->split_end = fm1->split_low + delta;      // ending split for fm
+                  }
+                }
+                if (fm1->split_end < fm1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = fm1->split_begin;  // swap begin and end
+                  fm1->split_begin = fm1->split_end;
+                  fm1->split_end = split_hold;
+                }
+                fm1->split_now = fm1->split_begin;      // set working split to begin
+                fm1->split_dist = fm1->split_end - fm1->split_begin;  // set split distance to the difference
+                double frames_per_cycle = ((double) out_rate / fm1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than for pan, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                fm1->split_adj = ((2.*(fm1->split_dist)) / frames_per_cycle);  
+              }
+              else
+              {
+                /* If it is a pan and split_begin or split_end are random, 
+                 * change them for each voice node.
+                 * If they aren't random, they are already set by the memcpy above.
+                 */
+                if (fm1->split_end == -1.0)  // fm split end random for pan
+                {
+                  if (fm1->split_begin == -1.0)  // if both random, set end to next step node begin 
+                    fm1->split_end = (fm1->step_next)->split_begin;
+                  else
+                  { /* begin split is fixed  */
+                    double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm1->split_end = fm1->split_low + delta;      // ending split for fm
+                  }
+                }
+                if (fm1->split_begin == -1.0)  // fm split start random for pan
+                {
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_begin = fm1->split_low + delta;
+                }
+                fm1->split_now = fm1->split_begin;      // set working split to begin
+                fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                fm1->split_adj = ((fm1->split_end - fm1->split_begin) 
+                                                        / (double) fm1->tot_frames);  // adjust per frame
+              }
+            }
+            /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+            else if (split_beat_diff == 0.0 && fm1->split_beat == 0.0)  // there is no split beat or slide to split beat
+            {
+              fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+              /* split_begin and split_end already set above, no need to modify here */
+              fm1->split_now = fm1->split_begin;  // set working split to beginning split so adjust takes to end
             }
             break;
           }
@@ -6478,6 +6792,7 @@ finish_beat_voice_setup ()
             fm1->band_adj = 0.0;
             fm1->amp_beat1_adj = fm1->amp_beat2_adj = 0.0;
             fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
+            fm1->split_beat_adj = fm1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
             int_64 slide_frames = (int_64) (out_rate * fm1->slide_time);  // frames in each slide
             int_64 total_slide = (int_64) (slide_frames * fm1->steps);  //  total slide time
@@ -6502,15 +6817,55 @@ finish_beat_voice_setup ()
             double amp_diff = (fm2->amp - fm1->amp);
             double phase_diff = (fm2->phase - fm1->phase);
             double band_diff = (fm2->band - fm1->band);
+            double split_beat_diff = (fm2->split_beat - fm1->split_beat);
             double amp_beat1_diff = (fm2->amp_beat1 - fm1->amp_beat1);
             double amp_beat2_diff = (fm2->amp_beat2 - fm1->amp_beat2);
             double amp_pct1_diff = (fm2->amp_pct1 - fm1->amp_pct1);
             double amp_pct2_diff = (fm2->amp_pct2 - fm1->amp_pct2);
+            int user_set_splits;  // Are the begin and end splits random or fixed?
+            if (fm1->split_begin == -1.0 || fm1->split_end == -1.0)    // split start random or split end random
+            {
+              user_set_splits = 0;  // even if only 1 is random, treat as random for setup purposes
+            }
+            else  // both begin and end split are user specified
+            {
+              user_set_splits = 1;  // both begin and end splits specified by the user
+              if (split_beat_diff != 0.0 || fm1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {
+                if (fm1->split_end < fm1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = fm1->split_begin;  // swap begin and end
+                  fm1->split_begin = fm1->split_end;
+                  fm1->split_end = split_hold;
+                }
+                /* Set split distance to the difference.  Not used for generating frames for pan, only split beat */
+                fm1->split_dist = fm1->split_end - fm1->split_begin;  
+                double frames_per_cycle = ((double) out_rate / fm1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than for pan, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                fm1->split_adj = ((2.*(fm1->split_dist)) / frames_per_cycle);  
+                fm1->split_now = fm1->split_begin;      // set working split to begin
+              }
+              else  // there is a pan
+              {
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan 
+                   * Adjust per frame across all nodes at a constant rate so that arrive at end split at 
+                   * end of list.
+                   */
+                fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                fm1->split_adj = ((fm1->split_end - fm1->split_begin) / (double) snd1->tot_frames);
+                fm1->split_end = fm1->split_begin + (fm1->tot_frames * fm1->split_adj);  // ending split
+              }
+            }
             double next_carrier = 0.0;
             double next_beat = 0.0;
             double next_amp = 0.0;
             double next_phase = 0.0;
             double next_band = 0.0;
+            double next_split_beat = 0.0;
             double next_amp_beat1 = 0.0;
             double next_amp_beat2 = 0.0;
             double next_amp_pct1 = 0.0;
@@ -6537,6 +6892,7 @@ finish_beat_voice_setup ()
                   next_amp = fm2->amp;
                   next_phase = fm2->phase;
                   next_band = fm2->band;
+                  next_split_beat = fm2->split_beat;
                   next_amp_beat1 = fm2->amp_beat1;
                   next_amp_beat2 = fm2->amp_beat2;
                   next_amp_pct1 = fm2->amp_pct1;
@@ -6548,13 +6904,23 @@ finish_beat_voice_setup ()
                 {
                   double fraction = drand48 ();  // random fraction of interval
                   next_carrier = fm1->carrier + (carr_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_beat = fm1->beat + (beat_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_amp = fm1->amp + (amp_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_phase = fm1->phase + (phase_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_band = fm1->band + (band_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
+                  next_split_beat = fm1->split_beat + (split_beat_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_amp_beat1 = fm1->amp_beat1 + (amp_beat1_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_amp_beat2 = fm1->amp_beat2 + (amp_beat2_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_amp_pct1 = fm1->amp_pct1 + (amp_pct1_diff * fraction);
+                  fraction = drand48 ();  // random fraction of interval
                   next_amp_pct2 = fm1->amp_pct2 + (amp_pct2_diff * fraction);
                 }
                 fm3->carr_adj = (next_carrier - fm4->carrier)/ fm3->tot_frames;
@@ -6562,6 +6928,8 @@ finish_beat_voice_setup ()
                 fm3->amp_adj = (next_amp - fm4->amp)/ fm3->tot_frames;
                 fm3->phase_adj = (next_phase - fm4->phase)/ fm3->tot_frames;
                 fm3->band_adj = (next_band - fm4->band)/ fm3->tot_frames;
+                   /* change split beat only in slides */
+                fm3->split_beat_adj = (next_split_beat - fm4->split_beat)/ fm3->tot_frames;
                 /* Amplitude beats are optional.  If there isn't a match, treat as zero instead */
                 if (next_amp_beat1 > 0.0)
                   fm3->amp_beat1_adj = (next_amp_beat1 - fm4->amp_beat1)/ fm3->tot_frames;
@@ -6590,10 +6958,111 @@ finish_beat_voice_setup ()
                 fm3->amp = next_amp;
                 fm3->phase = next_phase;
                 fm3->band = next_band;
+                fm3->split_beat = next_split_beat;
+                fm3->split_beat_adj = 0.0;  //steps are constant
                 fm3->amp_beat1 = next_amp_beat1;
                 fm3->amp_beat2 = next_amp_beat2;
                 fm3->amp_pct1 = next_amp_pct1;
                 fm3->amp_pct2 = next_amp_pct2;
+              }
+                /* Set up the random split logic here, the case where begin and end split specified
+                 * taken care of above and housekeeping done for pan here.
+                 * Use fm1 to determine branching as it won't be changed until list is complete.
+                 * Don't need to worry about overwriting begin and end splits as they are only used once
+                 * Works like this:  
+                 * If fixed begin split and end split with no split beat, pan occurs across all steps and 
+                 * slides at a constant rate.  This was handled above.
+                 * If fixed begin and end with split beat, the same begin and end are used for all nodes.
+                 * This was handled above
+                 * If random begin and/or end, then pan is a chain that runs through each voice node so
+                 * that end in one node is begin in the next until the last.  Handled below.
+                 * If it is random with a split beat, the begin and end are set anew in each node.  Handled below.
+                 * Same logic for slides and steps
+                 */
+              if (! user_set_splits)  // at least one random split
+              {
+                if (split_beat_diff != 0 || fm1->split_beat > 0.0)  // there is a split beat or slide to split beat
+                {  /* Since split_begin and split_end don't change if there is a split
+                    * beat, check if they are random and set them now.  If it is constant
+                    * it has already been set by the memcpy above.
+                    */
+                  if (fm1->split_begin == -1.0)  // fm split start random
+                  {
+                     /* begin split is random */
+                    double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm3->split_begin = fm1->split_low + delta;
+                  }
+                  if (fm1->split_end == -1.0)  // fm split end random
+                  {
+                    double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm3->split_end = fm1->split_low + delta; // end split for this fm
+                    while (fabs (fm3->split_begin - fm3->split_end) == 0.0)
+                    {  // difference equal to zero?  Repeat until larger.  
+                      delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                      fm3->split_end = fm1->split_low + delta;      // ending split for fm
+                    }
+                  }
+                  if (fm3->split_end < fm3->split_begin)  // end always larger for split beat, swap if not
+                  {
+                    double split_hold = fm3->split_begin;  // swap begin and end
+                    fm3->split_begin = fm3->split_end;
+                    fm3->split_end = split_hold;
+                  }
+                  fm3->split_now = fm3->split_begin;      // set working split to begin
+                  fm3->split_dist = fm3->split_end - fm3->split_begin;  // set split distance to the difference
+                  double frames_per_cycle = ((double) out_rate / fm3->split_beat);  // frames in a back and forth cycle
+                    /* adjust to do that cycle, sign oscillates in generate_frames 
+                     * Note that split_adj is being used differently than for pan.
+                     * There it is the adjustment to reach the end split over the course of the voice period.
+                     * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                     * at the split_beat rate.  This works because the two are mutually exclusive. */
+                  fm3->split_adj = ((2.*(fm3->split_dist)) / frames_per_cycle);  
+                }
+                else
+                {
+                  /* If it is a pan and split_begin or split_end are random, 
+                   * change them for each voice node.
+                   * If they aren't random, they are already set by the memcpy above.
+                   */
+                  if (fm1->split_begin == -1.0)  // fm split start random for pan
+                  {
+                     /* begin split is random */
+                    double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm3->split_begin = fm1->split_low + delta;
+                  }
+                  fm3->split_now = fm3->split_begin;      // set working split to begin
+                  if (fm1->split_end == -1.0)  // fm split end random for pan
+                  {
+                    if (ii == total_nodes - 1)  // last slide, to next time sequence voice fm2
+                    {
+                      if (fm2->split_begin == -1.0)  //random
+                      {
+                        double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                        fm3->split_end = fm1->split_low + delta; // end split for this fm
+                        fm2->split_begin = fm3->split_end;  // set this as begin split for next voice
+                      }
+                      else  // fixed split in next voice
+                        fm3->split_end = fm2->split_begin; // ending split is next voice begin split
+                    }
+                    else  // internal 
+                    {
+                      double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                      fm3->split_end = fm1->split_low + delta;      // ending split for fm
+                    }
+                  }
+                  fm3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                    /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                  fm3->split_adj = ((fm3->split_end - fm3->split_begin) 
+                                                          / (double) fm3->tot_frames);  // adjust per frame
+                }
+              }
+              /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+              else if (split_beat_diff == 0.0 && fm1->split_beat == 0.0)  // there is no split beat or slide to split beat
+              {
+                fm3->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                fm3->split_begin =  fm4->split_end + fm4->split_adj;  // starting split for this node
+                fm3->split_end =  fm3->split_begin + (fm3->tot_frames * fm3->split_adj);  // ending split
+                fm3->split_now = fm3->split_begin;  // set working split to beginning split so adjust takes to end
               }
               fm4->step_next = fm3;  // set list pointer for previous node
               fm3->last_off1 = &(fm4->off1);  // each node starts where last left off as offset
@@ -6602,6 +7071,79 @@ finish_beat_voice_setup ()
               fm3->last_shift = &(fm4->shift);  // each node starts where last left off for phase and direction
               fm3->last_direction = &(fm4->direction);
               fm4 = fm3;  // make current node previous node
+            }
+              /* Now set up the split logic for fm1 as it applies throughout the voice period.
+                 Don't need to worry about overwriting begin and end splits as they are only used once
+                 and the rest of the step slide list is done */
+            if (! user_set_splits)  // at least one random split
+            {
+              if (split_beat_diff != 0 || fm1->split_beat > 0.0)  // there is a split beat or slide to split beat
+              {  /* Since split_begin and split_end don't change if there is a split
+                  * beat, check if they are random and set them now.  If it is constant
+                  * it has already been set by the setup above.
+                  */
+                if (fm1->split_begin == -1.0)  // fm split start random
+                {
+                   /* begin split is random */
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_begin = fm1->split_low + delta;
+                }
+                if (fm1->split_end == -1.0)  // fm split end random
+                {
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_end = fm1->split_low + delta; // end split for this fm
+                  while (fabs (fm1->split_begin - fm1->split_end) == 0.0)
+                  {  // difference equal to zero?  Repeat until larger.  
+                    delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                    fm1->split_end = fm1->split_low + delta;      // ending split for fm
+                  }
+                }
+                if (fm1->split_end < fm1->split_begin)  // end always larger for split beat, swap if not
+                {
+                  double split_hold = fm1->split_begin;  // swap begin and end
+                  fm1->split_begin = fm1->split_end;
+                  fm1->split_end = split_hold;
+                }
+                fm1->split_now = fm1->split_begin;      // set working split to begin
+                fm1->split_dist = fm1->split_end - fm1->split_begin;  // set split distance to the difference
+                double frames_per_cycle = ((double) out_rate / fm1->split_beat);  // frames in a back and forth cycle
+                  /* adjust to do that cycle, sign oscillates in generate_frames 
+                   * Note that split_adj is being used differently than above, 
+                   * There it is the adjustment to reach the end split over the course of the voice period.
+                   * Here it is the adjustment so that the split oscillates between split_begin and split_end
+                   * at the split_beat rate.  This works because the two are mutually exclusive. */
+                fm1->split_adj = ((2.*(fm1->split_dist)) / frames_per_cycle);  
+              }
+              else
+              {
+                /* If it is a pan and split_begin or split_end are random, 
+                 * change them for each voice node.
+                 * If they aren't random, they are already set by the memcpy above.
+                 */
+                if (fm1->split_begin == -1.0)  // fm split start random for pan
+                {
+                  /* begin split is random and will become first nodes end split below for pans */
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_begin = fm1->split_low + delta;
+                }
+                if (fm1->split_end == -1.0)  // fm split end random for pan
+                {
+                  double delta = ( (drand48 ()) * (fm1->split_high - fm1->split_low));
+                  fm1->split_end = fm1->split_low + delta;      // ending split for fm
+                }
+                fm1->split_now = fm1->split_begin;      // set working split to begin
+                fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+                  /* no split beat in this voice and not sliding to split beat in next voice, perform pan */
+                fm1->split_adj = ((fm1->split_end - fm1->split_begin) 
+                                                        / (double) fm1->tot_frames);  // adjust per frame
+              }
+            }
+            /* have to take care of pan across nodes here, so that each node starts at end of previous. */
+            else if (split_beat_diff == 0.0 && fm1->split_beat == 0.0)  // there is no split beat or slide to split beat
+            {
+              fm1->split_dist = 0.0;  // use split_dist 0 as flag to indicate that this is a pan in generate frames
+              /* split_begin and split_end already set above, no need to modify here */
+              fm1->split_now = fm1->split_begin;  // set working split to beginning split so adjust takes to end
             }
             break;
           }
@@ -9066,31 +9608,26 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             fm1->inc1 = (int) round((fm1->carrier+fm1->shift)*2);  // (fm1->carrier / out_rate) * (out_rate * 2));
             fm1->off1 += fm1->inc1;
             fm1->off1 = fm1->off1 % sin_siz;  // base offset
-            if (fm1->channel == 1)  // left channel only playing
-              out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
-            else if (fm1->channel == 2)  // right channel only playing
-              out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
-            else if (fm1->channel == 3)  // both channels are playing
+            int phase_offset = (int) ((fabs(fm1->phase)/360.) * sin_siz);  // offset shift for phase
+            int phase_shifted_offset = (fm1->off1 + phase_offset) % sin_siz;
+            if (fm1->phase > 0.0)  // add the phase shift to the right channel
             {
-              int phase_offset = (int) ((fabs(fm1->phase)/360.) * sin_siz);  // offset shift for phase
-              int phase_shifted_offset = (fm1->off1 + phase_offset) % sin_siz;
-              if (fm1->phase > 0.0)  // add the phase shift to the right channel
-              {
-                out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
-                out_buffer[ii+1] += (amp2 * sin_table[phase_shifted_offset]);  // right leads left
-              }
-              else if (fm1->phase < 0.0)  // add the phase shift to the left channel
-              {
-                out_buffer[ii] += (amp1 * sin_table[phase_shifted_offset]);  // left leads right
-                out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
-              }
-              else  // no phase shift
-              {
-                out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
-                out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
-              }
+              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[phase_shifted_offset]);  // right leads left
             }
-              /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second */
+            else if (fm1->phase < 0.0)  // add the phase shift to the left channel
+            {
+              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[phase_shifted_offset]);  // left leads right
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+            }
+            else  // no phase shift
+            {
+              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+            }
+              /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second.
+               * This probably only has to happen every frame if there is a slide changing the relevant variables.
+               * For now, leave it here.  */
             double shift_adjust = ((2. * fm1->band * fm1->beat) / out_rate);  // 2 because back and forth
             fm1->shift += (shift_adjust * fm1->direction);  
             if (fm1->shift > fm1->band)  // shifted too far away from base carrier
@@ -9148,8 +9685,74 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
             }
             // else // inner case, already set above as initial condition
+            /*  Adjust either the split or split beat for next pass */
+            fm1->split_now += fm1->split_adj * fast_mult;
+            if (fm1->split_dist == 0.0)  // split dist set to zero during setup as flag for pan
+            {  // adjust the split
+              if (fm1->split_now < 0.0)
+                fm1->split_now = 0.0;
+              else if (fm1->split_now > 1.0)
+                fm1->split_now = 1.0;
+            }
+            else // split beat so oscillates between begin and end, and begin and end are fixed
+            {
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+              if (fm1->split_now >= fm1->split_end)  // larger than end
+              {
+                double delta = fabs (fm1->split_now - fm1->split_end);  // overshoot
+                if (delta > fm1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/fm1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
+                    fm1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                    fm1->split_now = fm1->split_end - delta;  // rebound amount
+                  }
+                  else  // direction stays the same
+                    fm1->split_now = fm1->split_begin + delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  fm1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                  fm1->split_now = fm1->split_end - delta;  // rebound amount
+                }
+              }
+              else if (fm1->split_now <= fm1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (fm1->split_begin - fm1->split_now);  // overshoot
+                if (delta > fm1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/fm1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
+                    fm1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                    fm1->split_now = fm1->split_begin + delta;  // rebound amount
+                  }
+                  else  // direction stays the same
+                    fm1->split_now = fm1->split_end - delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  fm1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                  fm1->split_now = fm1->split_begin + delta;  // rebound amount
+                }
+              }
+              /* Adjust the split beat and split adjust to achieve that split beat. */
+              fm1->split_beat += (fm1->split_beat_adj * fast_mult);
+              double sign_hold;  // variable to hold the current sign of the split adjustment for split beat oscillation
+              if (fm1->split_adj < 0.0)
+                sign_hold = -1.0;
+              else
+                sign_hold = 1.0;
+              fm1->split_adj = ((fm1->split_beat * 2. * fm1->split_dist) / (double) out_rate);  
+              fm1->split_adj *= sign_hold;
+            }  
             if (fm1->slide)
-            { /* adjust values for next pass only if this phase is sliding */
+            { /* adjust rest of values for next pass only if this phase is sliding */
               fm1->carrier += (fm1->carr_adj * fast_mult);
               fm1->beat += (fm1->beat_adj * fast_mult);
               fm1->amp += (fm1->amp_adj * fast_mult);
@@ -9225,31 +9828,26 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             fm1->inc1 = (int) round((fm1->carrier+fm1->shift)*2);  // (fm1->carrier / out_rate) * (out_rate * 2));
             fm1->off1 += fm1->inc1;
             fm1->off1 = fm1->off1 % sin_siz;  // base offset
-            if (fm1->channel == 1)  // left channel only playing
-              out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
-            else if (fm1->channel == 2)  // right channel only playing
-              out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
-            else if (fm1->channel == 3)  // both channels are playing
+            int phase_offset = (int) ((fabs(fm1->phase)/360.) * sin_siz);  // offset shift for phase
+            int phase_shifted_offset = (fm1->off1 + phase_offset) % sin_siz;
+            if (fm1->phase > 0.0)  // add the phase shift to the right channel
             {
-              int phase_offset = (int) ((fabs(fm1->phase)/360.) * sin_siz);  // offset shift for phase
-              int phase_shifted_offset = (fm1->off1 + phase_offset) % sin_siz;
-              if (fm1->phase > 0.0)  // add the phase shift to the right channel
-              {
-                out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
-                out_buffer[ii+1] += (amp2 * sin_table[phase_shifted_offset]);  // right leads left
-              }
-              else if (fm1->phase < 0.0)  // add the phase shift to the left channel
-              {
-                out_buffer[ii] += (amp1 * sin_table[phase_shifted_offset]);  // left leads right
-                out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
-              }
-              else  // no phase shift
-              {
-                out_buffer[ii] += (amp1 * sin_table[fm1->off1]);
-                out_buffer[ii+1] += (amp2 * sin_table[fm1->off1]);
-              }
+              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[phase_shifted_offset]);  // right leads left
             }
-              /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second */
+            else if (fm1->phase < 0.0)  // add the phase shift to the left channel
+            {
+              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[phase_shifted_offset]);  // left leads right
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+            }
+            else  // no phase shift
+            {
+              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+            }
+              /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second.
+               * This probably only has to happen every frame if there is a slide changing the relevant variables.
+               * For now, leave it here.  */
             double shift_adjust = ((2. * fm1->band * fm1->beat) / out_rate);  // 2 because back and forth
             fm1->shift += (shift_adjust * fm1->direction);  
             if (fm1->shift > fm1->band)  // shifted too far away from base carrier
@@ -9307,6 +9905,72 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
             }
             // else // inner case, already set above as initial condition
+            /*  Adjust either the split or split beat for next pass */
+            fm1->split_now += fm1->split_adj * fast_mult;
+            if (fm1->split_dist == 0.0)  // split dist set to zero during setup as flag for pan
+            {  // adjust the split
+              if (fm1->split_now < 0.0)
+                fm1->split_now = 0.0;
+              else if (fm1->split_now > 1.0)
+                fm1->split_now = 1.0;
+            }
+            else // split beat so oscillates between begin and end
+            {
+                /* assumes split_end > split_begin, this is done in finish_beat_voice_setup */
+              if (fm1->split_now >= fm1->split_end)  // larger than end
+              {
+                double delta = fabs (fm1->split_now - fm1->split_end);  // overshoot
+                if (delta > fm1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/fm1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
+                    fm1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                    fm1->split_now = fm1->split_end - delta;  // rebound amount
+                  }
+                  else  // direction stays the same
+                    fm1->split_now = fm1->split_begin + delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  fm1->split_adj *= -1.;  // swap direction, reversing back towards split_begin
+                  fm1->split_now = fm1->split_end - delta;  // rebound amount
+                }
+              }
+              else if (fm1->split_now <= fm1->split_begin)  // smaller than begin
+              {
+                double delta = fabs (fm1->split_begin - fm1->split_now);  // overshoot
+                if (delta > fm1->split_dist) // overshoot greater than split_dist
+                {
+                  double quotient = delta/fm1->split_dist;  // find number of wraps, including fraction
+                  int counter = (int) floor (quotient);  // integer number of wraps
+                  delta -= (double) counter;  // remainder after wraps taken away
+                  if (counter % 2 == 0)  // even number of wraps
+                  { 
+                    fm1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                    fm1->split_now = fm1->split_begin + delta;  // rebound amount
+                  }
+                  else  // direction stays the same
+                    fm1->split_now = fm1->split_end - delta;  // rebound amount
+                }
+                else // overshoot smaller than overall split, reflect from end
+                {
+                  fm1->split_adj *= -1.;  // swap direction, reversing back towards split_end
+                  fm1->split_now = fm1->split_begin + delta;  // rebound amount
+                }
+              }
+              /* Adjust the split beat and split adjust to achieve that split beat. */
+              fm1->split_beat += (fm1->split_beat_adj * fast_mult);
+              double sign_hold;  // variable to hold the current sign of the split adjustment for split beat oscillation
+              if (fm1->split_adj < 0.0)
+                sign_hold = -1.0;
+              else
+                sign_hold = 1.0;
+              fm1->split_adj = ((fm1->split_beat * 2. * fm1->split_dist) / (double) out_rate);  
+              fm1->split_adj *= sign_hold;
+            }  
             if (fm1->slide)
             { /* adjust values for next pass only if this phase is sliding */
               fm1->carrier += (fm1->carr_adj * fast_mult);
@@ -9699,17 +10363,20 @@ fprint_voice_all (FILE *fp, void *this)
         fm *fm1;
 
         fm1 = (fm *) this;
-        char_count += fprintf (fp, "   fm %.3f %+.3f", fm1->carrier, fm1->beat);
-        char_count += fprintf (fp, " %.3f %.3f %d %.3f", 
-                                    AMP_DA (fm1->amp), fm1->band, fm1->channel, fm1->phase);
+        char_count += fprintf (fp, "   fm %.3f %.3f", fm1->carrier, fm1->beat);
+        char_count += fprintf (fp, " %.3f %.3f %.3f", 
+                                    AMP_DA (fm1->amp), fm1->band, fm1->phase);
         char_count += fprintf (fp, " %.3f %.3f", fm1->amp_beat1, fm1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (fm1->amp_pct1), AMP_DA (fm1->amp_pct2));
         char_count += fprintf (fp, " %d %d %.3f %d", fm1->inc1, fm1->off1, fm1->shift, fm1->direction);
-        char_count += fprintf (fp, " %d %d %d %d\n", 
+        char_count += fprintf (fp, " %d %d %d %d", 
                                    fm1->amp_inc1, fm1->amp_off1, fm1->amp_inc2, fm1->amp_off2);
-        char_count += fprintf (fp, "       %.3e %.3e %.3e %.3e", 
+        char_count += fprintf (fp, " %.3e %.3e\n       %.3e %.3e", 
                                    fm1->carr_adj, fm1->beat_adj, fm1->amp_adj, fm1->phase_adj);
         char_count += fprintf (fp, " %.3e", fm1->band_adj);
+        char_count += fprintf (fp, " %.3f", fm1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f", fm1->split_begin, fm1->split_end, 
+                                                              fm1->split_low, fm1->split_high);
         char_count += fprintf (fp, " %.3e %.3e", fm1->amp_beat1_adj, fm1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", fm1->amp_pct1_adj, fm1->amp_pct2_adj);
         char_count += fprintf (fp, " %d\n", fm1->slide);
@@ -9721,17 +10388,20 @@ fprint_voice_all (FILE *fp, void *this)
         fm *fm1;
 
         fm1 = (fm *) this;
-        char_count += fprintf (fp, "   fm %.3f %+.3f", fm1->carrier, fm1->beat);
-        char_count += fprintf (fp, " %.3f %.3f %d %.3f", 
-                                    AMP_DA (fm1->amp), fm1->band, fm1->channel, fm1->phase);
+        char_count += fprintf (fp, "   fm %.3f %.3f", fm1->carrier, fm1->beat);
+        char_count += fprintf (fp, " %.3f %.3f %.3f", 
+                                    AMP_DA (fm1->amp), fm1->band, fm1->phase);
         char_count += fprintf (fp, " %.3f %.3f", fm1->amp_beat1, fm1->amp_beat2);
         char_count += fprintf (fp, " %.3f %.3f", AMP_DA (fm1->amp_pct1), AMP_DA (fm1->amp_pct2));
         char_count += fprintf (fp, " %d %d %.3f %d", fm1->inc1, fm1->off1, fm1->shift, fm1->direction);
         char_count += fprintf (fp, " %d %d %d %d", 
                                    fm1->amp_inc1, fm1->amp_off1, fm1->amp_inc2, fm1->amp_off2);
-        char_count += fprintf (fp, "\n       %.3e %.3e %.3e %.3e", 
+        char_count += fprintf (fp, " %.3e %.3e\n       %.3e %.3e", 
                                    fm1->carr_adj, fm1->beat_adj, fm1->amp_adj, fm1->phase_adj);
         char_count += fprintf (fp, " %.3e", fm1->band_adj);
+        char_count += fprintf (fp, " %.3f", fm1->split_now );
+        char_count += fprintf (fp, " %.3f %.3f %.3f %.3f", fm1->split_begin, fm1->split_end, 
+                                                              fm1->split_low, fm1->split_high);
         char_count += fprintf (fp, " %.3e %.3e", fm1->amp_beat1_adj, fm1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", fm1->amp_pct1_adj, fm1->amp_pct2_adj);
         char_count += fprintf (fp, " %d", fm1->slide);
@@ -9914,13 +10584,11 @@ fprint_voice (FILE *fp, void *this)
           amp1 += ((amp1 * fm1->amp_pct1) * sin_table[fm1->amp_off1]);
         if (fm1->amp_beat2 > 0.0)
           amp2 += ((amp2 * fm1->amp_pct2) * sin_table[fm1->amp_off2]);
-        if (fm1->channel == 1)  // left channel only
-          amp2 = 0.0;
-        else if (fm1->channel == 2)  // right channel only
-          amp1 = 0.0;
-        char_count += fprintf (fp, "   fm %.3f  %+.3f   %.3f   %.3f", 
+        char_count += fprintf (fp, "   fm %.3f  %.3f   %.3f   %.3f", 
                       fm1->carrier, fm1->beat, AMP_DA (amp1), AMP_DA (amp2));
-        char_count += fprintf (fp, "   %.3f\n", fm1->shift);
+        char_count += fprintf (fp, "   %.3f", fm1->shift);
+        char_count += fprintf (fp, "   %.3f", fm1->split_now);
+        char_count += fprintf (fp, "   %.3e  %.3f\n", fm1->split_adj, fm1->split_beat); 
       }
       break;
     default:  // not known, do nothing
