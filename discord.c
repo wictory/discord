@@ -4219,8 +4219,12 @@ finish_beat_voice_setup ()
             } 
             else if (chronaural1->slide != 0)
               error ("Slide called for, no next chronaural in time sequence!\n");
-            else
-              chronaural1->split_beat_adj = 0.0;
+            else  // no next node all adjustments are 0
+            {
+              chronaural1->carr_adj = chronaural1->beat_adj = chronaural1->phase_adj = 0.0;
+              chronaural1->amp_adj = chronaural1->split_beat_adj = 0.0;
+              chronaural1->sin_threshold_adj = 0.0;
+            }
               /* set up the split logic here as it applies throughout the voice period.
                  don't need to worry about overwriting begin and end splits as they are only used once */
             if (chronaural1->split_begin == -1.0)  // chronaural split start random
@@ -5239,8 +5243,11 @@ finish_beat_voice_setup ()
             } 
             else if (pulse1->slide != 0)
               error ("Slide called for, no next pulse in time sequence!\n");
-            else
-              pulse1->split_beat_adj = 0.0;
+            else  // no next node, all adjustments are 0
+            {
+              pulse1->carr_adj = pulse1->beat_adj = pulse1->phase_adj = pulse1->time_adj = 0.0;
+              pulse1->amp_adj = pulse1->split_beat_adj = 0.0;
+            }
               /* set up the split logic here as it applies throughout the voice period.
                  don't need to worry about overwriting begin and end splits as they are only used once */
             if (pulse1->split_begin == -1.0)  // pulse split start random
