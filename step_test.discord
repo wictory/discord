@@ -340,16 +340,18 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
-#  Fields for fm are name, carrier frequency, beat frequency, amplitude, frequency band, channels, and phase.
+#  Fields for fm are name, carrier frequency, beat frequency, amplitude, frequency band, phase,
+#    beginning split, ending split, lowest split allowed, highest split allowed, and split beat.
+#    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
+#    Must be at the end, before the slide indicator if they are present.
 #    Beat frequency is the number of times per second that the carrier frequency shifts between carrier and 
 #      carrier plus band.
+#    Band is the frequency that gets added to the carrier to make the maximum frequency to cycle to for the beat.
 #    Phase is the phase difference in degrees between the left and right channel, from -360 to 360.  
 #    If phase is +ve, it is the amount the right channel leads the left.
 #    If phase is -ve, it is the amount the left channel leads the right.
-#    Band is the frequency that gets added to the carrier to make the maximum frequency to cycle to for the beat.
-#    Channel indicates whether the sound is in the left, right, or both channels; L, R, B.
-#    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
-#    Must be at the end, before the slide indicator if they are present.
+#    If beginning split or ending split are -1, they are set randomly between lowest split and highest split.
+#    Split beat is the frequency through time of the oscillation of the begin and end split.
 #    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
