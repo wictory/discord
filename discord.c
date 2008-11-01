@@ -142,7 +142,7 @@ int opt_t;                      // use thread to play sound instead of blocking 
 int opt_v;                      // write verbose output as discord is playing
 int opt_w;                      // write file instead of sound
 char *out_filename;           // write file instead of sound
-const char *separators = "='|,;";  // separators for time sequences, mix and match, multiples ok
+const char *separators = "=' |,;";  // separators for time sequences, mix and match, multiples ok
 double *sin_table;
 int status_t_retval = 0;  // return integer for status_t thread
 int alsa_write_retval = 0;  // return integer for alsa_write thread
@@ -1185,7 +1185,7 @@ read_script_file (FILE * infile, char **config_options)
         }
         else if (destlen + len + 1 < 16384)
         {
-          strncat (savelin, " ", 1);  // add trailing space so voices are separate
+          strncat (savelin, "\t", 1);  // add trailing tab so voices are separate
           strncat (savelin, curlin, len);  // add voices
         }
         else
@@ -1761,7 +1761,7 @@ setup_play_seq ()
   while (tsw != NULL)           // move through time sequence linked list
   {
     str1 = tsw->sequence;
-    token = strtok_r (str1, " \t\n", &saveptr1);        // get first token after spaces or tabs
+    token = strtok_r (str1, "\t\n", &saveptr1);        // get first token after tabs
     str2 = token;
     subtoken = strtok_r (str2, separators, &saveptr2);    // get subtoken of token, time indicator
     read_time (subtoken, &time_in_secs);
@@ -1779,7 +1779,7 @@ setup_play_seq ()
     else  // default is no fade
       sndstream1->fade = 0;
     str1 = NULL;
-    token = strtok_r (str1, " \t\n", &saveptr1);        // get next token
+    token = strtok_r (str1, "\t\n", &saveptr1);        // get next token
     while (token != NULL)
     {
       str2 = token;
@@ -1862,7 +1862,7 @@ setup_play_seq ()
         stub2->next = NULL;  // set the forward link for this voice
       }
       prev = work;  // point to new voice as previous voice
-      token = strtok_r (str1, " \t\n", &saveptr1);      // get next token
+      token = strtok_r (str1, "\t\n", &saveptr1);      // get next token
     }
     tsw = tsw->next;  // get next period, time sequence
     if (tsw != NULL)
