@@ -114,12 +114,11 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 <P><STRONG><FONT COLOR=#FF7F00>fm</FONT></STRONG>
 
 <P>  Fm stands for frequency modulation.  Generate a beat by shifting the
-  frequency of either the left or right channel or both at a specified
-  beat frequency and to a specified frequency offset.  Fm tones are
-  allowed to slide into the next phase on carrier, beat, amplitude,
-  band, and phase.  This uses the doppler effect to get the attention
-  of the brain.  It seems like something is coming towards and going
-  away from us.
+  frequency at a specified beat frequency and to a specified frequency
+  offset.  Fm tones are allowed to slide into the next fm on carrier,
+  beat, amplitude, band, phase, and split beat.  This uses the doppler
+  effect to get the attention of the brain.  It seems like something
+  is coming towards and going away from us.
 
 <P><STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG>
 
@@ -630,41 +629,59 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 </PRE>
 
 <P>  Fields for <STRONG><FONT COLOR=#FF7F00>fm</FONT></STRONG> 
-  are name, carrier frequency, beat, amplitude, band,
-  channels, and phase.  Band is the frequency that defines the upper
+  are name, carrier frequency, beat, amplitude, band, phase, beginning
+  split, ending split, lowest split allowed, highest split allowed,
+  and split beat.  Optional fields are a left and right amplitude
+  frequency variation and a left and right percentage to vary.
+  Optional fields must be at the end, before the slide indicator if
+  they are present.  Band is the frequency that defines the upper
   limit of the range that the frequency modulation will use.  The
   frequency will oscillate between carrier and carrier plus band at
-  the beat rate.  Channels is the channel to generate the voice in.
-  It can be L, R, or B for left, right, or both.  Phase is the maximum
-  phase difference in degrees between the left and right channel, from
-  -360 to 360.  If the phase is positive, the right channel leads and
-  will be phase shifted between 0 and the phase at the beat rate.  If
-  the phase is negative, the left channel leads and will be phase
-  shifted between 0 and the phase at the beat rate.  Optional fields
-  are a left and right amplitude frequency variation and a left and
-  right percentage to vary.  Optional fields must be at the end,
-  before the slide indicator if they are present.
-
-<P>  Example
+  the beat rate.  Phase is the maximum phase difference in degrees
+  between the left and right channel, from -360 to 360.  If the phase
+  is positive, the right channel leads and will be phase shifted
+  between 0 and the phase at the beat rate.  If the phase is negative,
+  the left channel leads and will be phase shifted between 0 and the
+  phase at the beat rate.  If beginning split or ending split are -1,
+  they are set randomly between lowest split and highest split.  Split
+  beat is the frequency through time of the oscillation between the
+  begin and end split.  Phase shift and split are somewhat similar in
+  their effect.  The sound will be perceived to come from the
+  direction where the phase shift is leading.  Split creates the same
+  effect using amplitude differential, the sound will seem to come
+  from the louder direction.
+    
+<P>  Examples
 <P><PRE>
-    name   carrier  beat  amplitude  band  channel  phase
-     |       |       |      |        |        |     | 
-    fm''''400.0''''10.01''''2.9''''10.0'''''''L''''180
-                    amplitude         phase                                            
-    name  carrier  beat  | band channel|   left percent vary  right
-     |       |       |   |    |  |     |               |        |
-    fm''''60.0''''10.01''1.0'17''B''-150''0.5''0.5''''10.0''''10.0'&gt;
-       |                                  |     |                  |
-      field separators   left amplitude beat   right               |
-           |     |   |                                         slide
-    &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
-    |    |    |         |
-    | steps slide time  fuzz percent
-    step slide
-    ~,,,,5''''20  (slide with ~ instead of &gt;)
-    |    |    |
-    | steps slide time
-    vary slide
+  name  carrier beat  amplitude band  phase    end split  max split
+   |    |       |      |        |      |            |         |
+  fm'''400''''10.01''''2.9''''10.0''''180''''.5''''.5''''0''''1''''0
+                                              |          |         |
+                                    begin split  min split  split beat
+
+  Line below split for expository reasons, has to be single in script.
+
+                  amplitude      phase  begin split                                            
+  name  carrier  beat  |   band      |     | end split  split beat
+   |       |       |   |      |      |     |     |              |
+  fm''''60.0''''12.01''1.0'''17'''-150''''.4''''.6''''0''''1''''0.2
+     |                                                |    |     
+    field separators                          min split  max split
+                                                             
+    right amplitude beat    right percent vary
+                 |               |
+      ''''0.5''''0.5''''10.0''''10.0'''''''''&gt;
+            |             |                  |
+    left amplitude beat  left percent vary   slide
+        
+  &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
+  |    |    |         |
+  | steps slide time  fuzz percent
+  step slide
+  ~,,,,5''''20  (slide with ~ instead of &gt;)
+  |    |    |
+  | steps slide time
+  vary slide
 </PRE>
 
 <P>  Fields for <STRONG><FONT COLOR=#FF7F00>bell</FONT></STRONG> are

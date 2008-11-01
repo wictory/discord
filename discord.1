@@ -1,4 +1,4 @@
-.TH DISCORD 1 "04 February 2008"
+.TH DISCORD 1 "31 October 2008"
 .SH NAME
 discord \- Generate binaural, pulse, or chronaural beats to 
 soundcard or file for use in brain wave entrainment.
@@ -102,12 +102,11 @@ us.
 \fBfm\fP
 
 Fm stands for frequency modulation.  Generate a beat by shifting the
-frequency of either the left or right channel or both at a specified
-beat frequency and to a specified frequency offset.  Fm tones are
-allowed to slide into the next phase on carrier, beat, amplitude,
-band, and phase.  This uses the doppler effect to get the attention
-of the brain.  It seems like something is coming towards and going
-away from us.
+frequency at a specified beat frequency and to a specified frequency
+offset.  Fm tones are allowed to slide into the next fm on carrier,
+beat, amplitude, band, phase, and split beat.  This uses the doppler
+effect to get the attention of the brain.  It seems like something
+is coming towards and going away from us.
 
 \fBbell\fP
 
@@ -584,41 +583,79 @@ they are present.
   vary slide
 
 Fields for \fBfm\fP are name, carrier frequency, beat, amplitude, band,
-channels, and phase.  Band is the frequency that defines the upper
-limit of the range that the frequency modulation will use.  The
-frequency will oscillate between carrier and carrier plus band at
-the beat rate.  Channels is the channel to generate the voice in.
-It can be L, R, or B for left, right, or both.  Phase is the maximum
-phase difference in degrees between the left and right channel, from
--360 to 360.  If the phase is positive, the right channel leads and
-will be phase shifted between 0 and the phase at the beat rate.  If
-the phase is negative, the left channel leads and will be phase
-shifted between 0 and the phase at the beat rate.  Optional fields
-are a left and right amplitude frequency variation and a left and
-right percentage to vary.  Optional fields must be at the end,
-before the slide indicator if they are present.
+phase, beginning split, ending split, lowest split allowed, highest
+split allowed, and split beat.  Optional fields are a left and right
+amplitude frequency variation and a left and right percentage to
+vary.  Optional fields must be at the end, before the slide
+indicator if they are present.  Band is the frequency that defines
+the upper limit of the range that the frequency modulation will use.
+The frequency will oscillate between carrier and carrier plus band
+at the beat rate.  Phase is the maximum phase difference in degrees
+between the left and right channel, from -360 to 360.  If the phase
+is positive, the right channel leads and will be phase shifted
+between 0 and the phase at the beat rate.  If the phase is negative,
+the left channel leads and will be phase shifted between 0 and the
+phase at the beat rate.  If beginning split or ending split are -1,
+they are set randomly between lowest split and highest split.  Split
+beat is the frequency through time of the oscillation between the
+begin and end split.  Phase shift and split are somewhat similar in
+their effect.  The sound will be perceived to come from the
+direction where the phase shift is leading.  Split creates the same
+effect using amplitude differential, the sound will seem to come
+from the louder direction.
+  
+Examples
 
-  Examples
-  name   carrier  beat  amplitude  band  channel  phase
-   |       |       |      |        |        |     | 
-  fm''''400.0''''10.01''''2.9''''10.0'''''''L''''180
-                  amplitude         phase                                            
-  name  carrier  beat  | band channel|   left percent vary  right
-   |       |       |   |    |  |     |               |        |
-  fm''''60.0''''10.01''1.0'17''B''-150''0.5''0.5''''10.0''''10.0'>
-     |                                  |     |                  |
-    field separators   left amplitude beat   right               |
-         |     |   |                                         slide
+name  carrier beat  amplitude band  phase    end split  max split
+.br
+ |    |       |      |        |      |            |         |
+.br
+fm'''400''''10.01''''2.9''''10.0''''180''''.5''''.5''''0''''1''''0
+.br
+                                            |          |         |
+.br
+                                  begin split  min split  split beat
+
 .br        
-  &''''8''''30'''',,,,10  (slide with & instead of >)
-  |    |    |         |
-  | steps slide time  fuzz percent
-  step slide
+Line below split for expository reasons, has to be single in script.
+
 .br        
-  ~,,,,5''''20  (slide with ~ instead of >)
-  |    |    |
-  | steps slide time
-  vary slide
+                amplitude      phase  begin split                                            
+.br
+name  carrier  beat  |   band      |     | end split  split beat
+.br
+ |       |       |   |      |      |     |     |              |
+.br
+fm''''60.0''''12.01''1.0'''17'''-150''''.4''''.6''''0''''1''''0.2
+.br
+   |                                                |    |     
+.br
+  field separators                          min split  max split
+                                                           
+.br        
+  right amplitude beat    right percent vary
+               |               |
+    ''''0.5''''0.5''''10.0''''10.0'''''''''>
+          |             |                  |
+  left amplitude beat  left percent vary   slide
+      
+.br        
+&''''8''''30'''',,,,10  (slide with & instead of >)
+.br
+|    |    |         |
+.br
+| steps slide time  fuzz percent
+.br
+step slide
+      
+.br        
+~,,,,5''''20  (slide with ~ instead of >)
+.br
+|    |    |
+.br
+| steps slide time
+.br
+vary slide
 
 Fields for \fBbell\fP are name, frequency, minimum start amplitude, maximum
 start amplitude, beginning split, ending split, lowest split allowed,
