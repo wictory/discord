@@ -85,6 +85,7 @@
 #include <ctype.h>
 #include <alsa/asoundlib.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/times.h>
@@ -93,6 +94,7 @@
 #include <sndfile.h>
 #include <math.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -100,14 +102,10 @@
 #include <poll.h>
 #include <pthread.h>
 #include <dlfcn.h>
-// typedef long long s64 __uint64_t;
 
 #define SIGNED_SIZEOF(x) ((int) sizeof (x))
 #define BUFFER_LEN   (2048)
 
-//typedef sf_count_t int_64 ;
-typedef long long int int_64 ;
-typedef __uint64_t llong;
 typedef unsigned char uchar;
 
 int opt_a;                      // audio card and device set in options
@@ -193,7 +191,7 @@ struct snd_buffer
   struct snd_buffer *next;
   char *filename;
   short *sound;
-  int_64 frames;
+  intmax_t frames;
   int channels;
   int mono;
   double scale;
@@ -208,8 +206,8 @@ struct sndstream
   sndstream *prev;
   sndstream *next;
   int duration;                 // in seconds
-  int_64 tot_frames;
-  int_64 cur_frames;
+  intmax_t tot_frames;
+  intmax_t cur_frames;
   void *voices;
   int fade;  // 0 is no fade, 1 is fade in, 2 is fade out
 } ;
@@ -253,8 +251,8 @@ struct binaural
   int first_pass;  // is this voice inactive?
   /* used for step and vary */
   binaural *step_next;  // point to linked list of binaural voices for steps and vary
-  int_64 tot_frames;  // total frames for this step
-  int_64 cur_frames;  // current frames for this step
+  intmax_t tot_frames;  // total frames for this step
+  intmax_t cur_frames;  // current frames for this step
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
@@ -273,9 +271,9 @@ struct bell
   double amp_min, amp_max;      // Amplitude min and max for bell tones
   double split_low, split_high; // range for split, .5 means evenly split L and R
   // Min/max time for bell to play, frames, max 0 then min is fixed time.
-  int_64 length_min, length_max;
+  intmax_t length_min, length_max;
   // Min/max time between bells, max zero then min is fixed period, frames
-  int_64 repeat_min, repeat_max;
+  intmax_t repeat_min, repeat_max;
   /* amplitude behavior of bell,
      1 decrease linearly to 0
      2 decrease linearly to .5, 
@@ -285,8 +283,8 @@ struct bell
   int behave;
   int inc1, off1;               // for bell tones, offset + increment into sine
                                 // table for each channel
-  int_64 next_play, sofar;             // Frames till next bell, how many so far
-  int_64 ring;                    // number of frames to ring the bell
+  intmax_t next_play, sofar;             // Frames till next bell, how many so far
+  intmax_t ring;                    // number of frames to ring the bell
   double amp_adj, split_adj;      // adjust while bell is ringing
 } ;
 
@@ -304,9 +302,9 @@ struct noise
   double amp_min, amp_max;      // Amplitude min and max for noise tones
   double split_low, split_high; // fraction for noise, random, .5 means evenly split L and R
   // Min/max time for noise to play, frames.
-  int_64 length_min, length_max;
+  intmax_t length_min, length_max;
   // Min/max time between noises, max zero then min is period, frames
-  int_64 repeat_min, repeat_max;
+  intmax_t repeat_min, repeat_max;
   int behave;                   // amplitude behavior of noise, 1 decrease linearly to 0
   // 2 decrease linearly to .5, 3 constant,
   // 4 increase linearly to 1.10,
@@ -322,8 +320,8 @@ struct noise
   // 15-21 above with 10% carrier rise
   // values the same, then constant
   int inc1, off1;               // for noise tones, offset + increment into sine
-  int_64 next_play, sofar;             // Samples till next noise, how many so far
-  int_64 play;                    // number of frames to play the noise
+  intmax_t next_play, sofar;             // Samples till next noise, how many so far
+  intmax_t play;                    // number of frames to play the noise
   double carrier_adj, amp_adj, split_adj;      // adjust while noise is playing
   double behave_inc1, behave_off1;      // for adjust behavior 6 and 7, offset and inc into sine
   double fade_factor;           // used to adjust volume when doing 1 millisec fade out at end of play.
@@ -337,7 +335,7 @@ struct stoch
   void *next;
   int type;                // 4
   short *sound;            // point to buffer of sound, contains whole file, 16 bit sound
-  int_64 frames;           // total frames length of sound, 
+  intmax_t frames;           // total frames length of sound, 
   int channels;            // number of channels in file, 1 or 2.
   double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
   double amp;              // Amplitude level 0-100%, stored as decimal i.e. .02
@@ -345,9 +343,9 @@ struct stoch
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
   // Min/max frames between random plays
-  int_64 repeat_min, repeat_max;
-  int_64 next_play, sofar;   // Frames till next play, how many so far
-  int_64 off1, play;  //offset into buffer,  number of frames to play, always total frames
+  intmax_t repeat_min, repeat_max;
+  intmax_t next_play, sofar;   // Frames till next play, how many so far
+  intmax_t off1, play;  //offset into buffer,  number of frames to play, always total frames
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
 } ;
@@ -360,15 +358,15 @@ struct sample
   void *next;
   int type;                 // 5
   short *sound;             // point to buffer of sound, contains whole file
-  int_64 frames;                 // total frames length of sound, 
+  intmax_t frames;                 // total frames length of sound, 
   int channels;                 // number of channels in file, 1 or 2.
   double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
   double amp;                   // Amplitude level 0-100%, stored as decimal i.e. .02
   double amp_min, amp_max;     // Amp level range for sound, begin end chosen randomly unless same.
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
-  int_64 size;   // Frames for each sample
-  int_64 off1, play;   // Position in file for sample, currently playing
+  intmax_t size;   // Frames for each sample
+  intmax_t off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
 } ;
@@ -381,14 +379,14 @@ struct repeat
   void *next;
   int type;                 // 6
   short *sound;             // point to buffer of sound, contains whole file
-  int_64 frames;                 // total frames length of sound, 
+  intmax_t frames;                 // total frames length of sound, 
   int channels;                 // number of channels in file, 1 or 2.
   double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
   double amp;                   // Amplitude level 0-100%, stored as decimal i.e. .02
   double amp_min, amp_max;     // Amp level range for sound, begin end chosen randomly unless same.
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
-  int_64 off1, play;   // Position in file for sample, currently playing
+  intmax_t off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
 } ;
@@ -401,17 +399,17 @@ struct once
   void *next;
   int type;                // 7
   short *sound;            // point to buffer of sound, contains whole file, 16 bit sound
-  int_64 frames;           // total frames length of sound, 
+  intmax_t frames;           // total frames length of sound, 
   int channels;            // number of channels in file, 1 or 2.
   double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
   double amp;              // Amplitude level 0-100%, stored as decimal i.e. .02
   double amp_min, amp_max;     // Amp level range for sound, begin end chosen randomly unless same.
   double split_begin, split_end, split_now; // left fraction for sound, .5 means evenly split L and R
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
-  int_64 play_when;  // when to play the sound
-  int_64 sofar;   // Frames, how many so far
-  int_64 play;  //offset into buffer in frames, frames that have been played
-  int_64 off1;  //short offset into buffer
+  intmax_t play_when;  // when to play the sound
+  intmax_t sofar;   // Frames, how many so far
+  intmax_t play;  //offset into buffer in frames, frames that have been played
+  intmax_t off1;  //short offset into buffer
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
   int not_played;  // has the single play occurred yet?
@@ -457,8 +455,8 @@ struct chronaural
   int *last_off1, *last_off3, *last_off2;   
   int first_pass;  // is this voice inactive?
   chronaural *step_next;  // point to linked list of chronaural voices for steps or vary
-  int_64 tot_frames;  // total frames for this step
-  int_64 cur_frames;  // current frames for this step
+  intmax_t tot_frames;  // total frames for this step
+  intmax_t cur_frames;  // current frames for this step
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
@@ -502,8 +500,8 @@ struct pulse
   int *last_off1, *last_off3, *last_off2;   
   int first_pass;  // is this voice inactive?
   pulse *step_next;  // point to linked list of pulse voices for steps or vary
-  int_64 tot_frames;  // total frames for this step
-  int_64 cur_frames;  // current frames for this step
+  intmax_t tot_frames;  // total frames for this step
+  intmax_t cur_frames;  // current frames for this step
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
@@ -543,8 +541,8 @@ struct phase
   int first_pass;  // is this voice inactive?
   /* used for step and vary */
   phase *step_next;  // point to linked list of phase voices for steps and vary
-  int_64 tot_frames;  // total frames for this step
-  int_64 cur_frames;  // current frames for this step
+  intmax_t tot_frames;  // total frames for this step
+  intmax_t cur_frames;  // current frames for this step
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
@@ -593,8 +591,8 @@ struct fm
   int first_pass;  // is this voice inactive?
   /* used for step and vary */
   fm *step_next;  // point to linked list of fm voices for steps and vary
-  int_64 tot_frames;  // total frames for this step
-  int_64 cur_frames;  // current frames for this step
+  intmax_t tot_frames;  // total frames for this step
+  intmax_t cur_frames;  // current frames for this step
   int steps;  // number of steps if selected
   double slide_time;  // how many seconds to slide between steps
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
@@ -1766,8 +1764,8 @@ setup_play_seq ()
     subtoken = strtok_r (str2, separators, &saveptr2);    // get subtoken of token, time indicator
     read_time (subtoken, &time_in_secs);
     sndstream1->duration = time_in_secs;
-    sndstream1->tot_frames = (int_64) (time_in_secs * out_rate);            // samples for this stream
-    sndstream1->cur_frames = (int_64) (0);          // samples so far for this stream
+    sndstream1->tot_frames = (intmax_t) (time_in_secs * out_rate);            // samples for this stream
+    sndstream1->cur_frames = (intmax_t) (0);          // samples so far for this stream
     str2 = NULL;
     subtoken = strtok_r (str2, separators, &saveptr2);    // get next subtoken of token, fade indicator
     if (subtoken == NULL)  // no fade indicator
@@ -2252,7 +2250,7 @@ setup_bell (char *token, void **work)
     error ("Minimum time for bell had an error.\n%s\n%s", subtoken, original);
   else if (length_min < 0.0)  // no errors, but less than 0
     error ("Minimum time for bell cannot be less than 0.\n%s\n%s", subtoken, original);
-  bell1->length_min = (int_64) (length_min * out_rate);      // convert to frames from seconds
+  bell1->length_min = (intmax_t) (length_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2263,7 +2261,7 @@ setup_bell (char *token, void **work)
     error ("Maximum time for bell had an error.\n%s\n%s", subtoken, original);
   else if (length_max < length_min)  // no errors, but less than minimum time
     error ("Maximum time for bell cannot be less than minimum time.\n%s\n%s", subtoken, original);
-  bell1->length_max = (int_64) (length_max * out_rate);      // convert to frames from seconds
+  bell1->length_max = (intmax_t) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2274,7 +2272,7 @@ setup_bell (char *token, void **work)
     error ("Minimum repeat interval for bell had an error.\n%s\n%s", subtoken, original);
   else if (repeat_min < 0.0)  // no errors, but less than 0
     error ("Minimum repeat interval for bell cannot be less than 0.\n%s\n%s", subtoken, original);
-  bell1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
+  bell1->repeat_min = (intmax_t) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2285,7 +2283,7 @@ setup_bell (char *token, void **work)
     error ("Maximum repeat interval for bell had an error.\n%s\n%s", subtoken, original);
   else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
     error ("Maximum repeat interval for bell cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
-  bell1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
+  bell1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2305,7 +2303,7 @@ setup_bell (char *token, void **work)
   else
   {
       // frames to next play random piece of possible interval
-    int_64 delta = (int_64) ( (drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
+    intmax_t delta = (intmax_t) ( (drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
     bell1->next_play = delta/2;  // bias towards sooner
   }
   bell1->sofar = 0LL;
@@ -2430,7 +2428,7 @@ setup_noise (char *token, void **work)
     error ("Minimum time for noise had an error.\n%s\n%s", subtoken, original);
   else if (length_min < 0.0)  // no errors, but less than 0
     error ("Minimum time for noise cannot be less than 0.\n%s\n%s", subtoken, original);
-  noise1->length_min = (int_64) (length_min * out_rate);      // convert to frames from seconds
+  noise1->length_min = (intmax_t) (length_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2441,7 +2439,7 @@ setup_noise (char *token, void **work)
     error ("Maximum time for noise had an error.\n%s\n%s", subtoken, original);
   else if (length_max < length_min)  // no errors, but less than minimum time
     error ("Maximum time for noise cannot be less than minimum time.\n%s\n%s", subtoken, original);
-  noise1->length_max = (int_64) (length_max * out_rate);      // convert to frames from seconds
+  noise1->length_max = (intmax_t) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2452,7 +2450,7 @@ setup_noise (char *token, void **work)
     error ("Minimum repeat interval for noise had an error.\n%s\n%s", subtoken, original);
   else if (repeat_min < 0.0)  // no errors, but less than 0
     error ("Minimum repeat interval for noise cannot be less than 0.\n%s\n%s", subtoken, original);
-  noise1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
+  noise1->repeat_min = (intmax_t) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2463,7 +2461,7 @@ setup_noise (char *token, void **work)
     error ("Maximum repeat interval for noise had an error.\n%s\n%s", subtoken, original);
   else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
     error ("Maximum repeat interval for noise cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
-  noise1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
+  noise1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2506,11 +2504,11 @@ setup_noise (char *token, void **work)
   /* create the time to first play of noise */
   if (noise1->repeat_min == noise1->repeat_max)
     // fixed period, random start
-    noise1->next_play = (int_64) (drand48() * noise1->repeat_min);
+    noise1->next_play = (intmax_t) (drand48() * noise1->repeat_min);
   else
   {
       // frames to next play random piece of possible interval
-    int_64 delta = (int_64) ( (drand48 ()) * (noise1->repeat_max - noise1->repeat_min));
+    intmax_t delta = (intmax_t) ( (drand48 ()) * (noise1->repeat_max - noise1->repeat_min));
     noise1->next_play = delta;      // frames to next play
   }
   noise1->sofar = noise1->next_play;  // immediate start
@@ -2626,7 +2624,7 @@ setup_stoch (char *token, void **work)
     error ("Minimum repeat interval for stoch had an error.\n%s\n%s", subtoken, original);
   else if (repeat_min < 0.0)  // no errors, but less than 0
     error ("Minimum repeat interval for stoch cannot be less than 0.\n%s\n%s", subtoken, original);
-  stoch1->repeat_min = (int_64) (repeat_min * out_rate);      // convert to frames from seconds
+  stoch1->repeat_min = (intmax_t) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   errno = 0;
@@ -2637,7 +2635,7 @@ setup_stoch (char *token, void **work)
     error ("Maximum repeat interval for stoch had an error.\n%s\n%s", subtoken, original);
   else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
     error ("Maximum repeat interval for stoch cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
-  stoch1->repeat_max = (int_64) (repeat_max * out_rate);      // convert to frames from seconds
+  stoch1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
 
   /* set up frames till first play of stoch */
   if (stoch1->repeat_min == stoch1->repeat_max)
@@ -2646,7 +2644,7 @@ setup_stoch (char *token, void **work)
   }
   else
   {
-    stoch1->next_play  = (int_64) ( (drand48 ()) * stoch1->repeat_max);  // random up to max repeat interval
+    stoch1->next_play  = (intmax_t) ( (drand48 ()) * stoch1->repeat_max);  // random up to max repeat interval
   }
   stoch1->sofar = 0LL;
 }
@@ -2759,7 +2757,7 @@ setup_sample (char *token, void **work)
     error ("Sample size for sample had an error.\n%s\n%s", subtoken, original);
   else if (sample_size < 0.0)  // no errors, but less than zero
     error ("Sample size for sample cannot be less than 0.\n%s\n%s", subtoken, original);
-  sample1->size = (int_64) (sample_size * out_rate);  // convert from seconds to frames 
+  sample1->size = (intmax_t) (sample_size * out_rate);  // convert from seconds to frames 
 
   /* Set some defaults so sample position is determined randomly at start of generate frames */
   sample1->play = 0LL;  // start out with zero play size, let generate frames determine
@@ -2978,10 +2976,10 @@ setup_once (char *token, void **work)
     error ("Play time for once had an error.\n%s\n%s", subtoken, original);
   else if (play_when < 0.0)  // no errors, but less than 0
     error ("Play time for once cannot be less than 0.\n%s\n%s", subtoken, original);
-  once1->play_when = (int_64) (play_when * out_rate);      // convert to frames from seconds
+  once1->play_when = (intmax_t) (play_when * out_rate);      // convert to frames from seconds
 
   /* set up play of once */
-  once1->sofar = once1->play = (int_64) 0;
+  once1->sofar = once1->play = (intmax_t) 0;
 }
 
 /* Set up a chronaural sequence */
@@ -4284,12 +4282,12 @@ finish_beat_voice_setup ()
             binaural1->amp_beat1_adj = binaural1->amp_beat2_adj = 0.0;
             binaural1->amp_pct1_adj = binaural1->amp_pct2_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * binaural1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * binaural1->steps);  //  total slide time
-            int_64 step_frames = (snd1->tot_frames - total_slide) / binaural1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * binaural1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * binaural1->steps);  //  total slide time
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / binaural1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last step. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * binaural1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * binaural1->steps));
             binaural1->tot_frames = step_frames;
             binaural1->cur_frames = 0;  // binaural1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine binaural we are step sliding to so steps and slides can be set up
@@ -4420,12 +4418,12 @@ finish_beat_voice_setup ()
             chronaural1->sin_threshold_adj = 0.0;
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide frames
-            int_64 step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * chronaural1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * chronaural1->steps);  //  total slide frames
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last step. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * chronaural1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * chronaural1->steps));
             chronaural1->tot_frames = step_frames;
             chronaural1->cur_frames = 0;  // chronaural1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine chronaural we are step sliding to so steps and slides can be set up
@@ -4764,12 +4762,12 @@ finish_beat_voice_setup ()
             binaural1->amp_beat1_adj = binaural1->amp_beat2_adj = 0.0;
             binaural1->amp_pct1_adj = binaural1->amp_pct2_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * binaural1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * binaural1->steps);  //  total slide time
-            int_64 step_frames = (snd1->tot_frames - total_slide) / binaural1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * binaural1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * binaural1->steps);  //  total slide time
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / binaural1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last slide. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * binaural1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * binaural1->steps));
             binaural1->tot_frames = step_frames;
             binaural1->cur_frames = 0;  // binaural1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine binaural we are step sliding to so steps and slides can be set up
@@ -4888,12 +4886,12 @@ finish_beat_voice_setup ()
             chronaural1->sin_threshold_adj = 0.0;
             chronaural1->split_beat_adj = chronaural1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * chronaural1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * chronaural1->steps);  //  total slide frames
-            int_64 step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * chronaural1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * chronaural1->steps);  //  total slide frames
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / chronaural1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last slide. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * chronaural1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * chronaural1->steps));
             chronaural1->tot_frames = step_frames;
             chronaural1->cur_frames = 0;  // chronaural1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine chronaural we are step sliding to so steps and slides can be set up
@@ -5305,12 +5303,12 @@ finish_beat_voice_setup ()
             pulse1->carr_adj = pulse1->beat_adj = pulse1->phase_adj = pulse1->time_adj = pulse1->amp_adj = 0.0;
             pulse1->split_beat_adj = pulse1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * pulse1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * pulse1->steps);  //  total slide frames
-            int_64 step_frames = (snd1->tot_frames - total_slide) / pulse1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * pulse1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * pulse1->steps);  //  total slide frames
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / pulse1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last step. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * pulse1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * pulse1->steps));
             pulse1->tot_frames = step_frames;
             pulse1->cur_frames = 0;  // pulse1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine pulse we are step sliding to so steps and slides can be set up
@@ -5639,12 +5637,12 @@ finish_beat_voice_setup ()
             pulse1->carr_adj = pulse1->beat_adj = pulse1->phase_adj = pulse1->time_adj = pulse1->amp_adj = 0.0;
             pulse1->split_beat_adj = pulse1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * pulse1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * pulse1->steps);  //  total slide frames
-            int_64 step_frames = (snd1->tot_frames - total_slide) / pulse1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * pulse1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * pulse1->steps);  //  total slide frames
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / pulse1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last slide. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * pulse1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * pulse1->steps));
             pulse1->tot_frames = step_frames;
             pulse1->cur_frames = 0;  // pulse1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine pulse we are step sliding to so steps and slides can be set up
@@ -6025,12 +6023,12 @@ finish_beat_voice_setup ()
             phase1->amp_beat1_adj = phase1->amp_beat2_adj = 0.0;
             phase1->amp_pct1_adj = phase1->amp_pct2_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * phase1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * phase1->steps);  //  total slide time
-            int_64 step_frames = (snd1->tot_frames - total_slide) / phase1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * phase1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * phase1->steps);  //  total slide time
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / phase1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last step. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * phase1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * phase1->steps));
             phase1->tot_frames = step_frames;
             phase1->cur_frames = 0;  // phase1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine phase we are step sliding to so steps and slides can be set up
@@ -6170,12 +6168,12 @@ finish_beat_voice_setup ()
             phase1->amp_beat1_adj = phase1->amp_beat2_adj = 0.0;
             phase1->amp_pct1_adj = phase1->amp_pct2_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * phase1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * phase1->steps);  //  total slide time
-            int_64 step_frames = (snd1->tot_frames - total_slide) / phase1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * phase1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * phase1->steps);  //  total slide time
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / phase1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last slide. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * phase1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * phase1->steps));
             phase1->tot_frames = step_frames;
             phase1->cur_frames = 0;  // phase1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine phase we are step sliding to so steps and slides can be set up
@@ -6419,12 +6417,12 @@ finish_beat_voice_setup ()
             fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
             fm1->split_beat_adj = fm1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * fm1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * fm1->steps);  //  total slide time
-            int_64 step_frames = (snd1->tot_frames - total_slide) / fm1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * fm1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * fm1->steps);  //  total slide time
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / fm1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last step. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * fm1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * fm1->steps));
             fm1->tot_frames = step_frames;
             fm1->cur_frames = 0;  // fm1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine fm we are step sliding to so steps and slides can be set up
@@ -6801,12 +6799,12 @@ finish_beat_voice_setup ()
             fm1->amp_pct1_adj = fm1->amp_pct2_adj = 0.0;
             fm1->split_beat_adj = fm1->split_adj = 0.0;
             /* Determine the step and slide frame sizes.  */
-            int_64 slide_frames = (int_64) (out_rate * fm1->slide_time);  // frames in each slide
-            int_64 total_slide = (int_64) (slide_frames * fm1->steps);  //  total slide time
-            int_64 step_frames = (snd1->tot_frames - total_slide) / fm1->steps;  // frames in each step
+            intmax_t slide_frames = (intmax_t) (out_rate * fm1->slide_time);  // frames in each slide
+            intmax_t total_slide = (intmax_t) (slide_frames * fm1->steps);  //  total slide time
+            intmax_t step_frames = (snd1->tot_frames - total_slide) / fm1->steps;  // frames in each step
             /*  Leftover frames after all step slides determined.  Add to last slide. The total number
              *  of frames in the list has to be exactly the number of frames in the current time sequence. */
-            int_64 frame_residue = (snd1->tot_frames - total_slide - (step_frames * fm1->steps));
+            intmax_t frame_residue = (snd1->tot_frames - total_slide - (step_frames * fm1->steps));
             fm1->tot_frames = step_frames;
             fm1->cur_frames = 0;  // fm1 complete except for step list pointer set below.
             if (work2 != NULL)  // determine fm we are step sliding to so steps and slides can be set up
@@ -7315,7 +7313,7 @@ play_loop ()
   int display_count = (int) (every * (double) out_rate);  // Print every x seconds
   double fade_val = 0.0, fade_incr = 0.0;
   long display_frames = 0L;
-  int_64 remaining_frames = 0;
+  intmax_t remaining_frames = 0;
  	static double buffer [BUFFER_LEN] ;
  	//static int int_buffer [BUFFER_LEN] ;
 	static double play_buffer [BUFFER_LEN] ;
@@ -7433,7 +7431,7 @@ save_loop ()
   int display_count = (int) (every * (double) out_rate);  // Print every x seconds
   double fade_val = 0.0, fade_incr = 0.0;
   long display_frames = 0L;
-  int_64 remaining_frames = 0;
+  intmax_t remaining_frames = 0;
  	static double buffer [BUFFER_LEN] ;
  	//static int int_buffer [BUFFER_LEN] ;
  	static double write_buffer [BUFFER_LEN] ;
@@ -7554,7 +7552,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
   int channels = 2;  // always output stereo
   stub *stub1;
   void *this, *next;
-  int_64 remaining_frames = snd1->tot_frames - snd1->cur_frames;
+  intmax_t remaining_frames = snd1->tot_frames - snd1->cur_frames;
 
   for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
   {  // zero out the sound to be in the buffer
@@ -7957,7 +7955,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
               else
               {
-                int_64 delta = (int_64) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
+                intmax_t delta = (intmax_t) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
                 // frames to next play after current play ends
                 stoch1->next_play = stoch1->repeat_min + delta + stoch1->play;
               }
@@ -8043,7 +8041,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (sample1->play <= 0)  // done playing, time to play another sample
             {     
                   /* frame start for next play  */
-              sample1->off1 = (int_64) round ((drand48 ()) * sample1->frames);  // fine for mono
+              sample1->off1 = (intmax_t) round ((drand48 ()) * sample1->frames);  // fine for mono
               if (sample1->channels == 2)  // offset is in shorts so have to double for stereo file
                 sample1->off1 *= 2;  // this also fixes it so that offset is always left channel.
               sample1->play = sample1->size; // fixed play time/frames
