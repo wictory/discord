@@ -91,13 +91,17 @@ states of consciousness for thousands of years.
 
 \fBphase\fP
 
-Generate a beat by shifting the phase of either the left or right
-channel at a specified beat frequency and to a specified phase
-offset between 0 and a positive number of degrees.  Phase tones are
-allowed to slide into the next phase on carrier, beat, amplitude,
-and phase.  This uses the doppler effect to get the attention of the
-brain.  It seems like something is coming towards and going away from
-us.
+Generate a beat by shifting the phase of the carrier tone at a specified
+beat frequency and to a specified phase offset between 0 and a positive
+number of degrees.  Phase tones are allowed to slide into the next phase on
+carrier, beat, amplitude, phase, and split beat.  This uses the doppler
+effect to get the attention of the brain.  It seems like something is coming
+towards and going away from us.  The way it differs from fm is that there is
+always the drone of the original unshifted carrier also present in the sound
+stream.  The phase shifted tone is split between the channels as determined
+by the split requested.  The drone tone is split between channels in the
+conjugate of the shifted tone.  So each channel is always at the same
+amplitude, disregarding any effects of amplitude beat.
 
 \fBfm\fP
 
@@ -354,23 +358,24 @@ hh:mm:ss.  This may be followed with a fade indicator of less than
 sign "<" for fade in or greater than sign ">" for fade out. e.g.
 00:02:03''''< means to fade in for 2 minutes and 3 seconds.  The
 duration is followed by the voices that will play during that time
-period.
+period, each voice on its own line.
 
-Separators allowed are | , ; ' =, multiples are allowed mixed with
-singles, any combination of separators even within a voice.
-However, every voice must be joined by separators.  No white space
-is allowed.
+Separators allowed are | , ; ' = and ascii space 0x20, multiples are
+allowed mixed with singles, any combination of separators even
+within a voice.  However, every voice must be joined by separators.
+No tabs are allowed.
 
-The greater than sign ">" after a binaural, chronaural, pulse, or
-phase voice is a slide, and will continuously adjust fields that are
-allowed to slide for that voice so that they match the corresponding
-field's value at the start of the next binaural, chronaural, pulse,
-or phase voice that they slide to.  For slides to work, the
-binaural, chronaural, pulse, or phase voices must be in the same
-relative position in the time sequences.  There is no other way to
-know that there is a link between the voices.  So the first voice in
-the sequence will always look to the first voice in the next
-sequence to slide to, etc.
+The greater than sign ">" after a binaural, chronaural, pulse,
+phase, or fm voice is a slide, and will continuously adjust fields
+that are allowed to slide for that voice so that they match the
+corresponding field's value at the start of the next binaural,
+chronaural, pulse, phase, or fm voice that they slide to.  For
+slides to work, the binaural, chronaural, pulse, phase, or fm voices
+must be in the same relative position in the time sequences.  There
+is no other way to know that there is a link between the voices.  So
+the first voice in the sequence will always look to the first voice
+in the next sequence to slide to, etc.  Only beat voices have the
+option to slide.
 
 One alternative slide format is the step slide.  Instead of using a
 greater than sign ">" to indicate a slide, use an ampersand "&".
@@ -552,35 +557,50 @@ present or no slide will occur.
   vary slide
 
 Fields for \fBphase\fP are name, carrier frequency, beat, amplitude,
-and phase.  Phase is the maximum phase difference in degrees between
-the left and right channel, from 0 to a positive number.  If the beat is
-positive, the right channel leads and will be phase shifted between
-0 and the phase at the beat rate.  If the beat is negative, the left
-channel leads and will be phase shifted between 0 and the phase at
-the beat rate.  Optional fields are a left and right amplitude
-frequency variation and a left and right percentage to vary.
+phase, beginning split, ending split, lowest split allowed, highest
+split allowed, and split beat.  Optional fields are a left and right
+amplitude beat frequency and a left and right percentage to vary.
 Optional fields must be at the end, before the slide indicator if
-they are present.
+they are present.  Phase is the maximum phase difference in degrees
+between the base carrier tone, the drone, and the phase shifted
+tone, from 0 to a positive number.  The amount of the shifted tone
+in each channel is determined by the split.  The drone tone is
+distributed as the conjugate of the split.  Unlike the fm voice,
+there is no way to change the phase relationship between the left
+and right channels.
 
   Examples
-  phase''''400.0''''+10.01''2.9''''180
-    |       |        |      |      |
-  name  carrier   beat  amplitude phase left percent vary  right
-    |       |        |     |      |                 |        |
-  phase''''60.0''''-10.01''1.0''''5''0.5''''0.5''''10.0''''10.0'>
-        |                             |       |                 |
-    field separators   left amplitude beat   right              |
-         |     |                                            slide
-.br        
+
+  name   carrier  beat  amplitude  phase    end split  max split
+   |       |       |      |        |           |         |
+  phase'''400''''10.01''''2.9''''180''''.5''''.5''''0''''1''''0
+                                         |          |         |
+                                    begin split  min split  split beat
+
+  Line below split for expository reasons, has to be single in script.
+
+                     amplitude   phase  begin split                                            
+  name   carrier  beat    |        |     | end split  split beat
+   |         |       |    |        |     |     |              |
+  phase''''60.0''''12.01''1.0''''150''''.4''''.6''''0''''1''''0.2
+        |        |                                  |    |     
+       field separators                      min split  max split
+                                                             
+    right amplitude beat    right percent vary
+                 |               |
+      ''''0.5''''0.5''''10.0''''10.0'''''''''>
+            |             |                  |
+    left amplitude beat  left percent vary   slide
+        
   &''''8''''30'''',,,,10  (slide with & instead of >)
   |    |    |         |
   | steps slide time  fuzz percent
   step slide
-.br        
   ~,,,,5''''20  (slide with ~ instead of >)
   |    |    |
   | steps slide time
   vary slide
+
 
 Fields for \fBfm\fP are name, carrier frequency, beat, amplitude, band,
 phase, beginning split, ending split, lowest split allowed, highest
