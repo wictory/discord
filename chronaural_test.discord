@@ -323,13 +323,13 @@
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
 #
-#  Fields for phase are name, carrier frequency, beat frequency, amplitude, and phase.
-#    Beat frequency is the number of times per second that the phase shifts between 0 and the current phase.
-#    Phase is the phase difference in degrees between the left and right channel, from 0 to 360.
-#    If beat frequency is +ve, it is the amount the right channel leads the left.
-#    If beat frequency is -ve, it is the amount the left channel leads the right.
-#    Optional fields are a left and right amplitude frequency variation and a left and right percentage to vary.
+#  Fields for phase are name, carrier frequency, beat frequency, amplitude, phase,
+#    beginning split, ending split, lowest split allowed, highest split allowed, and split beat.
+#    Optional fields are a left and right amplitude beat frequency and a left and right percentage to vary.
 #    Must be at the end, before the slide indicator if they are present.
+#    Beat frequency is the number of times per second that the phase shifts between 0 and the current phase.
+#    Phase is the phase difference in degrees between the base tone and the beat, from 0 to any reasonable 
+#    positive number. 360 indicates a doubling of the base frequency at the limit. 
 #    Slide indicator must be present for a slide to occur, can be continuous slide ">", step slide "&",
 #    or vary slide "~".  Step slide must have number of steps, slide time, and fuzz after it.  Vary slide must
 #    have number of steps and slide time after it.
