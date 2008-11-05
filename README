@@ -8,6 +8,19 @@ complexity is that it allows the exploration of scripts that are
 different than any yet used.  And that in turn means there are 
 probably paths I haven't traversed which might have undiscovered bugs.
 
+The latest release of discord, 3.0.0, changes the two phase-based
+voices phase and fm to use split logic.  Earlier scripts that use
+phase and fm will not be compatible with this version, though
+everything else is backward compatible.
+
+Also the parsing has been changed to allow the use of spaces in
+the specification of time sequences in the script files.
+
+Added logic that should enable discord to work on either 32 bit or 64
+bit systems.  Works on 32 bit but I haven't got a 64 bit system yet to
+test on.  The only thing 64 bit was the frame counts in the voice
+structs, so there isn't a lot to go wrong.
+
 The packages for libraries libsndfile and libsamplerate have been
 included in the discord package starting with 2.0.2.  The library
 versions are the latest at the time of packaging.  libsndfile has been
