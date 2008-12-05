@@ -688,7 +688,7 @@ usage ()
          "Usage: discord [options] sequence-file" NL NL
          "Control-C to quit while running" NL NL
          "For full usage help, type 'discord -h'.  For latest version see" NL
-         "http://sourceforge.net/projects/discord/"NL);
+         "http://discord.sourceforge.net/"NL);
 }
 
 char buf[32768];                 // Buffer for space holder
@@ -1680,7 +1680,7 @@ help ()
   printf ("discord - Create binaural and chronaural beats, version " VERSION NL
           "Copyright (c) 2007-2008 Stan Lysiak, all rights reserved," NL
           "released under the GNU GPL v2.  See file COPYING." NL NL
-          "http://sourceforge.net/projects/discord/"NL
+          "http://discord.sourceforge.net/"NL
           "** This program is free software; you can redistribute it and/or modify"NL
           "** it under the terms of the GNU General Public License as published by"NL
           "** the Free Software Foundation; either version 2.1 of the License, or"NL
@@ -10765,10 +10765,10 @@ fprint_voice_all (FILE *fp, void *this)
                         bell1->split_begin, bell1->split_end, bell1->split_low, bell1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (bell1->amp_min), AMP_DA (bell1->amp_max));
-        char_count += fprintf (fp, " %lld %lld %lld %lld",
+        char_count += fprintf (fp, " %jd %jd %jd %jd",
                         bell1->length_min, bell1->length_max, bell1->repeat_min, bell1->repeat_max);
         char_count += fprintf (fp, " %d\n", bell1->behave);
-        char_count += fprintf (fp, "        %d %d %lld %lld %lld",
+        char_count += fprintf (fp, "        %d %d %jd %jd %jd",
                         bell1->inc1, bell1->off1, bell1->next_play, bell1->sofar, bell1->ring);
         char_count += fprintf (fp, " %.3e %.3e\n",
                         bell1->amp_adj, bell1->split_adj);
@@ -10787,9 +10787,9 @@ fprint_voice_all (FILE *fp, void *this)
                         noise1->carrier_min, noise1->carrier_max);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (noise1->amp_min), AMP_DA (noise1->amp_max));
-        char_count += fprintf (fp, " %lld %lld %lld %lld\n",
+        char_count += fprintf (fp, " %jd %jd %jd %jd\n",
                         noise1->length_min, noise1->length_max, noise1->repeat_min, noise1->repeat_max);
-        char_count += fprintf (fp, "         %d %d %d %lld %lld %lld",
+        char_count += fprintf (fp, "         %d %d %d %jd %jd %jd",
                         noise1->behave, noise1->behave_low, noise1->behave_high, noise1->next_play,
                         noise1->sofar, noise1->play);
         char_count += fprintf (fp, " %.3e %.3e\n",
@@ -10801,7 +10801,7 @@ fprint_voice_all (FILE *fp, void *this)
         stoch *stoch1;
 
         stoch1 = (stoch *) this;
-        char_count += fprintf (fp, "   stoch %lld %d",
+        char_count += fprintf (fp, "   stoch %jd %d",
                         stoch1->frames, stoch1->channels);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (stoch1->amp), stoch1->split_now );
@@ -10809,9 +10809,9 @@ fprint_voice_all (FILE *fp, void *this)
                         stoch1->split_begin, stoch1->split_end, stoch1->split_low, stoch1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (stoch1->amp_min), AMP_DA (stoch1->amp_max));
-        char_count += fprintf (fp, " %lld %lld",
+        char_count += fprintf (fp, " %jd %jd",
                         stoch1->repeat_min, stoch1->repeat_max);
-        char_count += fprintf (fp, " %lld %lld %lld %lld",
+        char_count += fprintf (fp, " %jd %jd %jd %jd",
                         stoch1->next_play, stoch1->sofar, stoch1->off1, stoch1->play);
         char_count += fprintf (fp, " %.3e %d\n",
                         stoch1->split_adj, stoch1->mono);
@@ -10822,7 +10822,7 @@ fprint_voice_all (FILE *fp, void *this)
         sample *sample1;
 
         sample1 = (sample *) this;
-        char_count += fprintf (fp, "   sample %lld %d",
+        char_count += fprintf (fp, "   sample %jd %d",
                         sample1->frames, sample1->channels);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (sample1->amp), sample1->split_now );
@@ -10830,7 +10830,7 @@ fprint_voice_all (FILE *fp, void *this)
                         sample1->split_begin, sample1->split_end, sample1->split_low, sample1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (sample1->amp_min), AMP_DA (sample1->amp_max));
-        char_count += fprintf (fp, " %lld %lld %lld",
+        char_count += fprintf (fp, " %jd %jd %jd",
                         sample1->size, sample1->off1, sample1->play);
         char_count += fprintf (fp, " %.3e %d\n",
                         sample1->split_adj, sample1->mono);
@@ -10841,7 +10841,7 @@ fprint_voice_all (FILE *fp, void *this)
         repeat *repeat1;
 
         repeat1 = (repeat *) this;
-        char_count += fprintf (fp, "   repeat %lld %d",
+        char_count += fprintf (fp, "   repeat %jd %d",
                         repeat1->frames, repeat1->channels);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (repeat1->amp), repeat1->split_now );
@@ -10849,7 +10849,7 @@ fprint_voice_all (FILE *fp, void *this)
                         repeat1->split_begin, repeat1->split_end, repeat1->split_low, repeat1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (repeat1->amp_min), AMP_DA (repeat1->amp_max));
-        char_count += fprintf (fp, " %lld %lld",
+        char_count += fprintf (fp, " %jd %jd",
                         repeat1->off1, repeat1->play);
         char_count += fprintf (fp, " %.3e %d\n",
                         repeat1->split_adj, repeat1->mono);
@@ -10860,7 +10860,7 @@ fprint_voice_all (FILE *fp, void *this)
         once *once1;
 
         once1 = (once *) this;
-        char_count += fprintf (fp, "   once %lld %d",
+        char_count += fprintf (fp, "   once %jd %d",
                         once1->frames, once1->channels);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (once1->amp), once1->split_now );
@@ -10868,8 +10868,8 @@ fprint_voice_all (FILE *fp, void *this)
                         once1->split_begin, once1->split_end, once1->split_low, once1->split_high);
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (once1->amp_min), AMP_DA (once1->amp_max));
-        char_count += fprintf (fp, " %lld", once1->play_when);
-        char_count += fprintf (fp, " %lld %lld %lld", once1->sofar, once1->off1, once1->play);
+        char_count += fprintf (fp, " %jd", once1->play_when);
+        char_count += fprintf (fp, " %jd %jd %jd", once1->sofar, once1->off1, once1->play);
         char_count += fprintf (fp, " %.3e %d %d\n", once1->split_adj, once1->mono, once1->not_played);
       }
       break;
@@ -10915,7 +10915,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, "       %.3e %.3e", binaural1->amp_beat1_adj, binaural1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", binaural1->amp_pct1_adj, binaural1->amp_pct2_adj);
         char_count += fprintf (fp, " %d", binaural1->slide);
-        char_count += fprintf (fp, " %lld %lld", binaural1->tot_frames, binaural1->cur_frames);
+        char_count += fprintf (fp, " %jd %jd", binaural1->tot_frames, binaural1->cur_frames);
         char_count += fprintf (fp, "\n       %d %.2f %.1f\n", binaural1->steps, binaural1->slide_time, binaural1->fuzz);
       }
       break;
@@ -10943,7 +10943,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3e %.3e",
                         chronaural1->split_beat_adj, chronaural1->split_adj);
         char_count += fprintf (fp, " %d", chronaural1->slide);
-        char_count += fprintf (fp, " %lld %lld", chronaural1->tot_frames, chronaural1->cur_frames);
+        char_count += fprintf (fp, " %jd %jd", chronaural1->tot_frames, chronaural1->cur_frames);
         char_count += fprintf (fp, "\n         %d %.2f %.1f\n", chronaural1->steps, chronaural1->slide_time, chronaural1->fuzz);
       }
       break;
@@ -10994,7 +10994,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3e", pulse1->split_beat);
         char_count += fprintf (fp, " %.3e %.3e", pulse1->split_beat_adj, pulse1->split_adj);
         char_count += fprintf (fp, " %d", pulse1->slide);
-        char_count += fprintf (fp, " %lld %lld", pulse1->tot_frames, pulse1->cur_frames);
+        char_count += fprintf (fp, " %jd %jd", pulse1->tot_frames, pulse1->cur_frames);
         char_count += fprintf (fp, "\n         %d %.2f %.1f\n", pulse1->steps, pulse1->slide_time, pulse1->fuzz);
       }
       break;
@@ -11041,7 +11041,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3e %.3e", phase1->amp_beat1_adj, phase1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", phase1->amp_pct1_adj, phase1->amp_pct2_adj);
         char_count += fprintf (fp, " %d", phase1->slide);
-        char_count += fprintf (fp, " %lld %lld", phase1->tot_frames, phase1->cur_frames);
+        char_count += fprintf (fp, " %jd %jd", phase1->tot_frames, phase1->cur_frames);
         char_count += fprintf (fp, "\n       %d %.2f %.1f\n", phase1->steps, phase1->slide_time, phase1->fuzz);
       }
       break;
@@ -11092,7 +11092,7 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3e %.3e", fm1->amp_beat1_adj, fm1->amp_beat2_adj);
         char_count += fprintf (fp, " %.3e %.3e", fm1->amp_pct1_adj, fm1->amp_pct2_adj);
         char_count += fprintf (fp, " %d", fm1->slide);
-        char_count += fprintf (fp, " %lld %lld", fm1->tot_frames, fm1->cur_frames);
+        char_count += fprintf (fp, " %jd %jd", fm1->tot_frames, fm1->cur_frames);
         char_count += fprintf (fp, "\n       %d %.2f %.1f\n", fm1->steps, fm1->slide_time, fm1->fuzz);
       }
       break;
@@ -11167,7 +11167,7 @@ fprint_voice (FILE *fp, void *this)
         stoch *stoch1;
 
         stoch1 = (stoch *) this;
-        char_count = fprintf (fp, "   stoch %lld   %lld   %.3f   %.3f\n", 
+        char_count = fprintf (fp, "   stoch %jd   %jd   %.3f   %.3f\n", 
                       stoch1->off1, stoch1->play, AMP_DA (stoch1->amp), stoch1->split_now );
         break;
       }
@@ -11176,7 +11176,7 @@ fprint_voice (FILE *fp, void *this)
         sample *sample1;
 
         sample1 = (sample *) this;
-        char_count = fprintf (fp, "   sample %lld   %lld   %.3f   %.3f\n", 
+        char_count = fprintf (fp, "   sample %jd   %jd   %.3f   %.3f\n", 
                       sample1->off1, sample1->play, AMP_DA (sample1->amp), sample1->split_now );
         break;
       }
@@ -11185,7 +11185,7 @@ fprint_voice (FILE *fp, void *this)
         repeat *repeat1;
 
         repeat1 = (repeat *) this;
-        char_count = fprintf (fp, "   repeat %lld   %lld   %.3f   %.3f\n", 
+        char_count = fprintf (fp, "   repeat %jd   %jd   %.3f   %.3f\n", 
                       repeat1->off1, repeat1->play, AMP_DA (repeat1->amp), repeat1->split_now );
         break;
       }
@@ -11194,7 +11194,7 @@ fprint_voice (FILE *fp, void *this)
         once *once1;
 
         once1 = (once *) this;
-        char_count = fprintf (fp, "   once %lld   %lld   %lld   %.3f   %.3f\n", 
+        char_count = fprintf (fp, "   once %jd   %jd   %jd   %.3f   %.3f\n", 
                       once1->sofar, once1->off1, once1->play, AMP_DA (once1->amp), once1->split_now );
         break;
       }
