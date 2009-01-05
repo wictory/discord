@@ -8,25 +8,31 @@ complexity is that it allows the exploration of scripts that are
 different than any yet used.  And that in turn means there are 
 probably paths I haven't traversed which might have undiscovered bugs.
 
-The latest release of discord, 3.0.1, is a tweak to bring it into 64
-bit compliance.  It changes the print format string for the status
-print routines so that they do not complain during compilation.  Using
+discord 3.0.2 has a minor bug fix in the include files for the two
+libraries included in the package.  It also changes the end dates on
+the copyright notices to 2009.  The install file now has a list of the
+dynamic library dependencies for discord.  The disclaimer has been
+updated with my current understanding.
+
+discord 3.0.1 is a tweak to bring it into 64 bit compliance.  It
+changes the print format string for the status print routines so that
+they do not complain during compilation.  Using
 %jd instead of %lld.  Discord now compiles cleanly on both Fedora 9
 i386 and Fedora 10 x86_64, that is it is both 32 bit and 64 bit
 compliant.  The good news is that this did not change the
 functionality on the 32 bit platform as intmax_t is still 8 bytes so
-there is no practical limit on time.  The problem with libsndfile
-that prevented the dynamic library from working with FLAC in Fedora 9
-and earlier seems to have been fixed in Fedora 10.  Discord compiled
-with dynamic library support works with flac files.  The other change
-that matters is that the libsndfile and libsamplerate acinclude.m4
-files had quotes added to the AC_MSG_WARN macro so they would work
-with more recent GNU autoconf tools.
+there is no practical limit on time.  The problem with libsndfile that
+prevented the dynamic library from working with FLAC in Fedora 9 and
+earlier seems to have been fixed in Fedora 10.  Discord compiled with
+dynamic library support works with flac files.  The other change that
+matters is that the libsndfile and libsamplerate acinclude.m4 files
+had quotes added to the AC_MSG_WARN macro so they would work with more
+recent GNU autoconf tools.
 
-The latest release of discord, 3.0.0, changes the two phase-based
-voices phase and fm to use split logic.  Earlier scripts that use
-phase and fm will not be compatible with this version, though
-everything else is backward compatible.
+discord 3.0.0 changes the two phase-based voices phase and fm to use
+split logic.  Earlier scripts that use phase and fm will not be
+compatible with this version, though everything else is backward
+compatible.
 
 Also the parsing has been changed to allow the use of spaces in
 the specification of time sequences in the script files.
@@ -127,19 +133,22 @@ to play. Copy it to your home directory as .discordrc and tune to your
 satisfaction. 
 
 If discord compiles fine but won't run, look at one of the alsa-lib
-workaround files included.  The html version is also available on the
-discord project web site at sourceforge.net.  The short explanation is
-that the alsa-lib version 1.0.14 final does not support floating point
-formats.  As doubles are the format that discord uses, discord will
-not work with alsa-lib 1.0.14. This should not be an issue except on
-older systems as alsa-lib-1.0.18 is in the works.
+workaround files included (or see the information about sound servers
+below).  The short explanation is that the alsa-lib version 1.0.14
+final does not support floating point formats.  As doubles are the
+format that discord uses, discord will not work with alsa-lib 1.0.14.
+This should not be an issue except on older systems as alsa-lib-1.0.18
+is the current version.
 
 If discord has to resample files you need to run it from a directory
 where you have write permission.  The resample creates a resampled
-file, reads it into memory, and then removes it unless you have 
-explicitly asked for it to be kept.  At some point I might convert 
-this to use /tmp when the -k/--keep option is not selected or do
-the conversion in memory.
+file, reads it into memory, and then removes it unless you have
+explicitly asked for it to be kept.  At some point I might convert
+this to use /tmp when the -k/--keep option is not selected or do the
+conversion in memory.  My recommendation is to create a discord
+scripts directory in your home directory with sound samples in
+directories under that directory for ease of reference and to avoid
+the write permissions problem.
 
 There can also be issues with sound servers as they don't allow other
 applications to call ALSA directly.  In this case discord will fall
@@ -160,20 +169,3 @@ of the sounds there are under a creative commons licence so I don't
 distribute them with discord, but you should be able to use them
 without any licensing problem for personal use.
 
-Using the settings described on the http://frinika.sourceforge.net
-page regarding priority for sound works well with discord.
-...
-Modify:
-
-/etc/security/limits.conf:
-
-@audio - rtprio 90
-@audio - nice -5
-@audio - memlock 50000
-And make your user member of the audio group.
-
-You will then experience very stable sound and be able to use low latencies!
-...
-The above seems to have been bypassed in the latest version of Fedora.
-I find that beagled has the same priority as discord while running.  If I get
-irritated enough I'll look into why.
