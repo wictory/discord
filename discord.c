@@ -1,5 +1,5 @@
 // discord - binaural and chronaural beat generator
-// (c) 2007-2008 Stan Lysiak <stanlk@users.sourceforge.net>.  
+// (c) 2007-2009 Stan Lysiak <stanlk@users.sourceforge.net>.  
 // All Rights Reserved.
 // For latest version see http://discord.sourceforge.net/.  
 // Released under the GNU GPL version 2.  Use at your own risk.
@@ -691,7 +691,7 @@ void
 usage ()
 {
   error ("discord - Create and mix binaural, chronaural and phase beats, version " VERSION NL
-         "Copyright (c) 2007-2008 Stan Lysiak, all rights reserved," NL
+         "Copyright (c) 2007-2009 Stan Lysiak, all rights reserved," NL
          "released under the GNU GPL v2.  See file COPYING." NL NL
          "Usage: discord [options] sequence-file" NL NL
          "Control-C to quit while running" NL NL
@@ -1686,7 +1686,7 @@ void
 help ()
 {
   printf ("discord - Create binaural and chronaural beats, version " VERSION NL
-          "Copyright (c) 2007-2008 Stan Lysiak, all rights reserved," NL
+          "Copyright (c) 2007-2009 Stan Lysiak, all rights reserved," NL
           "released under the GNU GPL v2.  See file COPYING." NL NL
           "http://discord.sourceforge.net/"NL
           "** This program is free software; you can redistribute it and/or modify"NL
