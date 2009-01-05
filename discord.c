@@ -90,8 +90,16 @@
 #include <sys/time.h>
 #include <sys/times.h>
 #include <sys/soundcard.h>
-#include <samplerate.h>
-#include <sndfile.h>
+#ifdef static_libsamplerate
+  #include "lib_src/libsamplerate-0.1.2/src/samplerate.h"
+#else
+  #include <samplerate.h>
+#endif
+#ifdef static_libsndfile
+  #include "lib_src/libsndfile-1.0.17/src/sndfile.h"
+#else
+  #include <sndfile.h>
+#endif
 #include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
