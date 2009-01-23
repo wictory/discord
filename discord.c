@@ -611,6 +611,15 @@ struct fm
   double fuzz;  // how much fuzziness around step frequency, per cent as decimal.
 } ;
 
+/* structure to set silence for an interval or as a placeholder */
+typedef struct silence silence;
+struct silence
+{
+  void *prev;
+  void *next;
+  int type;                 // silence is type 22, no other fields necessary, return on validation
+} ;
+
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
 typedef struct slice slice;
 struct slice
@@ -655,6 +664,7 @@ void setup_chronaural (char *token, void **work);
 void setup_pulse (char *token, void **work);
 void setup_phase (char *token, void **work);
 void setup_fm (char *token, void **work);
+void setup_silence (void **work);
 void finish_beat_voice_setup ();
 snd_buffer * process_sound_file (char *filename);
 void play_loop ();
@@ -1854,6 +1864,8 @@ setup_play_seq ()
         setup_phase (voice, &work);
       else if (strcasecmp (subtoken, "fm") == 0)
         setup_fm (voice, &work);
+      else if (strcasecmp (subtoken, "silence") == 0)
+        setup_silence (&work);  // no parsing to be done, don't need token
       else
         error ("Unrecognized time sequence type: %s\n", subtoken);
       /* Append this voice to the rest of the voices for the period/ time sequence */
@@ -4147,6 +4159,19 @@ setup_fm (char *token, void **work)
     else if (subtoken != NULL) // invalid slide indicator
       error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
   }
+}
+
+/* Set up a silence sequence */
+
+void
+setup_silence (void **work)
+{
+  silence *silence1 = NULL;
+
+  silence1 = (silence *) Alloc ((sizeof (silence)) * 1);
+  *work = (void *) silence1;
+  silence1->next = NULL;
+  silence1->type = 22;
 }
 
 /*  Initialize all values possible for each beat voice */
@@ -10676,6 +10701,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           }
         }
         break;
+      case 22:  // silence voice
+        break;  // do nothing for silence
       default:               // do nothing if not recognized
         ;
     }
@@ -11104,6 +11131,11 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, "\n       %d %.2f %.1f\n", fm1->steps, fm1->slide_time, fm1->fuzz);
       }
       break;
+    case 22:  // silence
+      {
+        char_count += fprintf (fp, "   silence\n");
+      }
+      break;
     default:  // not known, do nothing
       ;
   }
@@ -11286,6 +11318,11 @@ fprint_voice (FILE *fp, void *this)
         char_count += fprintf (fp, "   %.3f", fm1->shift);
         char_count += fprintf (fp, "   %.3f", fm1->split_now);
         char_count += fprintf (fp, "   %.3e  %.3f\n", fm1->split_adj, fm1->split_beat); 
+      }
+      break;
+    case 22:  // silence
+      {
+        char_count += fprintf (fp, "   silence\n");
       }
       break;
     default:  // not known, do nothing
