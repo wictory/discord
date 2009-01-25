@@ -8119,7 +8119,7 @@ play_loop ()
           chv1->fade_val = 1.0;  // start at one amplitude
           chv1->fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
         }
-        else
+        else if (snd1->cur_frames == 0)  // no fade
         {
           chv1->fade_val = 1.0;  // no fade
           chv1->fade_incr = 0.0;  // no adjust each frame
@@ -8279,7 +8279,7 @@ save_loop ()
           chv1->fade_val = 1.0;  // start at one amplitude
           chv1->fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
         }
-        else
+        else if (snd1->cur_frames == 0)  // no fade
         {
           chv1->fade_val = 1.0;  // no fade
           chv1->fade_incr = 0.0;  // no adjust each frame
