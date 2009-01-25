@@ -208,7 +208,7 @@ struct snd_buffer
 snd_buffer *Sound_Files = NULL;
 
 typedef struct sndstream sndstream;
-// the linked list node for a sound to be played
+// the linked list node for a sound stream to be played
 struct sndstream
 {
   sndstream *prev;
@@ -220,8 +220,22 @@ struct sndstream
   int fade;  // 0 is no fade, 1 is fade in, 2 is fade out
 } ;
 
-// the root node of the play sequence
-sndstream *play_seq;
+typedef struct chorus_voice chorus_voice;
+// the linked list node for a chorus voice consisting of a sndstream
+struct chorus_voice
+{
+  chorus_voice *prev;  // the play sequences in this container
+  chorus_voice *next;
+  int duration;                 // in seconds
+  intmax_t tot_frames;
+  intmax_t cur_frames;
+  double fade_val, fade_incr;
+ 	double *buffer;
+  sndstream *play_seq;  // root node of sequence to play in this chorus voice
+} ;
+
+// master container for all the sound streams making up the current play sequence
+chorus_voice *stream_container = NULL;
 
 /* structure to set a stub for handling voices */
 typedef struct stub stub;
@@ -648,11 +662,12 @@ int parse_argv_options (int argc, char **argv);
 int parse_argv_configs (int argc, char **argv);
 int parse_discordrc ();
 int set_options (saved_option *SO);
-int setup_play_seq ();
-int read_script_file (FILE *infile, char **config_options);
+int read_script_file_options (FILE *infile, char **config_options);
 int read_config_file (FILE *infile, char **config_options);
 int append_options (saved_option **SO, char *config_options);
 int setup_opt_c (char *spec);
+int read_script_file_sequence (char *infile);
+int setup_play_seq ();
 void setup_binaural (char *token, void **work);
 void setup_bell (char *token, void **work);
 int setup_noise (char *token, void **work);
@@ -720,8 +735,6 @@ main (int argc, char **argv)
 {
   time_t time_now, utc_secs;
 
-  // argc--;  // remove program name if necessary
-  // argv++;
   time_now = time(&utc_secs);  // seconds since Jan 1 1970 UTC
   srand48(time_now);  // initialize the drand48 generator
   parse_argv_options (argc, argv);  // parse command line options
@@ -731,7 +744,7 @@ main (int argc, char **argv)
    * when quiet is set.
    */
   set_options (ARGV_OPTIONS);
-  parse_argv_configs (argc, argv); // parse script/sequence files
+  int filecount = parse_argv_configs (argc, argv); // parse script/sequence files
   parse_discordrc (); // parse discord configuration file
   set_options (CONFIG_OPTIONS);  // set the configuration options, lowest priority
   set_options (SCRIPT_OPTIONS);  // set the script file options, next priority
@@ -741,7 +754,12 @@ main (int argc, char **argv)
    * and any resample are set */
   alsa_validate_device_and_rate ();
   init_sin_table ();  // now that rate is known, create lookup sin table
-  setup_play_seq ();  // set the voices now that options complete
+  int offset = argc - filecount;  // first script file name offset in argv
+  while (filecount-- > 0)
+  {  // set the play sequences for each file now that options complete
+    read_script_file_sequence (argv [offset++]);
+    setup_play_seq ();
+  }
   if (opt_w)  // write a file
     save_loop ();  // save the sequences to a file until done
   else
@@ -912,7 +930,7 @@ parse_argv_configs (int argc, char **argv)
       infile = fopen (filename, "r");
       if (!infile)
         error ("Unable to open script file %s", filename);
-      read_script_file (infile, &config_options);
+      read_script_file_options (infile, &config_options);
       append_options (&SCRIPT_OPTIONS, config_options);
       fclose (infile);
     }
@@ -923,12 +941,12 @@ parse_argv_configs (int argc, char **argv)
 /*  Process a string of options from
     a config file.  Append them to
     SO, the linked list of options
-    from the command line, if it exists.
+    for the source of the options, if it exists.
     Create it if it doesn't. */
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hkm:o:qr:tvw:";
+  const char *ostr = "a:b:c:de:f:hkm:o:qr:tvw:~"; // tilde is bogus, allows separation of multiple script file options
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -962,14 +980,14 @@ append_options (saved_option **SO, char *config_options)
   {
     soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
     soh->next = NULL;
-    if (*SO == NULL)             // option list doesn't exist, no command line options
+    if (*SO == NULL)             // option list doesn't exist yet
     {
       soh->prev = NULL;
       *SO = soh;
     }
     else
     {
-      if (sow == NULL)  // first time through, there are command line options
+      if (sow == NULL)  // first time through, there are options
       {
         sow = *SO;  // start at root of linked list of options
         while (sow->next != NULL)
@@ -1111,25 +1129,25 @@ append_options (saved_option **SO, char *config_options)
 
 /*
    Read a script file, discarding blank
-   lines and comments.  Rets: 0 on success.
+   lines, comments, and play sequences.  Rets: 0 on success.
    Everything from the file is put into a character
-   string for options, or a linked list for play sequences. */
+   string for options. */
 
 int
-read_script_file (FILE * infile, char **config_options)
+read_script_file_options (FILE * infile, char **config_options)
 {
   char *curlin, *cmnt, *token;
   char savelin[16384], worklin[16384], rawline[16384];
   size_t len, destlen;
   int line_count = 0;
-  time_seq *tsh = NULL, *tsw = NULL;
 
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
   fgets (worklin, sizeof (worklin), infile);
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
-  while (*curlin != '\0')
+  while (!feof (infile))
+  //while (*curlin != '\0')
   {
     line_count++;
     token = strtok (worklin, " \t\n");    // get first token separated by spaces, tabs, or newline
@@ -1164,53 +1182,11 @@ read_script_file (FILE * infile, char **config_options)
       }
       else if (isdigit (token[0]) && strchr (token, ':') != NULL) // start of a time sequence
       {
-        if (savelin[0] == '-')          // just finished the options
-        {
-          *config_options = StrDup (savelin);    // save them for further processing
-          memset (savelin, 0x00, 16384);         // reset saved line
-        }
-        else if (strchr(savelin, ':') != NULL)   // just finished a time sequence
-        {
-          tsh = (time_seq *) Alloc (sizeof (time_seq) * 1);      // allocate struct for it
-          tsh->next = NULL;
-          if (TS == NULL)       // time seq list doesn't exist
-          {
-            tsh->prev = NULL;
-            TS = tsh;
-          }
-          else
-          {
-            tsh->prev = tsw;
-            tsw->next = tsh;
-          }
-          tsw = tsh;
-          tsw->sequence = StrDup (savelin);        // save them
-          memset (savelin, 0x00, 16384);         // reset saved line
-        }
-        if (cmnt)
-          strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
-        while (isspace (*curlin))       // remove leading spaces, not really necessary
-          curlin++;
-        len = strlen (curlin);
-        strncpy (savelin, curlin, len);  // here only at start of time sequence
+        ;  // do nothing
       }
-      else if (isalpha (token[0]))    // a sequence continuation, can't split voice
+      else if (isalpha (token[0]))    // a sequence continuation, can't split a voice
       {
-        if (cmnt)
-          strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
-        destlen = strlen (savelin);
-        len = strlen (curlin);
-        if (destlen == 0)
-        {
-          strncpy (savelin, curlin, len);
-        }
-        else if (destlen + len + 1 < 16384)
-        {
-          strncat (savelin, "\t", 1);  // add trailing tab so voices are separate
-          strncat (savelin, curlin, len);  // add voices
-        }
-        else
-          error ("Too many voices to store in seqence %s", savelin);
+        ;  // do nothing
       }
       else if (token[0] == '#') // line is a comment
         ;  // do nothing
@@ -1225,29 +1201,15 @@ read_script_file (FILE * infile, char **config_options)
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
-  if (*curlin == '\0')
-  {
-    if (feof (infile))
-    {                           
-      // save last time sequence
-      tsh = (time_seq *) Alloc ((sizeof (time_seq)) * 1);
-      tsh->next = NULL;
-      if (TS == NULL)           // time seq list doesn't exist
-      {
-        tsh->prev = NULL;
-        TS = tsh;
-      }
-      else
-      {
-        tsh->prev = tsw;
-        tsw->next = tsh;
-      }
-      tsw = tsh;
-      tsw->sequence = StrDup (savelin);        // save them
-      return 0;
-    }
-    error ("Read error on sequence file");
-  }
+  /* To separate the options from multiple script files, append a bogus option to the end
+   * of the rest of the options it there are any.
+   */
+  destlen = strlen (savelin);
+  if (destlen == 0)  // no options saved yet
+    strncpy (savelin, "-~ ", 3);  // tilde is bogus
+  else if (savelin[0] == '-')  // already some options saved
+    strncat (savelin, "-~ ", 3);
+  *config_options = StrDup (savelin);    // save them for further processing
   return 0;
 }
 
@@ -1370,23 +1332,20 @@ read_config_file (FILE * infile, char **config_options)
 }
 
 /*  Process the linked list of options
-    pointed to by SO.  Do it in reverse
-    so that later options are overridden
-    by earlier options. */
+    pointed to by SO. */
 int
 set_options (saved_option *SO)
 {
   char *endptr;
   char *compvals=NULL;
   int c;
+  int more_than_one_file = 0;
   saved_option *sow;
 
   if (SO == NULL)               // option list doesn't exist
     return 0;                   // successful :-)
   sow = SO;
-  while (sow->next != NULL)     // move to end
-    sow = sow->next;
-  while (sow != NULL)
+  while (sow != NULL)     // start at beginning 
   {
     c = sow->option;
     switch (c)
@@ -1422,6 +1381,15 @@ set_options (saved_option *SO)
         break;
       case 'c':  // compensate for human hearing, edge freqs need to be louder
         opt_c = 1;
+        if (more_than_one_file == 1)  // indicates that a script file's options have already been processed
+        {
+          if (compvals != NULL)
+          {
+            free (compvals);
+            compvals = NULL;
+          }
+          more_than_one_file = 0;  // reset in case there are more files after this one
+        }
         if (compvals == NULL) 
         {
           size_t compbytes = strlen(sow->option_string);
@@ -1545,10 +1513,13 @@ set_options (saved_option *SO)
         else  // default to generic name
           out_filename = "discord_saved_output_file";
         break;
+      case '~': // bogus option to indicate that a script file has already been read
+        more_than_one_file = 1;  // set a flag that there has already been a file
+        break;
       default:
         error ("Option -%c not known; run 'discord -h' for help", c);
     }
-    sow = sow->prev;
+    sow = sow->next;
   }
   if (compvals != NULL)  // there are new compensation values
   {
@@ -1618,6 +1589,7 @@ setup_opt_c (char *config)
     point_count++;
   }
   free (config);  // reclaim the storage
+  config = NULL;  // reset pointer as new
   // Sort the list
   int a, b;
   double holder;
@@ -1752,6 +1724,133 @@ init_sin_table ()
   sin_table = arr;
 }
 
+/*
+   Read a script file, discarding blank
+   lines, comments, and options.  Rets: 0 on success.
+   Everything from the file is put into a
+   linked list for play sequences. */
+
+int
+read_script_file_sequence (char * filename)
+{
+  char *curlin, *cmnt, *token;
+  char savelin[16384], worklin[16384], rawline[16384];
+  size_t len, destlen;
+  int line_count = 0;
+  time_seq *tsh = NULL, *tsw = NULL;
+  FILE *infile;
+
+  infile = fopen (filename, "r");
+  if (!infile)
+    error ("Unable to open script file %s", filename);
+  memset (savelin, 0x00, 16384);
+  memset (worklin, 0x00, 16384);
+  fgets (worklin, sizeof (worklin), infile);
+  strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
+  curlin = rawline;
+  while (!feof (infile))
+  //while (*curlin != '\0')
+  {
+    line_count++;
+    token = strtok (worklin, " \t\n");    // get first token separated by spaces, tabs, or newline
+    if (token)                  // not an empty line
+    {
+      cmnt = strchr (curlin, '#');
+      if (cmnt && cmnt[1] == '#')
+      {
+        if (!opt_q)  // quiet
+        {
+          fprintf (stderr, "Configuration comment  %s\n", curlin);
+          fflush (stderr);
+        }
+      }
+      if (token[0] == '-')      // options line
+      {
+        ;  // do nothing
+      }
+      else if (isdigit (token[0]) && strchr (token, ':') != NULL) // start of a time sequence
+      {
+        if (strchr(savelin, ':') != NULL)   // just finished a time sequence
+        {
+          tsh = (time_seq *) Alloc (sizeof (time_seq) * 1);      // allocate struct for it
+          tsh->next = NULL;
+          if (TS == NULL)       // time seq list doesn't exist
+          {
+            tsh->prev = NULL;
+            TS = tsh;
+          }
+          else
+          {
+            tsh->prev = tsw;
+            tsw->next = tsh;
+          }
+          tsw = tsh;
+          tsw->sequence = StrDup (savelin);        // save them
+          memset (savelin, 0x00, 16384);         // reset saved line
+        }
+        if (cmnt)
+          strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
+        while (isspace (*curlin))       // remove leading spaces, not really necessary
+          curlin++;
+        len = strlen (curlin);
+        strncpy (savelin, curlin, len);  // here only at start of time sequence
+      }
+      else if (isalpha (token[0]))    // a sequence continuation, can't split voice
+      {
+        if (cmnt)
+          strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
+        destlen = strlen (savelin);
+        len = strlen (curlin);
+        if (destlen == 0)
+        {
+          strncpy (savelin, curlin, len);
+        }
+        else if (destlen + len + 1 < 16384)
+        {
+          strncat (savelin, "\t", 1);  // add trailing tab so voices are separate
+          strncat (savelin, curlin, len);  // add voices
+        }
+        else
+          error ("Too many voices to store in seqence %s", savelin);
+      }
+      else if (token[0] == '#') // line is a comment
+        ;  // do nothing
+      else
+      {
+        if (!opt_q)  // quiet
+          fprintf (stderr, "Skipped line with token %s at start of line\n", token);
+      }
+    }
+    memset (worklin, 0x00, 16384);
+    fgets (worklin, sizeof (worklin), infile);
+    strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
+    curlin = rawline;
+  }
+  if (feof (infile))
+  {                           
+    // save last time sequence
+    tsh = (time_seq *) Alloc ((sizeof (time_seq)) * 1);
+    tsh->next = NULL;
+    if (TS == NULL)           // time seq list doesn't exist
+    {
+      tsh->prev = NULL;
+      TS = tsh;
+    }
+    else
+    {
+      tsh->prev = tsw;
+      tsw->next = tsh;
+    }
+    tsw = tsh;
+    tsw->sequence = StrDup (savelin);        // save them
+    fclose (infile);
+    return 0;
+  }
+  error ("Read error on sequence file");
+  fclose (infile);
+  return -1;
+}
+
 /* Set up the sequence of voices that will play */
 
 int
@@ -1765,20 +1864,44 @@ setup_play_seq ()
   time_seq *tsw = NULL;
   stub *stub1 = NULL, *stub2 = NULL;
   sndstream *sndstream1 = NULL, *sndstream2 = NULL;
+  chorus_voice *chorus_voice1 = NULL;
   void *work = NULL, *prev = NULL;
 
   /* frame rate has been validated, set the millisecond fade global variables */
   msec_fade_count = (int) (round ( out_rate / 1000.));
   msec_fade_adjust = 1.0 / (double) msec_fade_count;
 
+  /* Create a chorus voice to hold this sound stream.  Make it 
+   * the root node if there isn't already a root node.  Otherwise link
+   * it into the chorus voice list */
+  chorus_voice1 = (chorus_voice *) Alloc ((sizeof (chorus_voice)) * 1);
+  chorus_voice1->next = NULL;
+  chorus_voice1->duration = 0;
+  chorus_voice1->tot_frames = (intmax_t) (0);
+  chorus_voice1->cur_frames = (intmax_t) (0);
+  chorus_voice1->play_seq = NULL;
+  chorus_voice1->buffer = (double *) Alloc ((sizeof (double)) * BUFFER_LEN);
+  if (stream_container == NULL)  // make it the root node
+  {
+    chorus_voice1->prev = NULL;
+    stream_container = chorus_voice1;
+  }
+  else  // link in the new chorus voice
+  {
+    chorus_voice *chorus_voice2 = stream_container;  // root node of chorus voices
+    while (chorus_voice2->next != NULL)  // step through until the last chorus voice processed
+      chorus_voice2 = chorus_voice2->next;  // that's the one to link to here
+    chorus_voice1->prev = chorus_voice2;
+    chorus_voice2->next = chorus_voice1;
+  }
+
   sndstream2 = (sndstream *) Alloc ((sizeof (sndstream)) * 1);
   sndstream2->prev = NULL;
   sndstream2->next = NULL;
   sndstream2->voices = NULL;
   sndstream1 = sndstream2;
-  if (play_seq == NULL)
-    play_seq = sndstream1;
-  tsw = TS;
+  chorus_voice1->play_seq = sndstream1;  // anchor the new sound stream to the chorus voice
+  tsw = TS;  // working list of sequence nodes starts at the root sequence node
   while (tsw != NULL)           // move through time sequence linked list
   {
     str1 = tsw->sequence;
@@ -1787,7 +1910,9 @@ setup_play_seq ()
     subtoken = strtok_r (str2, separators, &saveptr2);    // get subtoken of token, time indicator
     read_time (subtoken, &time_in_secs);
     sndstream1->duration = time_in_secs;
+    chorus_voice1->duration += sndstream1->duration;  // accumulate the total duration for this chorus voice
     sndstream1->tot_frames = (intmax_t) (time_in_secs * out_rate);            // samples for this stream
+    chorus_voice1->tot_frames += sndstream1->tot_frames;  // accumulate the total frames for this chorus voice
     sndstream1->cur_frames = (intmax_t) (0);          // samples so far for this stream
     str2 = NULL;
     subtoken = strtok_r (str2, separators, &saveptr2);    // get next subtoken of token, fade indicator
@@ -1898,6 +2023,18 @@ setup_play_seq ()
       sndstream1 = sndstream2;
     }
   }
+  /* Free the sequence nodes in the list from the current script file 
+   * so if there is another script file it starts from scratch  */
+  tsw = TS;
+  while (tsw->next != NULL)  // move through time sequence linked list
+    tsw = tsw->next;  // until the last time sequence node
+  while (tsw->prev != NULL)  // move through time sequence linked list
+  {
+    tsw = tsw->prev;  // until the first  time sequence node
+    free (tsw->next);  // free the sequence node we just left
+  }
+  free (TS);  // free the root sequence node
+  TS = NULL;  // so the next script file starts fresh
   finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
   return 0;
 }
@@ -4179,17 +4316,21 @@ setup_silence (void **work)
 void
 finish_beat_voice_setup ()
 {
+  chorus_voice *chv1;
   sndstream *snd1, *snd2;
   stub *stub1 = NULL, *stub2 = NULL;
   void *work1 = NULL, *work2 = NULL;
 
 
-  snd1 = play_seq;  // root node of play stream
+  chv1 = stream_container;  // root node of chorus voices
+  while (chv1->next != NULL)  // step through until the last chorus voice processed
+    chv1 = chv1->next;  // that's the one to finish here
+  snd1 = chv1->play_seq;  // root node of play stream
   if (snd1 != NULL)
     work1 = snd1->voices;  // list of voices for this stream
   else
     work1 = NULL;
-  snd2 = play_seq->next;  // next node in line
+  snd2 = chv1->play_seq->next;  // next node in line
   if (snd2 != NULL)
     work2 = snd2->voices;  // list of voices for next stream node
   else
@@ -7907,17 +8048,20 @@ process_sound_file (char *filename)
 void
 play_loop ()
 {
-  struct sndstream *snd1, *snd2;
+  sndstream *snd1, *snd2;
+  chorus_voice *chv1 ;
   int display_count = (int) (every * (double) out_rate);  // Print every x seconds
-  double fade_val = 0.0, fade_incr = 0.0;
   long display_frames = 0L;
-  intmax_t remaining_frames = 0;
+  intmax_t max_frames = 0;
  	static double buffer [BUFFER_LEN] ;
- 	//static int int_buffer [BUFFER_LEN] ;
+ 	static double zero_buffer [BUFFER_LEN] = {0.0} ;
 	static double play_buffer [BUFFER_LEN] ;
-  int offset = 0, fade_start = 0, fade_length = 0;  // all in frames
 	snd_pcm_t *alsa_dev = NULL ;
   int channels = 2;  // always output stereo
+  int full_buffer_frames = BUFFER_LEN / channels;
+  int this_buffer_frames = 0;
+  int next_buffer_frames = full_buffer_frames;
+  int generated_frames = 0;  // all in frames
   slice *sound_slice;  // holds arguments for alsa_play_*
   pthread_t pth_play;  // thread for play
   pthread_attr_t attr_play;  // attributes for play
@@ -7934,83 +8078,118 @@ play_loop ()
   sound_slice->frames = BUFFER_LEN/channels; // number of frames in buffer
   sound_slice->channels = channels; // number of channels in a frame
       /* set up the thread attributes that will be used for each thread invocation of alsa_play_* */
-  pthread_attr_destroy (&attr_play);  // destroy attributes
+  // pthread_attr_destroy (&attr_play);  // destroy attributes
   pthread_attr_init (&attr_play);  // initialize attributes
   pthread_attr_setdetachstate (&attr_play, PTHREAD_CREATE_DETACHED);  // run detached
-  snd1 = play_seq;  // start of voice sequence linked list
-  if (!opt_q && snd1 != NULL)  // not quiet, sound to display
-    status (snd1, stderr);  // initial before any play
-  while (1)
+  chv1 = stream_container;  // root node of chorus voices
+  while (chv1 != NULL)
   {
-    if (snd1->fade == 1)  // fade in
+    if (chv1->tot_frames > max_frames)
+      max_frames = chv1->tot_frames;
+    snd1 = chv1->play_seq;  // quiets compiler warning of uninitialized use
+    chv1 = chv1->next;
+  }
+  /* The philosophy of the logic below is that the buffer filled from all the chorus voices will
+   * be full unless there is a chorus voice whose sound stream comes to a node in less than a full
+   * buffer of frames.  Then all chorus voices will generate only the frames remaining of the
+   * stream that is coming to a node juncture.  This avoids problems with fades and makes the logic
+   * simpler.
+   */
+  while (max_frames > 0)
+  {  /* using full buffer on first pass might give problems if using high fast mult with small time 
+        and low frame rate  e.g. 1 second and fast_mult == 60 and frame rate == 22500/sec */
+    this_buffer_frames = next_buffer_frames;  // using the number of frames determined in the last pass
+    next_buffer_frames = full_buffer_frames;  // use full buffers unless node juncture approaching
+    chv1 = stream_container;  // root node of chorus voices
+    while (chv1 != NULL)  // run through all chorus voices
     {
-      fade_val = 0.0;  // start at zero amplitude
-      fade_incr = 1.0/snd1->tot_frames;  // adjust each frame
-    }
-    else if (snd1->fade == 2)  // fade out
-    {
-      fade_val = 1.0;  // start at one amplitude
-      fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
-    }
-    while (snd1->cur_frames < snd1->tot_frames)  // for whole time period
-    {
-      remaining_frames = ((snd1->tot_frames - snd1->cur_frames) / fast_mult);
-      if (remaining_frames >= (BUFFER_LEN/channels))
-      { // more than a buffer full to go
-        fade_start = 0;  // if period has fade, start fading at this offset
-        fade_length = BUFFER_LEN/channels;  // end fade at this offset
-          // generate a full buffer
-        offset = generate_frames (snd1, buffer, offset, (BUFFER_LEN/channels));
-      }
-      else if (remaining_frames < (BUFFER_LEN/channels))
-      { // less than a buffer for this time period
-        fade_start = 0;
-        fade_length = (int) remaining_frames;
-          // generate a partial buffer
-        offset = generate_frames (snd1, buffer, offset, (int) remaining_frames);
-      }
-      if (snd1->fade)  // there is a fade in this time period
-      {
-        int ii;
-        for (ii=channels * fade_start; ii < channels * fade_length; ii+= channels)
-        {  // fade one frame at a time
-          buffer[ii] *= fade_val;
-          buffer[ii+1] *= fade_val;
-          fade_val += fade_incr * fast_mult;
-        }
-      }
-      snd1->cur_frames += (fade_length * fast_mult);  // adjust frames so far in this sound stream
-      if (!opt_d)
-      {
-        if (opt_t)  // use thread to play
+      if (chv1->cur_frames < chv1->tot_frames)  // still frames to play in this chorus voice
+      {  // logic ensures that snd1 can't be NULL if above is true
+        snd1 = chv1->play_seq;  // voice sequence linked list in this chorus voice
+        if (!opt_q && chv1->cur_frames == 0)  // not quiet, at start
+          status (snd1, stderr);  // initial before any play
+        /* make sure that any fade is taken care of at start of a sound stream node */
+        if (snd1->fade == 1 && snd1->cur_frames == 0)  // fade in
         {
-          sound_slice->frames = offset; // number of frames in buffer
-          memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to play
-            /* block until previous play operation complete, unlocked in alsa_write */
-          pthread_mutex_lock (&mtx_play);  
-              /* this create is non blocking, continue creating frames to play */
-          pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
+          chv1->fade_val = 0.0;  // start at zero amplitude
+          chv1->fade_incr = 1.0/snd1->tot_frames;  // adjust each frame
         }
-        else  // blocking function call
+        else if (snd1->fade == 2 && snd1->cur_frames == 0)  // fade out
         {
-            /* send doubles to alsa-lib to translate to sound card format and play with blocking function call */
-          int written = alsa_write_double (alsa_dev, buffer, offset, channels) ;
-          if (!opt_q && written != offset)
-            fprintf (stderr, "not all frames played to soundcard, %d instead of %d\n", written, offset);
+          chv1->fade_val = 1.0;  // start at one amplitude
+          chv1->fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
+        }
+        else
+        {
+          chv1->fade_val = 1.0;  // no fade
+          chv1->fade_incr = 0.0;  // no adjust each frame
+        }
+        /* check if next buffer will be short because approaching a sequence node */
+        if (((snd1->tot_frames - snd1->cur_frames) / fast_mult) < next_buffer_frames)
+          next_buffer_frames = (snd1->tot_frames - snd1->cur_frames) / fast_mult;
+        /* because frames are being counted, always able to generate requested frames in current node.
+         * The offset of frames into the buffer is fixed at zero here, though it can be nonzero for
+         * generate frames. */
+        generated_frames = generate_frames (snd1, chv1->buffer, 0, this_buffer_frames);
+        if (snd1->fade)  // there is a fade in this time period for this sound stream
+        {
+          int ii;
+          for (ii=0; ii < generated_frames * channels; ii+= channels)
+          {  // fade one frame at a time
+            buffer[ii] += (chv1->fade_val * chv1->buffer[ii]);
+            buffer[ii+1] += (chv1->fade_val * chv1->buffer[ii+1]);
+            chv1->fade_val += (chv1->fade_incr * fast_mult);
+          }
+        }
+        else  // no fade in this time period for this sound stream
+        {
+          int ii;
+          for (ii=0; ii < generated_frames * channels; ii+= channels)
+          {  // fade one frame at a time
+            buffer[ii] += chv1->buffer[ii];
+            buffer[ii+1] += chv1->buffer[ii+1];
+          }
+        }
+        memcpy (chv1->buffer, zero_buffer, sizeof (zero_buffer));  // zero the sound buffer
+        snd1->cur_frames += (generated_frames * fast_mult);  // adjust frames so far in this sound stream node
+        chv1->cur_frames += (generated_frames * fast_mult);  // adjust frames so far in this chorus voice
+        if (!opt_q && display_frames >= display_count && snd1 != NULL)   // not quiet,  time to display
+          status (snd1, stderr);  // blocking function call to write display of voices
+        if (snd1->cur_frames >= snd1->tot_frames)
+        {
+          snd2 = snd1->next;  // move to next time period
+          snd1 = snd2;
+          chv1->play_seq = snd1;  // set chorus to this sequence node - not doing free because of time
+          if (snd1 == NULL)
+            chv1->cur_frames = chv1->tot_frames;  // no more to play if end of sound stream - memory not freed
         }
       }
-      display_frames += (fade_length * fast_mult);  // adjust display frames
-      if (!opt_q && display_frames >= display_count)   // not quiet,  time to display
-      { // blocking function call to write display of voices
-        status (snd1, stderr);
-        display_frames = 0L;
-      }
-      offset = 0;
+      chv1 = chv1->next;
     }
-    snd2 = snd1->next;  // move to next time period
-    snd1 = snd2;
-    if (snd1 == NULL)
-      break;  // finished all time periods, out of the loop
+    if (!opt_d)  // not display only
+    {
+      if (opt_t)  // use thread to play
+      {
+        sound_slice->frames = this_buffer_frames; // number of frames in buffer
+        memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to play
+          /* block until previous play operation complete, unlocked in alsa_write */
+        pthread_mutex_lock (&mtx_play);  
+            /* this create is non blocking, continue creating frames to play */
+        pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
+      }
+      else  // blocking function call
+      {
+          /* send doubles to alsa-lib to translate to sound card format and play with blocking function call */
+        int written = alsa_write_double (alsa_dev, buffer, this_buffer_frames, channels) ;
+        if (!opt_q && written != this_buffer_frames)
+          fprintf (stderr, "not all frames played to soundcard, %d instead of %d\n", written, this_buffer_frames);
+      }
+    }
+    memcpy (buffer, zero_buffer, sizeof (zero_buffer));  // zero the sound buffer
+    max_frames -= (this_buffer_frames * fast_mult);  // adjust the overall loop counter for these frames
+    if (display_frames >= display_count)   //  just displayed 
+      display_frames = 0;  // start over
+    display_frames += (this_buffer_frames * fast_mult);  // adjust display frames
   }
   sleep (1);  // allows playing thread to finish before shutdown
   snd_pcm_drain (alsa_dev) ;  // shutdown the alsa card
@@ -8019,27 +8198,29 @@ play_loop ()
 
 //
 // Save loop
-// Needs to be fixed for new style
 //
 
 void
 save_loop ()
 {
-  struct sndstream *snd1, *snd2;
+  sndstream *snd1, *snd2;
+  chorus_voice *chv1 ;
   int display_count = (int) (every * (double) out_rate);  // Print every x seconds
-  double fade_val = 0.0, fade_incr = 0.0;
   long display_frames = 0L;
-  intmax_t remaining_frames = 0;
+  intmax_t max_frames = 0;
  	static double buffer [BUFFER_LEN] ;
- 	//static int int_buffer [BUFFER_LEN] ;
- 	static double write_buffer [BUFFER_LEN] ;
-  int offset = 0, fade_start = 0, fade_length = 0;  // all in frames
+ 	static double zero_buffer [BUFFER_LEN] = {0.0} ;
+	static double write_buffer [BUFFER_LEN] ;
   SNDFILE * sndfile = NULL;
   SF_INFO sfinfo;
   int channels = 2;  // always output stereo
-  slice *sound_slice;  // holds arguments for write_file
-  pthread_t pth_write;  // threads for file
-  pthread_attr_t attr_write;  // attributes for file
+  int full_buffer_frames = BUFFER_LEN / channels;
+  int this_buffer_frames = 0;
+  int next_buffer_frames = full_buffer_frames;
+  int generated_frames = 0;  // all in frames
+  slice *sound_slice;  // holds arguments for alsa_write_*
+  pthread_t pth_write;  // thread for write
+  pthread_attr_t attr_write;  // attributes for write
 
   sfinfo.samplerate = out_rate;  // sample frames per second
   sfinfo.channels = 2;  // always write stereo
@@ -8058,83 +8239,118 @@ save_loop ()
   sound_slice->frames = BUFFER_LEN/channels; // number of frames in buffer
   sound_slice->channels = channels; // number of channels in a frame
       /* set up the thread attributes that will be used for each thread invocation of write_file */
-  pthread_attr_destroy (&attr_write);  // destroy attributes
+  //pthread_attr_destroy (&attr_write);  // destroy attributes
   pthread_attr_init (&attr_write);  // initialize attributes
   pthread_attr_setdetachstate (&attr_write, PTHREAD_CREATE_DETACHED);  // run detached
-  snd1 = play_seq;  // start of voice sequence linked list
-  if (!opt_q && snd1 != NULL)  // not quiet, sound to display
-    status (snd1, stderr);  // initial before any write
-  while (1)
+  chv1 = stream_container;  // root node of chorus voices
+  while (chv1 != NULL)
   {
-    if (snd1->fade == 1)  // fade in
+    if (chv1->tot_frames > max_frames)
+      max_frames = chv1->tot_frames;
+    snd1 = chv1->play_seq;  // quiets compiler warning of uninitialized use
+    chv1 = chv1->next;
+  }
+  /* The philosophy of the logic below is that the buffer filled from all the chorus voices will
+   * be full unless there is a chorus voice whose sound stream comes to a node in less than a full
+   * buffer of frames.  Then all chorus voices will generate only the frames remaining of the
+   * stream that is coming toa node juncture.  This avoids problems with fades and makes the logic
+   * simpler.
+   */
+  while (max_frames > 0)
+  {
+    this_buffer_frames = next_buffer_frames;  // start always at least 1 second, more than a buffer
+    next_buffer_frames = full_buffer_frames;  // use full buffers unless node juncture approaching
+    chv1 = stream_container;  // root node of chorus voices
+    while (chv1 != NULL)  // run through all chorus voices
     {
-      fade_val = 0.0;  // start at zero amplitude
-      fade_incr = 1.0/snd1->tot_frames;  // adjust each frame
-    }
-    else if (snd1->fade == 2)  // fade out
-    {
-      fade_val = 1.0;  // start at one amplitude
-      fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
-    }
-    while (snd1->cur_frames < snd1->tot_frames)  // for whole time period
-    {
-      remaining_frames = ((snd1->tot_frames - snd1->cur_frames) / fast_mult);
-      if (remaining_frames >= (BUFFER_LEN/channels))
-      { // more than a buffer full to go
-        fade_start = 0;  // if period has fade, start fading at this offset
-        fade_length = BUFFER_LEN/channels;  // end fade at this offset
-          // generate a full buffer
-        offset = generate_frames (snd1, buffer, offset, (BUFFER_LEN/channels));
-      }
-      else if (remaining_frames < (BUFFER_LEN/channels))
-      { // less than a buffer for this time period
-        fade_start = 0;
-        fade_length = (int) remaining_frames;
-          // generate a partial buffer
-        offset = generate_frames (snd1, buffer, offset, (int) remaining_frames);
-      }
-      if (snd1->fade)  // there is a fade in this time period
-      {
-        int ii;
-        for (ii=channels * fade_start; ii < channels * fade_length; ii+= channels)
-        {  // fade one frame at a time
-          buffer[ii] *= fade_val;
-          buffer[ii+1] *= fade_val;
-          fade_val += fade_incr * fast_mult;
-        }
-      }
-      snd1->cur_frames += (fade_length * fast_mult);  // adjust frames so far in this sound stream
-      if (!opt_d)  // not display only
-      {
-        if (opt_t)  // use thread to write frames to file
+      if (chv1->cur_frames < chv1->tot_frames)  // still frames to play in this chorus voice
+      {  // logic ensures that snd1 can't be NULL if above is true
+        snd1 = chv1->play_seq;  // voice sequence linked list in this chorus voice
+        if (!opt_q && chv1->cur_frames == 0)  // not quiet, at start
+          status (snd1, stderr);  // initial before any play
+        /* make sure that any fade is taken care of at start of a sound stream node */
+        if (snd1->fade == 1 && snd1->cur_frames == 0)  // fade in
         {
-          sound_slice->frames = offset; // number of frames in buffer
-          memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to write
-            /* block until previous file write operation complete, released by file_write */
-          pthread_mutex_lock (&mtx_write);
-              /* this create is non blocking, continue creating frames to write */
-          pthread_create (&pth_write, &attr_write, (void *) &file_write, (void *) sound_slice);
+          chv1->fade_val = 0.0;  // start at zero amplitude
+          chv1->fade_incr = 1.0/snd1->tot_frames;  // adjust each frame
         }
-        else  // blocking function call
+        else if (snd1->fade == 2 && snd1->cur_frames == 0)  // fade out
         {
-            /* write the frames to file with a blocking function call */
-          int written = sf_writef_double (sndfile, buffer, offset);
-          if (!opt_q && written != offset)
-            fprintf (stderr, "not all frames written to file, %d instead of %d\n", written, offset);
+          chv1->fade_val = 1.0;  // start at one amplitude
+          chv1->fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
+        }
+        else
+        {
+          chv1->fade_val = 1.0;  // no fade
+          chv1->fade_incr = 0.0;  // no adjust each frame
+        }
+        /* check if next buffer will be short because approaching a sequence node */
+        if (((snd1->tot_frames - snd1->cur_frames) / fast_mult) < next_buffer_frames)
+          next_buffer_frames = (snd1->tot_frames - snd1->cur_frames) / fast_mult;
+        /* because frames are being counted, always able to generate requested frames in current node.
+         * The offset of frames into the buffer is fixed at zero here, though it can be nonzero for
+         * generate frames. */
+        generated_frames = generate_frames (snd1, chv1->buffer, 0, this_buffer_frames);
+        if (snd1->fade)  // there is a fade in this time period for this sound stream
+        {
+          int ii;
+          for (ii=0; ii < generated_frames * channels; ii+= channels)
+          {  // fade one frame at a time
+            buffer[ii] += (chv1->fade_val * chv1->buffer[ii]);
+            buffer[ii+1] += (chv1->fade_val * chv1->buffer[ii+1]);
+            chv1->fade_val += (chv1->fade_incr * fast_mult);
+          }
+        }
+        else  // no fade in this time period for this sound stream
+        {
+          int ii;
+          for (ii=0; ii < generated_frames * channels; ii+= channels)
+          {  // fade one frame at a time
+            buffer[ii] += chv1->buffer[ii];
+            buffer[ii+1] += chv1->buffer[ii+1];
+          }
+        }
+        memcpy (chv1->buffer, zero_buffer, sizeof (zero_buffer));  // zero the sound buffer
+        snd1->cur_frames += (generated_frames * fast_mult);  // adjust frames so far in this sound stream node
+        chv1->cur_frames += (generated_frames * fast_mult);  // adjust frames so far in this chorus voice
+        if (snd1->cur_frames >= snd1->tot_frames)
+        {
+          snd2 = snd1->next;  // move to next time period
+          snd1 = snd2;
+          chv1->play_seq = snd1;  // set chorus to this sequence node - not doing free because of time
+          if (snd1 == NULL)
+            chv1->cur_frames = chv1->tot_frames;  // no more to play if end of sound stream - memory not freed
         }
       }
-      display_frames += (fade_length * fast_mult);  // adjust display frames
-      if (!opt_q && display_frames >= display_count)  // not quiet and time to display
-      { // blocking function call to write display of voices
-        status (snd1, stderr);
-        display_frames = 0L;
-      }
-      offset = 0;
+      chv1 = chv1->next;
     }
-    snd2 = snd1->next;  // move to next time period
-    snd1 = snd2;
-    if (snd1 == NULL)
-      break;  // finished all time periods, out of the loop
+    if (!opt_d)  // not display only
+    {
+      if (opt_t)  // use thread to write frames to file
+      {
+        sound_slice->frames = this_buffer_frames; // number of frames in buffer
+        memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to write
+          /* block until previous file write operation complete, released by file_write */
+        pthread_mutex_lock (&mtx_write);
+            /* this create is non blocking, continue creating frames to write */
+        pthread_create (&pth_write, &attr_write, (void *) &file_write, (void *) sound_slice);
+      }
+      else  // blocking function call
+      {
+          /* write the frames to file with a blocking function call */
+        int written = sf_writef_double (sndfile, buffer, this_buffer_frames);
+        if (!opt_q && written != this_buffer_frames)
+          fprintf (stderr, "not all frames written to file, %d instead of %d\n", written, this_buffer_frames);
+      }
+    }
+    memcpy (buffer, zero_buffer, sizeof (zero_buffer));  // zero the sound buffer
+    max_frames -= (this_buffer_frames * fast_mult);  // adjust the overall loop counter for these frames
+    display_frames += (this_buffer_frames * fast_mult);  // adjust display frames
+    if (!opt_q && display_frames >= display_count && snd1 != NULL)   // not quiet,  time to display
+    { // blocking function call to write display of voices
+      status (snd1, stderr);
+      display_frames = 0;
+    }
   }
   sleep (1);  // allows writing thread to finish before shutdown
   sf_close (sndfile);
@@ -8152,10 +8368,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
   void *this, *next;
   intmax_t remaining_frames = snd1->tot_frames - snd1->cur_frames;
 
-  for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
-  {  // zero out the sound to be in the buffer
-    out_buffer[ii] = out_buffer[ii+1] = 0.0;
-  }
   this = snd1->voices;
   while (this != NULL)
   {
