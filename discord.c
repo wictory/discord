@@ -12214,9 +12214,12 @@ check_samplerate (char *inname)
 	if (! (infile = sf_open (inname, SFM_READ, &sfinfo)))
 	  error ("Error : Not able to open input file '%s'\n", inname) ;
 
-	printf ("Input File    : %s\n", inname) ;
-	printf ("Sample Rate   : %d\n", sfinfo.samplerate) ;
-	printf ("Input Frames  : %ld\n\n", (long) sfinfo.frames) ;
+  if (!opt_q)
+  {
+    fprintf (stderr, "Input File    : %s\n", inname) ;
+    fprintf (stderr, "Sample Rate   : %d\n", sfinfo.samplerate) ;
+    fprintf (stderr, "Input Frames  : %ld\n\n", (long) sfinfo.frames) ;
+  }
 
 	src_ratio = (1.0 * new_sample_rate) / sfinfo.samplerate ;
   if (src_ratio != 1.0)  // change in rate
@@ -12227,8 +12230,11 @@ check_samplerate (char *inname)
       /* Set default converter. */
     int converter = SRC_SINC_BEST_QUALITY ;
 
-    printf ("SRC Ratio     : %f\n", src_ratio) ;
-    printf ("Converter     : %s\n\n", src_get_name (converter)) ;
+    if (!opt_q)
+    {
+      fprintf (stderr, "SRC Ratio     : %f\n", src_ratio) ;
+      fprintf (stderr, "Converter     : %s\n\n", src_get_name (converter)) ;
+    }
     /* Create the name for the new output file by appending the new rate to the input file */
     char * ppos = strchr (inname, '.');  // last period
     char * spos = strchr (inname, '/');  // last slash
@@ -12253,9 +12259,12 @@ check_samplerate (char *inname)
     do
       count = sample_rate_convert (infile, outfile, converter, src_ratio, sfinfo.channels, &gain) ;
     while (count < 0) ;
-    printf ("Output file   : %s\n", inname) ;
-    printf ("Sample Rate   : %d\n", sfinfo.samplerate) ;
-    printf ("Output Frames : %ld\n\n", (long) count) ;
+    if (!opt_q)
+    {
+      fprintf (stderr, "Output file   : %s\n", inname) ;
+      fprintf (stderr, "Sample Rate   : %d\n", sfinfo.samplerate) ;
+      fprintf (stderr, "Output Frames : %ld\n\n", (long) count) ;
+    }
     sf_close (infile) ;
     sf_close (outfile) ;
     return (long) count ;
@@ -12339,7 +12348,10 @@ sample_rate_convert (SNDFILE *infile, SNDFILE *outfile, int converter, double sr
 	if (max > 1.0)
 	{	
     *gain = 1.0 / max ;
-		printf ("\nOutput has clipped. Restarting conversion to prevent clipping.\n\n") ;
+    if (!opt_q)
+    {
+      fprintf (stderr, "\nOutput has clipped. Restarting conversion to prevent clipping.\n\n") ;
+    }
 		output_count = 0 ;
 		sf_command (outfile, SFC_FILE_TRUNCATE, &output_count, sizeof (output_count)) ;
 		return -1 ;
