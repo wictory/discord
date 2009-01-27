@@ -1,4 +1,4 @@
-// discord - binaural and chronaural beat generator
+// discord - binaural, chronaural, and phase beat generator
 // (c) 2007-2009 Stan Lysiak <stanlk@users.sourceforge.net>.  
 // All Rights Reserved.
 // For latest version see http://discord.sourceforge.net/.  
@@ -28,53 +28,14 @@
 // For latest version see http://sbagen.sf.net/ or
 // http://uazu.net/sbagen/.  Released under the GNU GPL version 2.
 // Use at your own risk.
-//
-// " This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, version 2.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details. "
-//
-// See the file COPYING for details of this license.
-//
 /*
 ** libsndfile
 ** Copyright (C) 1999-2005 Erik de Castro Lopo <erikd@mega-nerd.com>
-**
-** This program is free software; you can redistribute it and/or modify
-** it under the terms of the GNU General Public License as published by
-** the Free Software Foundation; either version 2 of the License, or
-** (at your option) any later version.
-**
-** This program is distributed in the hope that it will be useful,
-** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-** GNU General Public License for more details.
-**
-** You should have received a copy of the GNU General Public License
-** along with this program; if not, write to the Free Software
-** Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 */
 /*
 ** libsamplerate
 ** Copyright (C) 2002-2004 Erik de Castro Lopo <erikd@mega-nerd.com>
 **
-** This program is free software; you can redistribute it and/or modify
-** it under the terms of the GNU General Public License as published by
-** the Free Software Foundation; either version 2 of the License, or
-** (at your option) any later version.
-**
-** This program is distributed in the hope that it will be useful,
-** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-** GNU General Public License for more details.
-**
-** You should have received a copy of the GNU General Public License
-** along with this program; if not, write to the Free Software
-** Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
 */
 
 #include <stdio.h>
@@ -136,6 +97,8 @@ int opt_f_arg = 1;              // run fast, at integer multiple of time
 int fast_mult = 1;              // default to normal speed
 int opt_h;                      // display help
 int opt_k = 0;                  // keep resampled files, default delete them
+int opt_l = 0;                  // use a list of files from specified file as input script files
+char *opt_l_list = NULL;        // tab separated strings naming files to process for input script files
 int opt_m = 0;                  // modify carrier and beat in script file by a random percentage +/-
 double opt_m_arg = 0.0;         // percentage in decimal form of modification band for carrier and beat
 double modify = 0.0;            // percentage in decimal form of modification band for carrier and beat
@@ -178,6 +141,18 @@ struct saved_option
 saved_option *ARGV_OPTIONS = NULL;
 saved_option *SCRIPT_OPTIONS = NULL;
 saved_option *CONFIG_OPTIONS = NULL;
+
+/* node to contain a script filename
+   from a listfile */
+typedef struct listfile_scripts listfile_scripts;
+struct listfile_scripts
+{
+  struct listfile_scripts *prev;
+  struct listfile_scripts *next;
+  char *filename;
+} ;
+/* holds a list of all script files derived from listfiles */
+listfile_scripts *LFS = NULL;
 
 /* node to contain a time sequence
    line */
@@ -658,15 +633,18 @@ double amp_comp (double freq);
 void error (char *fmt, ...);
 int read_time (char *, int *);
 void help ();
+void parse_listfile_for_script_filenames (char *listfilename);
+void parse_listfile_options ();
 int parse_argv_options (int argc, char **argv);
 int parse_argv_configs (int argc, char **argv);
 int parse_discordrc ();
+void setup_listfile_scripts ();
 int set_options (saved_option *SO);
-int read_script_file_options (FILE *infile, char **config_options);
+int read_script_file_options (char *filename, char **config_options);
 int read_config_file (FILE *infile, char **config_options);
 int append_options (saved_option **SO, char *config_options);
 int setup_opt_c (char *spec);
-int read_script_file_sequence (char *infile);
+int read_script_file_sequence (char *filename);
 int setup_play_seq ();
 void setup_binaural (char *token, void **work);
 void setup_bell (char *token, void **work);
@@ -737,13 +715,16 @@ main (int argc, char **argv)
 
   time_now = time(&utc_secs);  // seconds since Jan 1 1970 UTC
   srand48(time_now);  // initialize the drand48 generator
-  parse_argv_options (argc, argv);  // parse command line options
-  /* set the command line options before all others so they will 
-   * be in effect while the rest of the options are parsed and set.
-   * In particular, this prevents printing of compensation arrays
-   * when quiet is set.
+  /* The parse of the command line options will have two side 
+   * effects:  it will set the quiet option immediately if it is
+   * present and it will expand a listfile into the script filenames
+   * it contains, putting them into a linked list.
    */
-  set_options (ARGV_OPTIONS);
+  parse_argv_options (argc, argv);  // parse command line options
+  /* this has to be after the argv parse so the linked list of script filenames
+   * has been created */
+  if (opt_l)  // listfile(s) to process
+    parse_listfile_options ();  // listfile options have priority of SCRIPT_OPTIONS
   int filecount = parse_argv_configs (argc, argv); // parse script/sequence files
   parse_discordrc (); // parse discord configuration file
   set_options (CONFIG_OPTIONS);  // set the configuration options, lowest priority
@@ -754,6 +735,8 @@ main (int argc, char **argv)
    * and any resample are set */
   alsa_validate_device_and_rate ();
   init_sin_table ();  // now that rate is known, create lookup sin table
+  if (opt_l)  // listfile(s) to process
+    setup_listfile_scripts ();  // uses global LFS linked list of listfile names
   int offset = argc - filecount;  // first script file name offset in argv
   while (filecount-- > 0)
   {  // set the play sequences for each file now that options complete
@@ -817,7 +800,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "a:b:c:de:f:hkm:o:qr:tvw:";
+  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:tvw:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -831,6 +814,7 @@ parse_argv_options (int argc, char **argv)
       {"fast", 1, 0, 'f'},
       {"help", 0, 0, 'h'},
       {"keep", 0, 0, 'k'},
+      {"listfile", 1, 0, 'l'},
       {"modify", 1, 0, 'm'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
@@ -869,7 +853,6 @@ parse_argv_options (int argc, char **argv)
       case 'k':
       case 'm':
       case 'o':
-      case 'q':
       case 'r':
       case 't':
       case 'v':
@@ -894,6 +877,34 @@ parse_argv_options (int argc, char **argv)
           sow->option_string = NULL;
         break;
 
+      case 'l':  // read argument as file containing list of script files to use
+        opt_l = 1;
+        if (optarg != NULL)     // has argument
+        {
+          if (opt_l_list == NULL)  // no listfilenames yet
+          {
+            opt_l_list = StrDup(optarg);
+            strcat (opt_l_list, "\t");
+            parse_listfile_for_script_filenames (optarg);  // process it
+          }
+          else  // already filenames present
+          {
+            if (strstr (opt_l_list, optarg) == NULL)  // not a duplicate
+            {
+              strcat (opt_l_list, StrDup(optarg));  // append it to string list
+              strcat (opt_l_list, "\t");
+              parse_listfile_for_script_filenames (optarg);  // process it
+            }
+          }
+        }
+        else  // argument is missing
+          error ("--listfile/-l needs a filename, with path if necessary, as an argument");
+        break;
+
+      case 'q':
+        opt_q = 1;  // do here so takes effect soonest
+        break;
+
       case '?':
         fprintf (stderr, "%s\n", "Option not found in long option struct");
         fflush (stderr);
@@ -906,18 +917,103 @@ parse_argv_options (int argc, char **argv)
   return optind;                // index into argv where non options start i.e. filenames
 }
 
-/* parses the sequence files for
-   options and time sequences.  Places
-   them in appropriate linked lists.
-   The time sequences can't be processed
-   until all of the options have been
-   determined. */
+/* parses a listfile for script file filenames.
+   Places them in global LFS linked list.
+   This is necessary because the names have
+   to be used twice.  For options and for
+   sequences. There is a check for duplicate
+   listfile names before this routine is called.  */
+
+void
+parse_listfile_for_script_filenames (char *listfilename)
+{
+  char *filename, *cmnt, *str1;
+  char worklin[512];
+  /* points to a string containing all the configuration file options */
+  listfile_scripts *lff_new = NULL, *lff_work = NULL;
+  size_t len;
+  FILE *infile;
+
+  infile = fopen (listfilename, "r");
+  if (!infile)
+    error ("Unable to open listfile %s", listfilename);
+  memset (worklin, 0x00, 512);
+  fgets (worklin, sizeof (worklin), infile);
+  filename = worklin;
+  lff_work = LFS;
+  while (lff_work != NULL)  // while not at end of current list
+    lff_work = lff_work->next;  // move to next node
+  while (!feof (infile))
+  {
+    cmnt = strchr (filename, '#');
+    while (isspace (*filename))  // remove leading whitespace
+      filename++;
+    /* if not a comment and not a blank line */
+    if (filename[0] != '#' && strlen(filename) != 0)      
+    {  // anything else should be a filename with path
+      if (cmnt)
+        strncpy (cmnt, "\0", 1);     // truncate at comment
+      len = strlen (filename);
+      str1 = (filename + (len - 1));  // last char of filename is EOL
+      while (isspace (*str1))       // remove trailing whitespace
+        str1--;
+      *(str1 + 1) = '\0';  // reterminate the string
+      lff_new = (listfile_scripts *) Alloc (sizeof (listfile_scripts) * 1);      // allocate struct for it
+      lff_new->next = NULL;
+      if (lff_work == NULL)  // listfile filename list doesn't exist
+      {
+        lff_new->prev = NULL;
+        LFS = lff_new;
+      }
+      else
+      {
+        lff_new->prev = lff_work;
+        lff_work->next = lff_new;
+      }
+      lff_work = lff_new;
+      lff_work->filename = StrDup (filename);  // save the name
+    }
+    memset (worklin, 0x00, 512);
+    fgets (worklin, sizeof (worklin), infile);
+    filename = worklin;
+  }
+  fclose (infile);
+  return;
+}
+
+
+/* parses the listfile sequence files from LFS linked list for
+   options.  Places them in SCRIPT_OPTIONS linked list. */
+
+void
+parse_listfile_options ()
+{
+  char *filename;
+  /* points to a string containing all the configuration file options */
+  char *config_options = NULL;
+  listfile_scripts *lff_work = NULL;
+
+  if (LFS == NULL)
+    return;  // no listfile filenames to process
+  lff_work = LFS;
+  while (lff_work != NULL)
+  {
+    filename = lff_work->filename;
+    read_script_file_options (filename, &config_options);
+    append_options (&SCRIPT_OPTIONS, config_options);
+    lff_work = lff_work->next;
+  }
+  return;
+}
+
+/* parses the command line sequence files for
+   options.  Places them in linked list SCRIPT_OPTIONS. */
+
 int
 parse_argv_configs (int argc, char **argv)
 {
   char *filename;
   int filecount = 0;
-  FILE *infile;
   // points to a string containing all the configuration file options
   char *config_options = NULL;
 
@@ -927,26 +1023,23 @@ parse_argv_configs (int argc, char **argv)
     {
       filecount++;
       filename = argv[optind++];
-      infile = fopen (filename, "r");
-      if (!infile)
-        error ("Unable to open script file %s", filename);
-      read_script_file_options (infile, &config_options);
+      read_script_file_options (filename, &config_options);
       append_options (&SCRIPT_OPTIONS, config_options);
-      fclose (infile);
     }
   }
   return filecount;             // count of configuration files
 }
 
-/*  Process a string of options from
-    a config file.  Append them to
-    SO, the linked list of options
+/*  Process a string of options
+    Append them to the appropriate options linked
+    list passed in as SO, the linked list of options
     for the source of the options, if it exists.
     Create it if it doesn't. */
+
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hkm:o:qr:tvw:~"; // tilde is bogus, allows separation of multiple script file options
+  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:tvw:~"; // tilde is bogus, allows separation of multiple script file options
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -963,6 +1056,7 @@ append_options (saved_option **SO, char *config_options)
       {"fast", 1, 0, 'f'},
       {"help", 0, 0, 'h'},
       {"keep", 0, 0, 'h'},
+      {"listfile", 1, 0, 'l'},
       {"modify", 1, 0, 'm'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
@@ -1134,13 +1228,17 @@ append_options (saved_option **SO, char *config_options)
    string for options. */
 
 int
-read_script_file_options (FILE * infile, char **config_options)
+read_script_file_options (char * filename, char **config_options)
 {
   char *curlin, *cmnt, *token;
   char savelin[16384], worklin[16384], rawline[16384];
   size_t len, destlen;
   int line_count = 0;
+  FILE *infile;
 
+  infile = fopen (filename, "r");
+  if (!infile)
+    error ("Unable to open script file %s", filename);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
   fgets (worklin, sizeof (worklin), infile);
@@ -1201,6 +1299,7 @@ read_script_file_options (FILE * infile, char **config_options)
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
+  fclose (infile);
   /* To separate the options from multiple script files, append a bogus option to the end
    * of the rest of the options it there are any.
    */
@@ -1453,6 +1552,29 @@ set_options (saved_option *SO)
         break;
       case 'k':                // retain resampled files
         opt_k = 1;
+        break;
+      case 'l':  // read argument as file containing list of script files to use
+        opt_l = 1;
+        if (sow->option_string != NULL)     // has argument
+        {
+          if (opt_l_list == NULL)  // no listfilenames yet
+          {
+            opt_l_list = StrDup(sow->option_string);
+            strcat (opt_l_list, "\t");
+            parse_listfile_for_script_filenames (sow->option_string);  // process it
+          }
+          else  // already filenames present
+          {
+            if (strstr (opt_l_list, sow->option_string) == NULL)  // not a duplicate
+            {
+              strcat (opt_l_list, StrDup(sow->option_string));  // append it to string list
+              strcat (opt_l_list, "\t");
+              parse_listfile_for_script_filenames (sow->option_string);  // process it
+            }
+          }
+        }
+        else  // argument is missing
+          error ("--listfile/-l needs a filename, with path if necessary, as an argument");
         break;
       case 'm':  // modify the script file carrier and beat frequencies by random amount of percentage provided
         opt_m = 1;
@@ -1724,8 +1846,31 @@ init_sin_table ()
   sin_table = arr;
 }
 
+/* Parse any listfile script filenames from the LFS linked list
+ * for time sequences and set them up */
+
+void
+setup_listfile_scripts ()
+{
+  char *filename;
+  /* points to a string containing all the configuration file options */
+  listfile_scripts *lff_work = NULL;
+
+  if (LFS == NULL)
+    return;  // no listfile filenames to process
+  lff_work = LFS;
+  while (lff_work != NULL)
+  {
+    filename = lff_work->filename;
+    read_script_file_sequence (filename);  // call the setup with the filename
+    setup_play_seq ();
+    lff_work = lff_work->next;
+  }
+  return;
+}
+
 /*
-   Read a script file, discarding blank
+   Read a script file from the command line, discarding blank
    lines, comments, and options.  Rets: 0 on success.
    Everything from the file is put into a
    linked list for play sequences. */
@@ -1851,7 +1996,7 @@ read_script_file_sequence (char * filename)
   return -1;
 }
 
-/* Set up the sequence of voices that will play */
+/* Set up the sequence of voices that will play in a time sequence */
 
 int
 setup_play_seq ()
