@@ -100,13 +100,16 @@ int opt_k = 0;                  // keep resampled files, default delete them
 int opt_l = 0;                  // use a list of files from specified file as input script files
 char *opt_l_list = NULL;        // tab separated strings naming files to process for input script files
 int opt_m = 0;                  // modify carrier and beat in script file by a random percentage +/-
-double opt_m_arg = 0.0;         // percentage in decimal form of modification band for carrier and beat
-double modify = 0.0;            // percentage in decimal form of modification band for carrier and beat
+double opt_m_arg = 0.0;         // percentage of modification band for carrier and beat
+double opt_m_modify = 0.0;      // percentage in decimal form of modification band for carrier and beat
 int opt_o;                      // output format to write
 int outfile_format = SF_FORMAT_WAV; // default to wav if not specified otherwise, r:raw, f:flac
 int opt_q;                      // quiet run, no display of sequence
 int opt_r;                      // samples per second requested
 int out_rate = 44100;           // samples per second, default to cd standard
+int opt_s = 0;                  // shift carrier and beat in script file by a fixed percentage +/-
+double opt_s_arg = 0.0;         // percentage of shift amount for all carriers and beats
+double opt_s_shift = 0.0;       // percentage in decimal form of shift amount for all carriers and beats
 int opt_t;                      // use thread to play sound instead of blocking function call
 int opt_v;                      // write verbose output as discord is playing
 int opt_w;                      // write file instead of sound
@@ -800,7 +803,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:tvw:";
+  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:s:tvw:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -819,6 +822,7 @@ parse_argv_options (int argc, char **argv)
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
+      {"shift", 1, 0, 's'},
       {"thread", 0, 0, 't'},
       {"verbose", 0, 0, 'v'},
       {"write", 1, 0, 'w'},
@@ -854,6 +858,7 @@ parse_argv_options (int argc, char **argv)
       case 'm':
       case 'o':
       case 'r':
+      case 's':
       case 't':
       case 'v':
       case 'w':
@@ -902,7 +907,7 @@ parse_argv_options (int argc, char **argv)
         break;
 
       case 'q':
-        opt_q = 1;  // do here so takes effect soonest
+        opt_q = 1;  // do here so takes effect immediately
         break;
 
       case '?':
@@ -1039,7 +1044,7 @@ parse_argv_configs (int argc, char **argv)
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:tvw:~"; // tilde is bogus, allows separation of multiple script file options
+  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:s:tvw:~"; // tilde is bogus, allows separation of multiple script file options
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -1061,6 +1066,7 @@ append_options (saved_option **SO, char *config_options)
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
       {"rate", 1, 0, 'r'},
+      {"shift", 1, 0, 's'},
       {"thread", 0, 0, 't'},
       {"verbose", 0, 0, 'v'},
       {"write", 1, 0, 'w'},
@@ -1586,8 +1592,7 @@ set_options (saved_option *SO)
             error ("Can't modify the carrier or beat to be negative, --modify/-m must be less than 200.");
           if (opt_m_arg < 0.0 && !opt_q)
             fprintf (stderr, "Percentage for --modify/-m cannot be less than 0.  Converting to positive.\n");
-          opt_m_arg = AMP_AD (fabs (opt_m_arg));  // convert to positive decimal
-          modify = opt_m_arg;  // save in variable
+          opt_m_modify = AMP_AD (fabs (opt_m_arg));  // convert to positive decimal and save in variable
         }
         else                  // there was an error
           error ("--modify/-m expects positive numeric percentage %s", sow->option_string);
@@ -1621,6 +1626,19 @@ set_options (saved_option *SO)
         out_rate = (int) strtol (sow->option_string, (char **) NULL, 10);
         if (errno != 0)
           error ("Expecting an integer after --rate/-r %s", sow->option_string);
+        break;
+      case 's':  // shift all the script file carrier and beat frequencies by specified percentage provided
+        opt_s = 1;
+        errno = 0;
+        opt_s_arg = strtod (sow->option_string, &endptr);
+        if (errno == 0)       // no error
+        {
+          if (opt_s_arg <= -100.)
+            error ("Can't shift the carrier or beat to be negative, --shift/-s must be greater than -100.");
+          opt_s_shift = AMP_AD (opt_s_arg);  // convert to positive decimal and save in variable
+        }
+        else                  // there was an error
+          error ("--shift/-s expects numeric percentage %s", sow->option_string);
         break;
       case 't':                // thread sound play
         opt_t = 1;
@@ -1816,10 +1834,12 @@ help ()
           "          -f --fast         Fast.  Run through quickly (real time x 'mult')"NL
           "                              rather than wait for real time to pass"NL
           "          -k --keep         Keep the resampled input sound files"NL
+          "          -l --listfile     Read the argument as a file containing script file names to parse"NL
           "          -m --modify       Modify the carrier and beat in script file randomly in percentage band"NL
           "          -o --outfile      Output data to the given file instead of playing"NL
           "          -q --quiet        Don't display running status"NL
           "          -r --rate         Select the output rate (default is 44100 Hz)"NL
+          "          -s --shift        Shift all carriers and beats in script file specific percentage"NL
           "          -t --thread       Use thread to play sound instead of blocking function call"NL
           "          -v --verbose      Use verbose form for output while playing"NL
           "          -w --write        Write an output file instead of playing through sound card"NL);
@@ -2229,11 +2249,13 @@ setup_binaural (char *token, void **work)
     error ("Carrier for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = carrier * modify;  // amount of possible variance
+    double band = carrier * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     carrier += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    carrier += (carrier * opt_s_shift);
   binaural1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -2245,11 +2267,13 @@ setup_binaural (char *token, void **work)
     error ("Beat for binaural had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double band = (fabs (beat)) * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     beat += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    beat += (beat * opt_s_shift);
   binaural1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3333,11 +3357,13 @@ setup_chronaural (char *token, void **work)
     error ("Carrier for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = carrier * modify;  // amount of possible variance
+    double band = carrier * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     carrier += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    carrier += (carrier * opt_s_shift);
   chronaural1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3349,11 +3375,13 @@ setup_chronaural (char *token, void **work)
     error ("Beat for chronaural had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double band = (fabs (beat)) * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     beat += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    beat += (beat * opt_s_shift);
   chronaural1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3574,11 +3602,13 @@ setup_pulse (char *token, void **work)
     error ("Carrier for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = carrier * modify;  // amount of possible variance
+    double band = carrier * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     carrier += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    carrier += (carrier * opt_s_shift);
   pulse1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3590,11 +3620,13 @@ setup_pulse (char *token, void **work)
     error ("Beat for pulse had an error.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double band = (fabs (beat)) * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     beat += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    beat += (beat * opt_s_shift);
   pulse1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3806,11 +3838,13 @@ setup_phase (char *token, void **work)
     error ("Carrier for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = carrier * modify;  // amount of possible variance
+    double band = carrier * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     carrier += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    carrier += (carrier * opt_s_shift);
   phase1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -3824,11 +3858,13 @@ setup_phase (char *token, void **work)
     error ("Beat for phase cannot be less than 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = (fabs (beat)) * modify;  // amount of possible variance
+    double band = (fabs (beat)) * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     beat += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    beat += (beat * opt_s_shift);
   phase1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -4143,11 +4179,13 @@ setup_fm (char *token, void **work)
     error ("Carrier for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = carrier * modify;  // amount of possible variance
+    double band = carrier * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     carrier += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    carrier += (carrier * opt_s_shift);
   fm1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -4161,11 +4199,13 @@ setup_fm (char *token, void **work)
     error ("Beat for fm cannot be less than 0.\n%s\n%s", subtoken, original);
   if (opt_m) // modify carrier and beat read from script file
   {
-    double band = beat * modify;  // amount of possible variance
+    double band = beat * opt_m_modify;  // amount of possible variance
     double adjust = (drand48 ()) * band;  // adjustment amount
     adjust -= (band / 2.);
     beat += adjust;
   }
+  if (opt_s) // shift carrier and beat read from script file
+    beat += (beat * opt_s_shift);
   fm1->beat = beat;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
