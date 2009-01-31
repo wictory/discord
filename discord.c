@@ -705,7 +705,6 @@ usage ()
          "http://discord.sourceforge.net/"NL);
 }
 
-char buf[32768];                 // Buffer for space holder
 // START OF PROGRAMS
 //
 // M A I N
