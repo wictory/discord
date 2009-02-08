@@ -361,17 +361,17 @@
 # Fade in
 #
 00:00:10''''<  
-  repeat''''slightly_musical_conehead.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950
-  repeat''''fastcalling_tree_cricket.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950
+  repeat''''slightly_musical_conehead.wav''''1.092''''1.643''''-1''''-1''''.050''''.950
+  repeat''''fastcalling_tree_cricket.wav''''1.092''''1.643''''-1''''-1''''.050''''.950
 #
 # Play constant
 #
 00:00:10  
-  repeat''''slightly_musical_conehead.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950
-  repeat''''fastcalling_tree_cricket.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950
+  repeat''''slightly_musical_conehead.wav''''1.092''''1.643''''-1''''-1''''.050''''.950
+  repeat''''fastcalling_tree_cricket.wav''''1.092''''1.643''''-1''''-1''''.050''''.950
 #
 # Fade out
 #
 00:00:10''''>  
-  repeat''''slightly_musical_conehead.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950
-  repeat''''fastcalling_tree_cricket.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950
+  repeat''''slightly_musical_conehead.wav''''1.092''''1.643''''-1''''-1''''.050''''.950
+  repeat''''fastcalling_tree_cricket.wav''''1.092''''1.643''''-1''''-1''''.050''''.950

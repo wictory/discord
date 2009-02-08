@@ -361,20 +361,20 @@
 # Fade in
 #
 00:00:10''''<  
-  sample''''tinkling_ground_cricket.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950''''1.0
-  sample''''melodious_ground_cricket.aiff''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
-  sample''''slightly_musical_conehead.aiff''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
+  sample''''tinkling_ground_cricket.wav''''1.092''''1.643''''-1''''-1''''.050''''.950''''1.0
+  sample''''melodious_ground_cricket.wav''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
+  sample''''slightly_musical_conehead.wav''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
 #
 # Play constant
 #
 00:01:20  
-  sample''''tinkling_ground_cricket.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950''''1.0
-  sample''''melodious_ground_cricket.aiff''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
-  sample''''slightly_musical_conehead.aiff''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
+  sample''''tinkling_ground_cricket.wav''''1.092''''1.643''''-1''''-1''''.050''''.950''''1.0
+  sample''''melodious_ground_cricket.wav''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
+  sample''''slightly_musical_conehead.wav''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
 #
 # Fade out
 #
 00:00:10''''>  
-  sample''''tinkling_ground_cricket.aiff''''1.092''''1.643''''-1''''-1''''.050''''.950''''1.0
-  sample''''melodious_ground_cricket.aiff''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
-  sample''''slightly_musical_conehead.aiff''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
+  sample''''tinkling_ground_cricket.wav''''1.092''''1.643''''-1''''-1''''.050''''.950''''1.0
+  sample''''melodious_ground_cricket.wav''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
+  sample''''slightly_musical_conehead.wav''''0.081''''1.703''''-1''''-1''''.050''''.950''''0.7
