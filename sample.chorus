@@ -1,0 +1,15 @@
+# This is a sample listfile of script files to run using discord
+# By convention it has an extension of .chorus
+# Comments are preceded by hash marks
+# All names in this file are treated as file names to be opened 
+# as scripts for discord.
+/usr/local/share/discord/binaural_test.discord  # absolute path to install directory
+#binaural_test.discord  # relative path to local directory
+/usr/local/share/discord/bell_test.discord  # absolute path to install directory
+#bell_test.discord  # relative path to local directory
+/usr/local/share/discord/stoch_test.discord  # absolute path to install directory
+#stoch_test.discord  # relative path to local directory
+       # blank lines are allowed
+
+/usr/local/share/discord/sample_test.discord  # absolute path to install directory
+#sample_test.discord  # relative path to local directory
