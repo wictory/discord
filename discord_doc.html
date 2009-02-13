@@ -649,35 +649,6 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 </PRE>
 
 <P>  Fields for <STRONG><FONT COLOR=#FF7F00>phase</FONT></STRONG> are name,
-    carrier frequency, beat, amplitude, and phase.  Phase is the maximum phase
-    difference in degrees between the left and right channel, from 0 to a positive
-    number.  If the beat is positive, the right channel leads and will be phase
-    shifted between 0 and the phase at the beat rate.  If the beat is negative, the
-    left channel leads and will be phase shifted between 0 and the phase at the beat
-    rate.  Optional fields are a left and right amplitude frequency variation and a
-    left and right percentage to vary.  Optional fields must be at the end, before
-    the slide indicator if they are present.
-
-<P>  Example
-<P><PRE>
-    phase''''400.0''''+10.01''2.9''''180
-      |       |        |      |      |
-    name  carrier   beat  amplitude phase left percent vary  right
-      |       |        |     |      |                 |        |
-    phase''''60.0''''-10.01''1.0''''5''0.5''''0.5''''10.0''''10.0'&gt;
-          |                             |       |                 |
-      field separators   left amplitude beat   right              |
-           |     |                                            slide
-    &amp;''''8''''30'''',,,,10  (slide with &amp; instead of &gt;)
-    |    |    |         |
-    | steps slide time  fuzz percent
-    step slide
-    ~,,,,5''''20  (slide with ~ instead of &gt;)
-    |    |    |
-    | steps slide time
-    vary slide
-</PRE>
-<P>  Fields for <STRONG><FONT COLOR=#FF7F00>phase</FONT></STRONG> are name,
   carrier frequency, beat, amplitude, phase, beginning split, ending
   split, lowest split allowed, highest split allowed, and split beat.
   Optional fields are a left and right amplitude beat frequency and a
