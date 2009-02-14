@@ -15,6 +15,10 @@ sound samples in your scripts.  It is a good idea to use absolute
 paths when referring to any sound files as then it won't matter where
 you run them from.
 
+discord-3.1.1 fixes a bug in the frame synchronization logic that
+allowed a segmentation fault to occur when the frame was not an even
+multiple of 1024.
+
 discord 3.1.0 adds some new features.  Two new options, -l/--listfile
 and -s/--shift, and a new voice silence to serve as a placeholder.
 The option -l/--listfile allows several discord script files to be run
