@@ -15,6 +15,11 @@ sound samples in your scripts.  It is a good idea to use absolute
 paths when referring to any sound files as then it won't matter where
 you run them from.
 
+discord-3.1.2 fixes a bug in the frame synchronization logic that
+allowed a segmentation fault to occur when the frame was not an even
+multiple of 1024.  Previous was for sound play, this is for sound 
+file write.
+
 discord-3.1.1 fixes a bug in the frame synchronization logic that
 allowed a segmentation fault to occur when the frame was not an even
 multiple of 1024.
