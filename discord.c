@@ -8399,6 +8399,7 @@ save_loop ()
   int display_count = (int) (every * (double) out_rate);  // Print every x seconds
   long display_frames = 0L;
   intmax_t max_frames = 0;
+  intmax_t frames_to_go = 0;
  	static double buffer [BUFFER_LEN] ;
  	static double zero_buffer [BUFFER_LEN] = {0.0} ;
 	static double write_buffer [BUFFER_LEN] ;
@@ -8476,8 +8477,10 @@ save_loop ()
           chv1->fade_incr = 0.0;  // no adjust each frame
         }
         /* check if next buffer will be short because approaching a sequence node */
-        if (((snd1->tot_frames - snd1->cur_frames) / fast_mult) < next_buffer_frames)
-          next_buffer_frames = (snd1->tot_frames - snd1->cur_frames) / fast_mult;
+        frames_to_go = (((snd1->tot_frames - snd1->cur_frames) / (intmax_t) fast_mult)
+                          - (intmax_t) this_buffer_frames);
+        if (frames_to_go < (intmax_t) next_buffer_frames)
+          next_buffer_frames = (int) frames_to_go;
         /* because frames are being counted, always able to generate requested frames in current node.
          * The offset of frames into the buffer is fixed at zero here, though it can be nonzero for
          * generate frames. */
@@ -8496,7 +8499,7 @@ save_loop ()
         {
           int ii;
           for (ii=0; ii < generated_frames * channels; ii+= channels)
-          {  // fade one frame at a time
+          {  // add one frame at a time
             buffer[ii] += chv1->buffer[ii];
             buffer[ii+1] += chv1->buffer[ii+1];
           }
