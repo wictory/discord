@@ -394,6 +394,13 @@ struct repeat
   intmax_t off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+    /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
+        voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
+        the sound being repeated is the same.  Use the buffer pointer to determine that.
+    */
+  intmax_t *last_off1, *last_play;   
+  double *last_amp, *last_split_now, *last_split_adj;
+  int first_pass;  // is this voice inactive?
 } ;
 
 /* structure for playing a file once with the beat */
@@ -667,6 +674,7 @@ void setup_phase (char *token, void **work);
 void setup_fm (char *token, void **work);
 void setup_silence (void **work);
 void finish_beat_voice_setup ();
+void finish_non_beat_voice_setup ();
 snd_buffer * process_sound_file (char *filename);
 void play_loop ();
 void save_loop ();
@@ -2232,6 +2240,7 @@ setup_play_seq ()
   free (TS);  // free the root sequence node
   TS = NULL;  // so the next script file starts fresh
   finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
+  finish_non_beat_voice_setup ();  // complete setup of non-beat voices now that sequences are known
   return 0;
 }
 
@@ -3144,6 +3153,11 @@ setup_repeat (char *token, void **work)
   *work = repeat1;
   repeat1->next = NULL;
   repeat1->type = 6;
+  /* initialize pointer to last voices offset into buffer, how many played so far start as NULL  */ 
+  repeat1->last_off1 = repeat1->last_play = NULL;
+  /* initialize pointer to last voices amplitude, split_now, and split adjust start as NULL  */ 
+  repeat1->last_amp = repeat1->last_split_now = repeat1->last_split_adj = NULL;
+  repeat1->first_pass = 1;  // inactive
   original = StrDup (token);
   str2 = token;
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
@@ -8139,6 +8153,123 @@ finish_beat_voice_setup ()
   }
 }
 
+/*  Initialize tie values possible for each non beat voice */
+/*  Copy of beat voice, but that is large enough */
+
+void
+finish_non_beat_voice_setup ()
+{
+  chorus_voice *chv1;
+  sndstream *snd1, *snd2;
+  stub *stub1 = NULL, *stub2 = NULL;
+  void *work1 = NULL, *work2 = NULL;
+
+
+  chv1 = stream_container;  // root node of chorus voices
+  while (chv1->next != NULL)  // step through until the last chorus voice processed
+    chv1 = chv1->next;  // that's the one to finish here
+  snd1 = chv1->play_seq;  // root node of play stream
+  if (snd1 != NULL)
+    work1 = snd1->voices;  // list of voices for this stream
+  else
+    work1 = NULL;
+  snd2 = chv1->play_seq->next;  // next node in line
+  if (snd2 != NULL)
+    work2 = snd2->voices;  // list of voices for next stream node
+  else
+    work2 = NULL;
+  while (snd1 != NULL)
+  { 
+    while (work1 != NULL)
+    { 
+      stub1 = (stub *) work1;
+      switch (stub1->type)
+      { 
+        case 1:  // binaural
+          { 
+            break;
+          }
+        case 2:  // bell
+        case 3:  // noise
+        case 4:  // stoch
+        case 5:  // sample
+          { 
+            break;
+          }
+        case 6:  // repeat
+          { 
+            repeat *repeat1 = NULL, *repeat2 = NULL;
+
+            repeat1 = (repeat *) work1;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 6)  // also repeat
+              { 
+                repeat2 = (repeat *) work2;
+                if (repeat2->sound == repeat1->sound)  // buffer ptr the same, the same sound sample continues
+                {
+                /* Set the pointers to the previous voice's values here so it can be used while running
+                   to continue the play with no discontinuity */
+                  repeat2->last_off1 = &(repeat1->off1);
+                  repeat2->last_play = &(repeat1->play);
+                  repeat2->last_amp = &(repeat1->amp);
+                  repeat2->last_split_now = &(repeat1->split_now);
+                  repeat2->last_split_adj = &(repeat1->split_adj);
+                }
+              } 
+            } 
+            /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            break;
+          }
+        case 7:  // once
+          break;
+        case 8:  // chronaural
+        case 9:  // binaural step slide, have to create list of steps and slides
+        case 10:  // chronaural step slide, have to create list of steps and slides
+        case 11:  // binaural vary slide, have to create list of steps and slides
+        case 12:  // chronaural vary slide, have to create list of steps and slides
+        case 13:  // pulse
+        case 14:  // pulse step slide, have to create list of steps and slides
+        case 15:  // pulse vary slide, have to create list of steps and slides
+        case 16:  // phase
+        case 17:  // phase step slide, have to create list of steps and slides
+        case 18:  // phase vary slide, have to create list of steps and slides
+        case 19:  // fm
+        case 20:  // fm step slide, have to create list of steps and slides
+        case 21:  // fm vary slide, have to create list of steps and slides
+        case 22:  // silence
+          { 
+            break;
+          }
+        default:
+          break;
+      }
+      work1 = stub1->next;
+      if (work2 != NULL)
+      {
+        stub2 = (stub *) work2;
+        work2 = stub2->next;
+      }
+    }
+    snd1 = snd1->next;
+    if (snd1 != NULL)
+    {
+      work1 = snd1->voices;  // list of voices for this stream
+      snd2 = snd1->next;
+    }
+    else
+    {
+      work1 = NULL;
+      snd2 = NULL;
+    }
+    if (snd2 != NULL)
+      work2 = snd2->voices;  // list of voices for next stream node
+    else
+      work2 = NULL;
+  }
+}
+
 /* Take care of importing a sound file.  Check if it is already imported.
  * If it is return a pointer to the sound buffer.  If it isn't, check if
  * it needs to be resampled and then create a snd_buffer node for it
@@ -9175,6 +9306,22 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           double split_end = 0.0;  // hold the ending split while creating voice
 
           repeat1 = (repeat *) this;  // reassign void pointer as repeat struct
+          /* if start of the voice, set starting values to be last values of previous voice, if available */
+          if (repeat1->first_pass)
+          {
+            repeat1->first_pass = 0;  // now active
+            /* check each pointer to the previous voice to see if it is valid */
+            if (repeat1->last_off1 != NULL)
+              repeat1->off1 = *repeat1->last_off1;  // to start from buffer position of last voice
+            if (repeat1->last_play != NULL)
+              repeat1->play = *repeat1->last_play;  // amount played already is amount from last voice
+            if (repeat1->last_amp != NULL)
+              repeat1->amp = *repeat1->last_amp;  // use the same amplitude as last voice
+            if (repeat1->last_split_now != NULL)
+              repeat1->split_now = *repeat1->last_split_now;  // start from same split as last voice
+            if (repeat1->last_split_adj != NULL)
+              repeat1->split_adj = *repeat1->last_split_adj;  // use same split_adj as last voice
+          }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             if (repeat1->play <= 0)
