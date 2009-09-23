@@ -52,12 +52,12 @@
 #include <sys/times.h>
 #include <sys/soundcard.h>
 #ifdef static_libsamplerate
-  #include "lib_src/libsamplerate-0.1.2/src/samplerate.h"
+  #include "lib_src/libsamplerate-0.1.7/src/samplerate.h"
 #else
   #include <samplerate.h>
 #endif
 #ifdef static_libsndfile
-  #include "lib_src/libsndfile-1.0.17/src/sndfile.h"
+  #include "lib_src/libsndfile-1.0.20/src/sndfile.h"
 #else
   #include <sndfile.h>
 #endif
@@ -80,6 +80,7 @@ typedef unsigned char uchar;
 int opt_a;                      // audio card and device set in options
 char *opt_a_plughw = NULL;      // audio card and device to use
 int opt_b;                      // bit accuracy of output
+char *opt_b_arg;                // bit accuracy of output argument
 int bit_accuracy = SF_FORMAT_PCM_16;  // bit accuracy of file output defaults to 16
 int opt_c;                      // Compensate for human hearing low and high freq dropoff
 int opt_c_points = 0;           // Number of -c option points provided (max 32)
@@ -103,7 +104,8 @@ int opt_m = 0;                  // modify carrier and beat in script file by a r
 double opt_m_arg = 0.0;         // percentage of modification band for carrier and beat
 double opt_m_modify = 0.0;      // percentage in decimal form of modification band for carrier and beat
 int opt_o;                      // output format to write
-int outfile_format = SF_FORMAT_WAV; // default to wav if not specified otherwise, r:raw, f:flac
+char opt_o_arg;                 // output format to write argument character
+int outfile_format = SF_FORMAT_WAV; // default to w:wav if not specified otherwise, r:raw, f:flac, o:ogg
 int opt_q;                      // quiet run, no display of sequence
 int opt_r;                      // samples per second requested
 int out_rate = 44100;           // samples per second, default to cd standard
@@ -113,7 +115,10 @@ double opt_s_shift = 0.0;       // percentage in decimal form of shift amount fo
 int opt_t;                      // use thread to play sound instead of blocking function call
 int opt_v;                      // write verbose output as discord is playing
 int opt_w;                      // write file instead of sound
-char *out_filename;           // write file instead of sound
+char *out_filename;             // write file instead of sound
+int opt_y;                      // user has requested a vbr quality setting
+double opt_y_arg = -1.0;        // for OGG, output VBR quality to write - 0.0 to 1.0, default it to -1.0, no set
+double vbr_quality = 0.5;       // for OGG, output VBR quality to write - 0.0 to 1.0, default it to 0.5
 const char *separators = "=' |,;";  // separators for time sequences, mix and match, multiples ok
 double *sin_table;
 int status_t_retval = 0;  // return integer for status_t thread
@@ -802,7 +807,7 @@ read_time (char *p, int *timp)
 int
 parse_argv_options (int argc, char **argv)
 {
-  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:s:tvw:";
+  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:s:tvw:y:";
   int c;
   int option_index = 0;
   saved_option *soh = NULL, *sow = NULL;
@@ -825,6 +830,7 @@ parse_argv_options (int argc, char **argv)
       {"thread", 0, 0, 't'},
       {"verbose", 0, 0, 'v'},
       {"write", 1, 0, 'w'},
+      {"vbr_quality", 1, 0, 'y'},
       {0, 0, 0, 0}
     };
 
@@ -861,6 +867,7 @@ parse_argv_options (int argc, char **argv)
       case 't':
       case 'v':
       case 'w':
+      case 'y':
         soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
         soh->next = NULL;
         if (ARGV_OPTIONS == NULL)         // option list doesn't exist
@@ -1043,7 +1050,7 @@ parse_argv_configs (int argc, char **argv)
 int
 append_options (saved_option **SO, char *config_options)
 {
-  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:s:tvw:~"; // tilde is bogus, allows separation of multiple script file options
+  const char *ostr = "a:b:c:de:f:hkl:m:o:qr:s:tvw:y:~"; // tilde is bogus, allows separation of multiple script file options
   char *found;
   char *token, *subtoken;
   char *str1, *str2;
@@ -1069,6 +1076,7 @@ append_options (saved_option **SO, char *config_options)
       {"thread", 0, 0, 't'},
       {"verbose", 0, 0, 'v'},
       {"write", 1, 0, 'w'},
+      {"vbr_quality", 1, 0, 'y'},
       {0, 0, 0, 0}
     };
 
@@ -1466,17 +1474,23 @@ set_options (saved_option *SO)
         break;
       case 'b':  // bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f
         opt_b = 1;
-        if (strcmp(sow->option_string, "16i") == 0)
+        /*  save the option string in case needed for error reporting */
+        size_t optbytes = strlen(sow->option_string);
+        opt_b_arg = (char *) Alloc(optbytes+1);  // extra for '\0'
+        strncpy (opt_b_arg, sow->option_string, optbytes+1);  // cp terminator
+        if (strcasecmp(sow->option_string, "16i") == 0)
           bit_accuracy = SF_FORMAT_PCM_16;
-        else if (strcmp(sow->option_string, "24i") == 0)
+        else if (strcasecmp(sow->option_string, "24i") == 0)
           bit_accuracy = SF_FORMAT_PCM_24;
-        else if (strcmp(sow->option_string, "32i") == 0)
+        else if (strcasecmp(sow->option_string, "32i") == 0)
           bit_accuracy = SF_FORMAT_PCM_32;
-        else if (strcmp(sow->option_string, "32f") == 0)
+        else if (strcasecmp(sow->option_string, "32f") == 0)
           bit_accuracy = SF_FORMAT_FLOAT;
-        else if (strcmp(sow->option_string, "64f") == 0)
+        else if (strcasecmp(sow->option_string, "64f") == 0)
           bit_accuracy = SF_FORMAT_DOUBLE;
-        else // default to 16 bit sound
+        else if (strcasecmp(sow->option_string, "vorbis") == 0)
+          bit_accuracy = SF_FORMAT_VORBIS;
+        else // default to 16 bit sound, ogg vorbis corrected later
         {
           if (!opt_q)  // quiet
             fprintf (stderr, "Unrecognized format for --bit_accuracy/-b %s.  Setting to 16 bit.\n", sow->option_string);
@@ -1600,11 +1614,16 @@ set_options (saved_option *SO)
         opt_o = 1;
         if (sow->option_string != NULL)
         {
-          if (sow->option_string[0] == 'f' || sow->option_string[0] == 'F')
+          /*  save the option character in case needed for error reporting */
+          opt_o_arg = *(sow->option_string);  // first character
+          if (strcasecmp(sow->option_string, "f") == 0)
             outfile_format = SF_FORMAT_FLAC;
-          else if (sow->option_string[0] == 'r' || sow->option_string[0] == 'R')
+          else if (strcasecmp(sow->option_string, "o") == 0)
+            // only vorbis is used as encoding for ogg here, though flac and speex are also allowed by vorbis
+            outfile_format = (SF_FORMAT_OGG | SF_FORMAT_VORBIS);  
+          else if (strcasecmp(sow->option_string, "r") == 0)
             outfile_format = SF_FORMAT_RAW;
-          else if (sow->option_string[0] == 'w' || sow->option_string[0] == 'W')
+          else if (strcasecmp(sow->option_string, "w") == 0)
             outfile_format = SF_FORMAT_WAV;
           else  // default to flac
           {
@@ -1613,7 +1632,7 @@ set_options (saved_option *SO)
             outfile_format = SF_FORMAT_FLAC;
           }
         }
-        else  // default to flac
+        else  // default to flac, should never hit this as getopt_long requires an option.  Optional makes no sense.
           outfile_format = SF_FORMAT_FLAC;
         break;
       case 'q':                // quiet
@@ -1651,6 +1670,19 @@ set_options (saved_option *SO)
           out_filename = StrDup(sow->option_string);
         else  // default to generic name
           out_filename = "discord_saved_output_file";
+        break;
+      case 'y':  // set the OGG VBR quality between 0.0/low and 1.0/high quality
+        opt_y = 1;
+        errno = 0;
+        opt_y_arg = strtod (sow->option_string, &endptr);
+        if (errno == 0)       // no error
+        {
+          if (opt_y_arg < 0.0 || opt_y_arg > 1.0)
+            error ("OGG VBR quality must be between 0.0/lowest and 1.0/highest, %ld", opt_y_arg);
+          vbr_quality = opt_y_arg;  // save in variable
+        }
+        else                  // there was an error
+          error ("--vbr_quality/-y expects double between 0.0 and 1.0 %s", sow->option_string);
         break;
       case '~': // bogus option to indicate that a script file has already been read
         more_than_one_file = 1;  // set a flag that there has already been a file
@@ -8316,7 +8348,11 @@ play_loop ()
         /* check if next buffer will be short because approaching a sequence node */
         frames_to_go = (((snd1->tot_frames - snd1->cur_frames) / (intmax_t) fast_mult)
                           - (intmax_t) this_buffer_frames);
-        if (frames_to_go < (intmax_t) next_buffer_frames)
+        /* use minimum of all snd sequences in the chorus for the next buffer size.  There will always be a 
+         * zero at the end of a snd sequence because of the partial buffer we are filling, so eliminate it
+         * from consideration.
+         */
+        if (frames_to_go < (intmax_t) next_buffer_frames && frames_to_go != 0)
           next_buffer_frames = (int) frames_to_go;
         /* because frames are being counted, always able to generate requested frames in current node.
          * The offset of frames into the buffer is fixed at zero here, though it can be nonzero for
@@ -8416,13 +8452,23 @@ save_loop ()
 
   sfinfo.samplerate = out_rate;  // sample frames per second
   sfinfo.channels = 2;  // always write stereo
-  sfinfo.format = outfile_format | bit_accuracy;  // e.g. flac and 32 bit
+  if (outfile_format == SF_FORMAT_OGG)  // writing an OGG file, OGG only uses a VORBIS subformat
+    sfinfo.format = outfile_format | SF_FORMAT_VORBIS;  // really redundant, hard coded in libsndfile
+  else  //  other encodings use a bit rate as a subformat
+    sfinfo.format = outfile_format | bit_accuracy;  // e.g. flac and 32 bit
   int checkval = sf_format_check (&sfinfo);
   if (checkval != SF_TRUE)
-    error ("Format and bit rate not supported by libsndfile");
+    error ("Format %c and bit rate %s are a combination not supported by libsndfile", opt_o_arg, opt_b_arg);
   sndfile = sf_open (out_filename, SFM_WRITE, &sfinfo);
   if (!sndfile)
     error ("Couldn't open write file %s\n", out_filename);
+  if (outfile_format & SF_FORMAT_OGG)  // writing an OGG file, set the VBR quality, to a default .5 if not user requested
+  {
+    /* set it here because the default of .4 is hard coded in libsndfile and is set during sf_open */
+    int retval = sf_command (sndfile, SFC_SET_VBR_ENCODING_QUALITY, &vbr_quality, sizeof (double));
+    if (retval)
+      error ("Cannot set VBR quality for OGG to requested rate %lf, return error %d", vbr_quality, retval);
+  }
       /* set up the slice structure that will be passed to write_file in thread */
   sound_slice = (slice *) Alloc (sizeof (slice) * 1);
   sound_slice->alsa_dev = NULL;  // sound device pointer
@@ -8479,7 +8525,11 @@ save_loop ()
         /* check if next buffer will be short because approaching a sequence node */
         frames_to_go = (((snd1->tot_frames - snd1->cur_frames) / (intmax_t) fast_mult)
                           - (intmax_t) this_buffer_frames);
-        if (frames_to_go < (intmax_t) next_buffer_frames)
+        /* use minimum of all snd sequences in the chorus for the next buffer size.  There will always be a 
+         * zero at the end of a snd sequence because of the partial buffer we are filling, so eliminate it
+         * from consideration.
+         */
+        if (frames_to_go < (intmax_t) next_buffer_frames && frames_to_go != 0)
           next_buffer_frames = (int) frames_to_go;
         /* because frames are being counted, always able to generate requested frames in current node.
          * The offset of frames into the buffer is fixed at zero here, though it can be nonzero for
@@ -12405,7 +12455,8 @@ check_samplerate (char *inname)
 	double src_ratio = -1.0;
 	int new_sample_rate = out_rate;
 
-	if (! (infile = sf_open (inname, SFM_READ, &sfinfo)))
+	infile = sf_open (inname, SFM_READ, &sfinfo);
+	if (! infile)
 	  error ("Error : Not able to open input file '%s'\n", inname) ;
 
   if (!opt_q)
