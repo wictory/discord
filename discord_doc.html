@@ -27,22 +27,18 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 <P>  Discord is a command line program used to generate binaural, phase,
   and chronaural beats mixed with tones, noise, or sound files of the
   users choice.  The default is to play the files via the computer's
-  sound card, but they can be written to output files instead.  Only
-  file formats available in libsndfile can be used as input.  Those
-  formats do not include mp3 or ogg at this time, though the creator
-  of libsndfile is thinking about adding ogg.  He is not adding mp3
-  because of patent issues.  Because of a change in the api for FLAC
-  after version 1.1.2, libsndfile can no longer read or write FLAC
-  files without patching.  A patched version that works with the
-  latest three versions of FLAC is included in the distribution
-  archive for discord.  If you choose to use it FLAC is available,
-  otherwise for practical purposes, this means wav or raw files on a
-  PC, though au and aiff formats are also available.  If an input
-  sound file has a different sample rate than that selected for the
-  output, it will automatically be resampled to the requested rate
-  using the highest quality available in libsamplerate.  A copy can be
-  retained in the same directory as it was found with the new rate
-  appended to the filename by specifying the -k/keep option.
+  sound card, but they can be written to an output file instead.  Only
+  file formats available in libsndfile can be used as input or output.
+  Those formats do not include mp3 at this time, and probably won't
+  until the patents expire.  Some common formats available are wav,
+  FLAC, ogg, au, aiff, and raw.  If an input sound file has a different
+  sample rate than that selected for the output, it will automatically
+  be resampled to the requested rate using the highest quality available
+  in libsamplerate.  This can take a long time.  If you are going to use
+  the same file again and again, a copy can be retained in the same
+  directory as it was found with the new rate appended to the filename
+  by specifying the -k/--keep option.
+
 
 <P>  While all of the options below can be used on the command line, the
   sequences to play must be defined in a script file.  Options on the command
@@ -216,7 +212,15 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
     format conversion.  This seems counterproductive.  The first number is
     the card number, the second is the device number, both starting at 0.
     See the alsa documentation at <A HREF="http://www.alsa-project.org/">www.alsa-project.org</A> for a fuller
-    explanation.  Default is plughw:0,0.
+    explanation.  Default is plughw:0,0.  There can be issues here with
+    pulseaudio, as it takes over the hardware and doesn't let any other
+    application have it.  Because pulseaudio is becoming so integrated
+    into the OS and GUI, I have resorted to having a sound device that I
+    give to it.  I then use the pulseaudio volume control to turn off
+    the actual device I want to use with discord, so I can communicate
+    directly with alsa.  In future, I might build in the ability to use
+    pulseaudio, but I don't like the fact that it does on the fly rate
+    conversion because it has to merge all the sound streams it uses.
     
 <P>    Examples
 <PRE>
@@ -225,8 +229,12 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 </PRE>
 <P><DT><STRONG><FONT COLOR=#DB9370>-b, --bit_accuracy</FONT></STRONG><DD>
 
-<P>    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int and
-    f=float.  Only applies if you are sending to a file.  Default is 16i.
+<P>    bit accuracy of sound generated, 16i, 24i, 32i, 32f, 64f, i=int
+    and f=float.  Only applies if you are sending to a file.  Default is
+    16i.  For ogg, it is not necessary to specify this because it doesn't
+    really have meaning there.  If you want to you can specify it as vorbus.
+    Note that older audio players might not be able to play anything but
+    16i.
     
 <P>    Examples
 <PRE>
@@ -430,6 +438,22 @@ width="210" height="62" border="0" alt="SourceForge.net Logo" /></a></CENTER>
 <PRE>
       --write=/home/xkdi/mindbending.flac
       -w  /home/xkdi/mindblowing.wav
+</PRE>
+
+<P><DT><STRONG><FONT COLOR=#DB9370>-y, --vbr_quality</FONT></STRONG><DD>
+
+<P>    specify the quality for an ogg vorbis output stream that is being
+    written to file.  The allowable values are 0 to 1, floating point.
+    A value of zero is approximately 64 Kbits/second and a value of 1 is
+    approximately 500 Kbits/second.  If this isn't specified, a default
+    value of .5 is used, corresponding to approximately 160
+    Kbits/second.  Using -y because I am running out of letters.  Soon
+    I'll have to go to long options only.  As stated, default is .5.
+    
+<P>    Examples
+<PRE>
+      --vbr_quality=.95 
+      -y .3
 </PRE>
 </DL>
 <P><STRONG><FONT COLOR="NAVY">CONFIGURATION</FONT> FILE</STRONG>
