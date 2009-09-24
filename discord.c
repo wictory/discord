@@ -353,6 +353,14 @@ struct stoch
   intmax_t off1, play;  //offset into buffer,  number of frames to play, always total frames
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+    /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
+        voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
+        the sound being randomly played is the same.  Use the buffer pointer to determine that.
+    */
+  intmax_t *last_next_play, *last_sofar;   
+  intmax_t *last_off1, *last_play;   
+  double *last_amp, *last_split_now, *last_split_adj;
+  int first_pass;  // is this voice inactive?
 } ;
 
 /* structure for continuously playing file samples with beat */
@@ -376,7 +384,7 @@ struct sample
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
     /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
-        the sound being repeated is the same.  Use the buffer pointer to determine that.
+        the sound being sampled is the same.  Use the buffer pointer to determine that.
     */
   intmax_t *last_off1, *last_play;   
   double *last_amp, *last_split_now, *last_split_adj;
@@ -2911,6 +2919,13 @@ setup_stoch (char *token, void **work)
   *work = stoch1;
   stoch1->next = NULL;
   stoch1->type = 4;
+  /* initialize pointer to last voices next play frames, how many frames so far as NULL  */ 
+  stoch1->last_next_play = stoch1->last_sofar = NULL;
+  /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
+  stoch1->last_off1 = stoch1->last_play = NULL;
+  /* initialize pointer to last voices amplitude, split_now, and split adjust as NULL  */ 
+  stoch1->last_amp = stoch1->last_split_now = stoch1->last_split_adj = NULL;
+  stoch1->first_pass = 1;  // inactive
   stoch1->off1 = 0;
   original = StrDup (token);
   str2 = token;
@@ -3045,9 +3060,9 @@ setup_sample (char *token, void **work)
   *work = sample1;
   sample1->next = NULL;
   sample1->type = 5;
-  /* initialize pointer to last voices offset into buffer, how many played so far start as NULL  */ 
+  /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
   sample1->last_off1 = sample1->last_play = NULL;
-  /* initialize pointer to last voices amplitude, split_now, and split adjust start as NULL  */ 
+  /* initialize pointer to last voices amplitude, split_now, and split adjust as NULL  */ 
   sample1->last_amp = sample1->last_split_now = sample1->last_split_adj = NULL;
   sample1->first_pass = 1;  // inactive
   original = StrDup (token);
@@ -3165,9 +3180,9 @@ setup_repeat (char *token, void **work)
   *work = repeat1;
   repeat1->next = NULL;
   repeat1->type = 6;
-  /* initialize pointer to last voices offset into buffer, how many played so far start as NULL  */ 
+  /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
   repeat1->last_off1 = repeat1->last_play = NULL;
-  /* initialize pointer to last voices amplitude, split_now, and split adjust start as NULL  */ 
+  /* initialize pointer to last voices amplitude, split_now, and split adjust as NULL  */ 
   repeat1->last_amp = repeat1->last_split_now = repeat1->last_split_adj = NULL;
   repeat1->first_pass = 1;  // inactive
   original = StrDup (token);
@@ -8203,8 +8218,35 @@ finish_non_beat_voice_setup ()
           }
         case 2:  // bell
         case 3:  // noise
+          { 
+            break;
+          }
         case 4:  // stoch
           { 
+            stoch *stoch1 = NULL, *stoch2 = NULL;
+
+            stoch1 = (stoch *) work1;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 4)  // also stoch
+              { 
+                stoch2 = (stoch *) work2;
+                if (stoch2->sound == stoch1->sound)  // buffer ptr the same, the same sound sample continues
+                {
+                /* Set the pointers to the previous voice's values here so it can be used while running
+                   to continue the play with no discontinuity */
+                  stoch2->last_next_play = &(stoch1->next_play);
+                  stoch2->last_sofar = &(stoch1->sofar);
+                  stoch2->last_off1 = &(stoch1->off1);
+                  stoch2->last_play = &(stoch1->play);
+                  stoch2->last_amp = &(stoch1->amp);
+                  stoch2->last_split_now = &(stoch1->split_now);
+                  stoch2->last_split_adj = &(stoch1->split_adj);
+                }
+              } 
+            } 
+            /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
             break;
           }
         case 5:  // sample
@@ -9164,6 +9206,26 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           double split_end = 0.0;  // hold the ending split while creating voice
 
           stoch1 = (stoch *) this;  // reassign void pointer as stoch struct
+          /* if start of the voice, set starting values to be last values of previous voice, if available */
+          if (stoch1->first_pass)
+          {
+            stoch1->first_pass = 0;  // now active
+            /* check each pointer to the previous voice to see if it is valid */
+            if (stoch1->last_next_play != NULL)
+              stoch1->next_play = *stoch1->last_next_play;  // samples until time for next_play is amount from last voice
+            if (stoch1->last_sofar != NULL)
+              stoch1->sofar = *stoch1->last_sofar;  // samples sofar until next play is amount from last voice
+            if (stoch1->last_off1 != NULL)
+              stoch1->off1 = *stoch1->last_off1;  // to start from buffer position of last voice
+            if (stoch1->last_play != NULL)
+              stoch1->play = *stoch1->last_play;  // amount played already is amount from last voice
+            if (stoch1->last_amp != NULL)
+              stoch1->amp = *stoch1->last_amp;  // use the same amplitude as last voice
+            if (stoch1->last_split_now != NULL)
+              stoch1->split_now = *stoch1->last_split_now;  // start from same split as last voice
+            if (stoch1->last_split_adj != NULL)
+              stoch1->split_adj = *stoch1->last_split_adj;  // use same split_adj as last voice
+          }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             if (stoch1->sofar >= stoch1->next_play)
