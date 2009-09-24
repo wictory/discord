@@ -440,6 +440,13 @@ struct once
   double split_adj; // adjust split while sound is playing
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
   int not_played;  // has the single play occurred yet?
+    /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
+        voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
+        the sound being repeated is the same.  Use the buffer pointer to determine that.
+    */
+  intmax_t *last_off1, *last_play;   
+  double *last_amp, *last_split_now, *last_split_adj;
+  int first_pass;  // is this voice inactive?
 } ;
 
 /* structure for playing a chronaural beat */
@@ -3288,6 +3295,11 @@ setup_once (char *token, void **work)
   *work = once1;
   once1->next = NULL;
   once1->type = 7;
+  /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
+  once1->last_off1 = once1->last_play = NULL;
+  /* initialize pointer to last voices amplitude, split_now, and split adjust as NULL  */ 
+  once1->last_amp = once1->last_split_now = once1->last_split_adj = NULL;
+  once1->first_pass = 1;  // inactive
   once1->off1 = 0;
   once1->not_played = 1;  // haven't played yed
   original = StrDup (token);
@@ -8302,7 +8314,31 @@ finish_non_beat_voice_setup ()
             break;
           }
         case 7:  // once
-          break;
+          { 
+            once *once1 = NULL, *once2 = NULL;
+
+            once1 = (once *) work1;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 7)  // also once
+              { 
+                once2 = (once *) work2;
+                if (once2->sound == once1->sound)  // buffer ptr the same, the same sound sample continues
+                {
+                /* Set the pointers to the previous voice's values here so it can be used while running
+                   to continue the play with no discontinuity */
+                  once2->last_off1 = &(once1->off1);
+                  once2->last_play = &(once1->play);
+                  once2->last_amp = &(once1->amp);
+                  once2->last_split_now = &(once1->split_now);
+                  once2->last_split_adj = &(once1->split_adj);
+                }
+              } 
+            } 
+            /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            break;
+          }
         case 8:  // chronaural
         case 9:  // binaural step slide, have to create list of steps and slides
         case 10:  // chronaural step slide, have to create list of steps and slides
@@ -9517,6 +9553,40 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           double split_end = 0.0;  // hold the ending split while creating voice
 
           once1 = (once *) this;  // reassign void pointer as once struct
+          /* if start of the voice, set starting values to be last values of previous voice, if available
+           * and if feasible  */
+          if (once1->first_pass == 1)
+          {
+            if ((once1->last_play != NULL) && (*once1->last_play < once1->frames))
+            {
+              /* last once didn't finish playing.  Because the sound is the same the frames are the same */
+              if ((once1->frames - *once1->last_play) < once1->play_when)
+                /* the continuation of the last once will finish before this once starts */
+                once1->play = *once1->last_play;  // amount played already is amount from last voice
+              else
+                /* the continuation of the last once will not finish before this once starts
+                 * adjust amount played already to play as much of the continuation as possible 
+                 * before this once starts playing.  Not sure this is more legitimate than 
+                 * truncating the previous once */
+                once1->play = *once1->last_play + (once1->frames - *once1->last_play - once1->play_when);  
+              once1->first_pass = 2;  // now active, use 2 as flag to play the continuation below
+              /* check each pointer to the previous voice to see if it is valid */
+              if (once1->last_off1 != NULL)
+                once1->off1 = *once1->last_off1;  // to start from buffer position of last voice
+              if (once1->last_amp != NULL)
+                once1->amp = *once1->last_amp;  // use the same amplitude as last voice
+              if (once1->last_split_now != NULL)
+                once1->split_now = *once1->last_split_now;  // start from same split as last voice
+              if (once1->last_split_adj != NULL)
+                once1->split_adj = *once1->last_split_adj;  // use same split_adj as last voice
+            }
+            else
+              once1->first_pass = 0;  // now active, flag there is no continuation below
+          }
+          /* finished playing continuation of last once, reset so this once will trigger when it is time
+           * Only need to turn off the flag because other relevant values are reset when it is time */
+          if (once1->first_pass == 2 && once1->play > once1->frames)
+            once1->first_pass = 0;
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             if (once1->not_played && once1->sofar >= once1->play_when)
@@ -9551,7 +9621,9 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 
               once1->split_adj = (split_end - once1->split_now) / once1->frames;  // adjust per frame
             }
-            if (once1->sofar >= once1->play_when && once1->play < once1->frames)  // once is active
+            /* if time to play or a continuation is playing */
+            if ((once1->sofar >= once1->play_when || once1->first_pass == 2) 
+                && once1->play < once1->frames)  // once is active
             {
               double amp = once1->amp * 2.;  // like binaural, double so each channel at amp with split
                 // assumes only 1 or two channels, default to two if not one
