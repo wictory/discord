@@ -340,6 +340,19 @@ struct noise
   double carrier_adj, amp_adj, split_adj;      // adjust while noise is playing
   double behave_inc1, behave_off1;      // for adjust behavior 6 and 7, offset and inc into sine
   double fade_factor;           // used to adjust volume when doing 1 millisec fade out at end of play.
+    /* to avoid discontinuities at the join between voices, use last offset into sin table of previous
+        voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
+        the carrier being repeated is the same.
+    */
+  int *last_off1, *last_behave;
+  intmax_t *last_next_play, *last_sofar;             // Frames till next noise, how many so far
+  intmax_t *last_play;                    // number of frames to play the noise
+  double *last_carrier, *last_carrier_adj;
+  double *last_amp, *last_amp_adj;
+  double *last_split_now, *last_split_adj;
+  double *last_behave_off1, *last_behave_inc1;
+  double *last_fade_factor;
+  int first_pass;  // is this voice inactive?
 } ;
 
 /* structure for playing a file at random intervals with the beat */
@@ -2737,6 +2750,19 @@ setup_noise (char *token, void **work)
   *work = noise1;
   noise1->next = NULL;
   noise1->type = 3;
+  /* initialize pointer to last voices offset into sin table, and last behave as NULL  */ 
+  noise1->last_off1 = noise1->last_behave = NULL;
+  /* initialize pointer to last voices next play, sofar, and play frames as NULL  */ 
+  noise1->last_next_play = noise1->last_sofar = noise1->last_play = NULL;
+  /* initialize pointer to last voices carrier, and carrier adjust as NULL  */ 
+  noise1->last_carrier = noise1->last_carrier_adj = NULL;
+  /* initialize pointer to last voices amplitude, and amp adjust as NULL  */ 
+  noise1->last_amp = noise1->last_amp_adj = NULL;
+  /* initialize pointer to last voices split_now, and split adjust as NULL  */ 
+  noise1->last_split_now = noise1->last_split_adj = NULL;
+  /* initialize pointer to last behavior sin table offset and increment, last fade factor as NULL  */ 
+  noise1->last_behave_off1 = noise1->last_behave_inc1 = noise1->last_fade_factor = NULL;
+  noise1->first_pass = 1;  // inactive
   noise1->off1 = 0;  // begin at 0 degrees
   original = StrDup (token);
   str2 = token;
@@ -8278,6 +8304,37 @@ finish_non_beat_voice_setup ()
           }
         case 3:  // noise
           { 
+            noise *noise1 = NULL, *noise2 = NULL;
+
+            noise1 = (noise *) work1;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 3)  // also noise
+              { 
+                noise2 = (noise *) work2;
+                if (noise2->carrier_max == noise1->carrier_max  && noise2->carrier_min <= noise1->carrier_min)  
+                {  // carrier frequency range the same
+                /* Set the pointers to the previous voice's values here so it can be used while running
+                   to continue the play with no discontinuity */
+                  noise2->last_off1 = &(noise1->off1);
+                  noise2->last_behave = &(noise1->behave);
+                  noise2->last_next_play = &(noise1->next_play);
+                  noise2->last_sofar = &(noise1->sofar);
+                  noise2->last_play = &(noise1->play);
+                  noise2->last_carrier = &(noise1->carrier);
+                  noise2->last_carrier_adj = &(noise1->carrier_adj);
+                  noise2->last_amp = &(noise1->amp);
+                  noise2->last_amp_adj = &(noise1->amp_adj);
+                  noise2->last_split_now = &(noise1->split_now);
+                  noise2->last_split_adj = &(noise1->split_adj);
+                  noise2->last_behave_off1 = &(noise1->behave_off1);
+                  noise2->last_behave_inc1 = &(noise1->behave_inc1);
+                  noise2->last_fade_factor = &(noise1->fade_factor);
+                }
+              } 
+            } 
+            /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
             break;
           }
         case 4:  // stoch
@@ -9098,6 +9155,40 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           double split_end = 0.0;  // hold the ending split while creating voice
 
           noise1 = (noise *) this;  // reassign void pointer as noise struct
+          /* if start of the voice, set starting values to be last values of previous voice, if available */
+          if (noise1->first_pass)
+          {
+            noise1->first_pass = 0;  // now active
+            /* check each pointer to the previous voice to see if it is valid */
+            if (noise1->last_off1 != NULL)
+              noise1->off1 = *noise1->last_off1;  // to start from sin table position of last voice
+            if (noise1->last_behave != NULL)
+              noise1->behave = *noise1->last_behave;  // to use decay behavior of last voice
+            if (noise1->last_next_play != NULL)
+              noise1->next_play = *noise1->last_next_play;  // set frames to next_play to value from last voice
+            if (noise1->last_sofar != NULL)
+              noise1->sofar = *noise1->last_sofar;  // set frames sofar to value from last voice
+            if (noise1->last_play != NULL)
+              noise1->play = *noise1->last_play;  // set frames yet to play to value from last voice
+            if (noise1->last_carrier != NULL)
+              noise1->carrier = *noise1->last_carrier;  // use the same carrier as last voice
+            if (noise1->last_carrier_adj != NULL)
+              noise1->carrier_adj = *noise1->last_carrier_adj;  // use same carrier_adj as last voice
+            if (noise1->last_amp != NULL)
+              noise1->amp = *noise1->last_amp;  // use the same amplitude as last voice
+            if (noise1->last_amp_adj != NULL)
+              noise1->amp_adj = *noise1->last_amp_adj;  // use same amp_adj as last voice
+            if (noise1->last_split_now != NULL)
+              noise1->split_now = *noise1->last_split_now;  // start from same split as last voice
+            if (noise1->last_split_adj != NULL)
+              noise1->split_adj = *noise1->last_split_adj;  // use same split_adj as last voice
+            if (noise1->last_behave_off1 != NULL)
+              noise1->behave_off1 = *noise1->last_behave_off1;  // use same behave_off1 as last voice
+            if (noise1->last_behave_inc1 != NULL)
+              noise1->behave_inc1 = *noise1->last_behave_inc1;  // use same behave_inc1 as last voice
+            if (noise1->last_fade_factor != NULL)
+              noise1->fade_factor = *noise1->last_fade_factor;  // use same fade_factor as last voice
+          }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             noise1->sofar += fast_mult;
@@ -9282,9 +9373,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               noise1->inc1 = (int) round( noise1->carrier * 2.);
               noise1->off1 += noise1->inc1;
               noise1->off1 = noise1->off1 % (out_rate * 2);
-              if (noise1->behave >= 1 && noise1->behave <= 5)
+              if ((noise1->behave >= 1 && noise1->behave <= 5)
+                  || (noise1->behave >= 8 && noise1->behave <= 12)
+                  || (noise1->behave >= 15 && noise1->behave <= 19))  // linear adjustment of amplitude
                 noise1->amp += (noise1->amp_adj * fast_mult);
-              else  // sinusoidal behavior, digital approximation
+              else  // adjust sinusoidal behavior for the behaves that have it, digital approximation
                 noise1->behave_off1 += (noise1->behave_inc1 * fast_mult);
               noise1->split_now += (noise1->split_adj * fast_mult);
               noise1->play -= fast_mult;
