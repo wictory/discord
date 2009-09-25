@@ -2116,8 +2116,11 @@ setup_play_seq ()
   chorus_voice *chorus_voice1 = NULL;
   void *work = NULL, *prev = NULL;
 
-  /* frame rate has been validated, set the millisecond fade global variables */
+  /* frame rate has been validated, set the millisecond fade global variables.
+   * Multiplying by a factor will change the fade time to not be
+   * a millisecond anymore.  Here we multiply by 10, to give 10 ms fade.  */
   msec_fade_count = (int) (round ( out_rate / 1000.));
+  msec_fade_count *= 10;
   msec_fade_adjust = 1.0 / (double) msec_fade_count;
 
   /* Create a chorus voice to hold this sound stream.  Make it 
@@ -2752,8 +2755,10 @@ setup_noise (char *token, void **work)
   noise1->type = 3;
   /* initialize pointer to last voices offset into sin table, and last behave as NULL  */ 
   noise1->last_off1 = noise1->last_behave = NULL;
-  /* initialize pointer to last voices next play, sofar, and play frames as NULL  */ 
-  noise1->last_next_play = noise1->last_sofar = noise1->last_play = NULL;
+  /* initialize pointer to last voices next play, sofar as NULL  */ 
+  noise1->last_next_play = noise1->last_sofar = NULL;
+  /* initialize pointer to last voices frames left to play as NULL  */ 
+  noise1->last_play = NULL;
   /* initialize pointer to last voices carrier, and carrier adjust as NULL  */ 
   noise1->last_carrier = noise1->last_carrier_adj = NULL;
   /* initialize pointer to last voices amplitude, and amp adjust as NULL  */ 
@@ -9196,7 +9201,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             {                     // time to play
               noise1->sofar = 0;
               noise1->off1 = 0;  // always start at 0 so sin value == 0.0, thus no fade in
-              noise1->fade_factor = 1.0;  // play at full volume until ending fade out
+              noise1->fade_factor = 0.0;  // start at no volume, fade in, then constant until ending fade out
               /* first determine the play length for this tone.
                  has to be first as the next play depends on it. */
               if (noise1->length_max == noise1->length_min)
@@ -9355,18 +9360,27 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 sin_factor = 1.0 + (0.5 * sin_table [(int) noise1->behave_off1]);  // drop only to half amplitude as bowl
               else
                 sin_factor = 1.0;  // default to standard behavior
-              if (noise1->play  > msec_fade_count)  // in play range before fade out
+              if (noise1->play > msec_fade_count && noise1->fade_factor < 1.0)  // in play range of fade in, to soften attack
               {
-                out_buffer[ii] += noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1];
-                out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1];
+                noise1->fade_factor += msec_fade_adjust;  // ramp up from 0.0 to 1.0
+                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
+                                   * noise1->fade_factor);
+                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
+                                   * noise1->fade_factor);
               }
-              else  // 1 millisec fade out to reduce crackle at end, no fade in because start at zero
+              else  // fade out to reduce crackle at end
+              if (noise1->play  < msec_fade_count)  // in play range for fade out
               {
                 noise1->fade_factor -= msec_fade_adjust;  // ramp down from 1.0 to 0.0
                 out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
                                    * noise1->fade_factor);
                 out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
                                    * noise1->fade_factor);
+              }
+              else  // in full volume play range between fade in and fade out
+              {
+                out_buffer[ii] += noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1];
+                out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1];
               }
               /* Move offset adjustment to end so always start at offset where sin == 0.0, thus no fade in */
               //noise1->inc1 = (( (noise1->carrier * (out_rate * 2)) / out_rate));  // what below actually is
