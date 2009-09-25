@@ -273,7 +273,7 @@ struct bell
   double carrier;               // Carrier freq
   double amp;          // Amplitude level 0-100%, stored as decimal
   double split_begin, split_end, split_now;      // left fraction for bell, .5 means evenly split L and R
-  double amp_min, amp_max;      // Amplitude min and max for bell tones
+  double amp_min, amp_max;      // Amplitude min and max for bell tones, if equal then fixed amplitude
   double split_low, split_high; // range for split, .5 means evenly split L and R
   // Min/max time for bell to play, frames, max 0 then min is fixed time.
   intmax_t length_min, length_max;
@@ -291,6 +291,16 @@ struct bell
   intmax_t next_play, sofar;             // Frames till next bell, how many so far
   intmax_t ring;                    // number of frames to ring the bell
   double amp_adj, split_adj;      // adjust while bell is ringing
+    /* to avoid discontinuities at the join between voices, use last offset into sin table of previous
+        voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
+        the carrier being repeated is the same.
+    */
+  int *last_off1;
+  intmax_t *last_next_play, *last_sofar;             // Frames till next bell, how many so far
+  intmax_t *last_ring;                    // number of frames to ring the bell
+  double *last_amp, *last_amp_adj;
+  double *last_split_now, *last_split_adj;
+  int first_pass;  // is this voice inactive?
 } ;
 
 /* structure for playing a noise component with beat */
@@ -2551,6 +2561,15 @@ setup_bell (char *token, void **work)
   *work = bell1;
   bell1->next = NULL;
   bell1->type = 2;
+  /* initialize pointer to last voices offset into sin table as NULL  */ 
+  bell1->last_off1 = NULL;
+  /* initialize pointer to last voices next play, sofar, and ring frames as NULL  */ 
+  bell1->last_next_play = bell1->last_sofar = bell1->last_ring = NULL;
+  /* initialize pointer to last voices amplitude, and amp adjust as NULL  */ 
+  bell1->last_amp = bell1->last_amp_adj = NULL;
+  /* initialize pointer to last voices split_now, and split adjust as NULL  */ 
+  bell1->last_split_now = bell1->last_split_adj = NULL;
+  bell1->first_pass = 1;  // inactive
   bell1->off1 = 0;  // begin at 0 degrees
   original = StrDup (token);
   str2 = token;
@@ -8229,6 +8248,34 @@ finish_non_beat_voice_setup ()
             break;
           }
         case 2:  // bell
+          { 
+            bell *bell1 = NULL, *bell2 = NULL;
+
+            bell1 = (bell *) work1;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 2)  // also bell
+              { 
+                bell2 = (bell *) work2;
+                if (bell2->carrier == bell1->carrier  && bell2->behave == bell1->behave)  
+                {  // carrier frequency the same, bell decay behavior the same
+                /* Set the pointers to the previous voice's values here so it can be used while running
+                   to continue the play with no discontinuity */
+                  bell2->last_off1 = &(bell1->off1);
+                  bell2->last_next_play = &(bell1->next_play);
+                  bell2->last_sofar = &(bell1->sofar);
+                  bell2->last_ring = &(bell1->ring);
+                  bell2->last_amp = &(bell1->amp);
+                  bell2->last_amp_adj = &(bell1->amp_adj);
+                  bell2->last_split_now = &(bell1->split_now);
+                  bell2->last_split_adj = &(bell1->split_adj);
+                }
+              } 
+            } 
+            /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            break;
+          }
         case 3:  // noise
           { 
             break;
@@ -8856,7 +8903,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
   int channels = 2;  // always output stereo
   stub *stub1;
   void *this, *next;
-  intmax_t remaining_frames = snd1->tot_frames - snd1->cur_frames;
 
   this = snd1->voices;
   while (this != NULL)
@@ -8940,6 +8986,28 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           double split_end = 0.0;  // hold the ending split while creating voice
 
           bell1 = (bell *) this;  // reassign void pointer as bell struct
+          /* if start of the voice, set starting values to be last values of previous voice, if available */
+          if (bell1->first_pass)
+          {
+            bell1->first_pass = 0;  // now active
+            /* check each pointer to the previous voice to see if it is valid */
+            if (bell1->last_off1 != NULL)
+              bell1->off1 = *bell1->last_off1;  // to start from sin table position of last voice
+            if (bell1->last_next_play != NULL)
+              bell1->next_play = *bell1->last_next_play;  // set frames to next_play to value from last voice
+            if (bell1->last_sofar != NULL)
+              bell1->sofar = *bell1->last_sofar;  // set frames sofar to value from last voice
+            if (bell1->last_ring != NULL)
+              bell1->ring = *bell1->last_ring;  // set frames yet to ring to value from last voice
+            if (bell1->last_amp != NULL)
+              bell1->amp = *bell1->last_amp;  // use the same amplitude as last voice
+            if (bell1->last_amp_adj != NULL)
+              bell1->amp_adj = *bell1->last_amp_adj;  // use same amp_adj as last voice
+            if (bell1->last_split_now != NULL)
+              bell1->split_now = *bell1->last_split_now;  // start from same split as last voice
+            if (bell1->last_split_adj != NULL)
+              bell1->split_adj = *bell1->last_split_adj;  // use same split_adj as last voice
+          }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
           {
             bell1->sofar += fast_mult;
@@ -8957,10 +9025,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   (long) (( drand48 ()) * (bell1->repeat_max - bell1->repeat_min));
                 bell1->next_play = bell1->repeat_min + delta;      // frames to next bell
               }
-              if ((bell1->next_play + bell1->length_min) >  remaining_frames)  // never run past end of voice
-              {
-                bell1->next_play = remaining_frames + 1;  // don't play again
-              }
               if (bell1->length_max == bell1->length_min)
               {                   // fixed ring time
                 bell1->ring = bell1->length_min;
@@ -8970,13 +9034,6 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 long delta =
                   (long) ( (drand48 ()) * (bell1->length_max - bell1->length_min));
                 bell1->ring = bell1->length_min + delta;      // frames to ring
-              }
-              if (bell1->ring > remaining_frames)  // never run past end of voice
-              {
-                if (bell1->ring > bell1->length_min)
-                  bell1->ring = remaining_frames;
-                else
-                  bell1->ring = 0LL;
               }
               if (bell1->amp_max == bell1->amp_min)
               {                   // fixed amp
@@ -8997,8 +9054,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                 bell1->amp_adj = 0.0;     // no change
               else if (bell1->behave == 4)      // linear enhance to 1.10
                 bell1->amp_adj = (bell1->amp * .10) / bell1->ring;
-              else if (bell1->behave == 5)      // enhance to 1.25, maybe make bell1 exponential decay
-                //bell1->amp_adj = (bell1->amp * .25) / bell1->ring;
+              else if (bell1->behave == 5)      // exponential decay
                 bell1->amp_adj = - sqrt(bell1->amp) / bell1->ring;
               if (bell1->split_begin == -1.0)  // bell split start
               {
