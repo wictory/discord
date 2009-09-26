@@ -404,7 +404,9 @@ struct sample
   intmax_t size;   // Frames for each sample
   intmax_t off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
+  double amp_min_adj, amp_max_adj;  // adjustments to slide amp to next voice in sequence
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+  int slide;     // 1 if this sequence slides into the next sample
     /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
         the sound being sampled is the same.  Use the buffer pointer to determine that.
@@ -3119,6 +3121,7 @@ setup_sample (char *token, void **work)
   *work = sample1;
   sample1->next = NULL;
   sample1->type = 5;
+  sample1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
   sample1->last_off1 = sample1->last_play = NULL;
   /* initialize pointer to last voices amplitude, split_now, and split adjust as NULL  */ 
@@ -3215,6 +3218,10 @@ setup_sample (char *token, void **work)
   else if (sample_size < 0.0)  // no errors, but less than zero
     error ("Sample size for sample cannot be less than 0.\n%s\n%s", subtoken, original);
   sample1->size = (intmax_t) (sample_size * out_rate);  // convert from seconds to frames 
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    sample1->slide = 1;
 
   /* Set some defaults so sample position is determined randomly at start of generate frames */
   sample1->play = 0LL;  // start out with zero play size, let generate frames determine
@@ -8401,6 +8408,25 @@ finish_non_beat_voice_setup ()
               } 
             } 
             /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (sample1->slide == 0)
+            { 
+              sample1->amp_min_adj = sample1->amp_max_adj = 0.0;
+            } 
+            else  // slide to next sample in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (sample2 != NULL)  // set above if sample, NULL means next voice not sample
+                {
+                  sample1->amp_min_adj = (sample2->amp_min - sample1->amp_min)/ (double) snd1->tot_frames;
+                  sample1->amp_max_adj = (sample2->amp_max - sample1->amp_max)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not sample.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next sample in time sequence!\n");
+            }
             break;
           }
         case 6:  // repeat
@@ -9634,6 +9660,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               sample1->off1 += (sample1->channels * fast_mult);
               sample1->off1 %= sample1->frames;  
               sample1->split_now += (sample1->split_adj * fast_mult);
+              sample1->amp_min += (sample1->amp_min_adj * fast_mult);  // adjust amplitude for slides
+              sample1->amp_max += (sample1->amp_max_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               sample1->play -= fast_mult;
             }
