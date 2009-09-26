@@ -375,7 +375,9 @@ struct stoch
   intmax_t next_play, sofar;   // Frames till next play, how many so far
   intmax_t off1, play;  //offset into buffer,  number of frames to play, always total frames
   double split_adj; // adjust split while sound is playing
+  double amp_min_adj, amp_max_adj;  // adjustments to slide amp to next voice in sequence
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+  int slide;     // 1 if this sequence slides into the next stoch
     /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
         the sound being randomly played is the same.  Use the buffer pointer to determine that.
@@ -2980,6 +2982,7 @@ setup_stoch (char *token, void **work)
   *work = stoch1;
   stoch1->next = NULL;
   stoch1->type = 4;
+  stoch1->slide = 0;  // default to not slide
   /* initialize pointer to last voices next play frames, how many frames so far as NULL  */ 
   stoch1->last_next_play = stoch1->last_sofar = NULL;
   /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
@@ -3090,6 +3093,10 @@ setup_stoch (char *token, void **work)
   else if (repeat_max < repeat_min)  // no errors, but less than min repeat interval
     error ("Maximum repeat interval for stoch cannot be less than minimum repeat interval.\n%s\n%s", subtoken, original);
   stoch1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    stoch1->slide = 1;
 
   /* set up frames till first play of stoch */
   if (stoch1->repeat_min == stoch1->repeat_max)
@@ -8382,6 +8389,25 @@ finish_non_beat_voice_setup ()
               } 
             } 
             /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (stoch1->slide == 0)
+            { 
+              stoch1->amp_min_adj = stoch1->amp_max_adj = 0.0;
+            } 
+            else  // slide to next stoch in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (stoch2 != NULL)  // set above if stoch, NULL means next voice not stoch
+                {
+                  stoch1->amp_min_adj = (stoch2->amp_min - stoch1->amp_min)/ (double) snd1->tot_frames;
+                  stoch1->amp_max_adj = (stoch2->amp_max - stoch1->amp_max)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not stoch.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next stoch in time sequence!\n");
+            }
             break;
           }
         case 5:  // sample
@@ -9558,6 +9584,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               stoch1->off1 += (stoch1->channels * fast_mult);  // adjust shorts played
               stoch1->split_now += (stoch1->split_adj * fast_mult);
+              stoch1->amp_min += (stoch1->amp_min_adj * fast_mult);  // adjust amplitude for slides
+              stoch1->amp_max += (stoch1->amp_max_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               stoch1->play -= fast_mult;  // adjust frames played
             }
