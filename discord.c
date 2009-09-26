@@ -342,6 +342,8 @@ struct noise
   double carrier_adj, amp_adj, split_adj;      // adjust while noise is playing
   double behave_inc1, behave_off1;      // for adjust behavior 6 and 7, offset and inc into sine
   double fade_factor;           // used to adjust volume when doing 1 millisec fade out at end of play.
+  double amp_min_slide_adj, amp_max_slide_adj;  // adjustments to slide amp to next voice in sequence
+  int slide;     // 1 if this sequence slides into the next bell
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
         the carrier being repeated is the same.
@@ -2766,6 +2768,7 @@ setup_noise (char *token, void **work)
   *work = noise1;
   noise1->next = NULL;
   noise1->type = 3;
+  noise1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into sin table, and last behave as NULL  */ 
   noise1->last_off1 = noise1->last_behave = NULL;
   /* initialize pointer to last voices next play, sofar as NULL  */ 
@@ -2957,6 +2960,11 @@ setup_noise (char *token, void **work)
   }
   else
     multiple = 1.0;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    noise1->slide = 1;
+
   /* create the time to first play of noise */
   if (noise1->repeat_min == noise1->repeat_max)
     // fixed period, random start
@@ -8387,6 +8395,25 @@ finish_non_beat_voice_setup ()
               } 
             } 
             /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (noise1->slide == 0)
+            { 
+              noise1->amp_min_slide_adj = noise1->amp_max_slide_adj = 0.0;
+            } 
+            else  // slide to next noise in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (noise2 != NULL)  // set above if noise, NULL means next voice not noise
+                {
+                  noise1->amp_min_slide_adj = (noise2->amp_min - noise1->amp_min)/ (double) snd1->tot_frames;
+                  noise1->amp_max_slide_adj = (noise2->amp_max - noise1->amp_max)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not noise.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next noise in time sequence!\n");
+            }
             break;
           }
         case 4:  // stoch
@@ -9502,6 +9529,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               noise1->split_now += (noise1->split_adj * fast_mult);
               noise1->play -= fast_mult;
             }
+            noise1->amp_min += (noise1->amp_min_slide_adj * fast_mult);  // adjust amplitude for slides, whether play or not
+            noise1->amp_max += (noise1->amp_max_slide_adj * fast_mult);
           }
         }
         break;
