@@ -421,7 +421,7 @@ struct repeat
   void *prev;
   void *next;
   int type;                 // 6
-  short *sound;             // point to buffer of sound, contains whole file
+  short *sound;             // point to buffer of sound, contains whole file, 16 bit sound
   intmax_t frames;                 // total frames length of sound, 
   int channels;                 // number of channels in file, 1 or 2.
   double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
@@ -431,7 +431,9 @@ struct repeat
   double split_low, split_high; // low and high fraction for L sound, .5 means evenly split L and R
   intmax_t off1, play;   // Position in file for sample, currently playing
   double split_adj; // adjust split while sound is playing
+  double amp_min_adj, amp_max_adj;  // adjustments to slide amp to next voice in sequence
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+  int slide;     // 1 if this sequence slides into the next repeat
     /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
         the sound being repeated is the same.  Use the buffer pointer to determine that.
@@ -3237,6 +3239,7 @@ setup_repeat (char *token, void **work)
   *work = repeat1;
   repeat1->next = NULL;
   repeat1->type = 6;
+  repeat1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
   repeat1->last_off1 = repeat1->last_play = NULL;
   /* initialize pointer to last voices amplitude, split_now, and split adjust as NULL  */ 
@@ -3322,6 +3325,10 @@ setup_repeat (char *token, void **work)
   else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
     error ("High split limit for repeat cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
   repeat1->split_high = split_high;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    repeat1->slide = 1;
 
   /* set play to initialize in generate frames */
   repeat1->play = 0LL;  // how much has played so far
@@ -8420,6 +8427,25 @@ finish_non_beat_voice_setup ()
               } 
             } 
             /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (repeat1->slide == 0)
+            { 
+              repeat1->amp_min_adj = repeat1->amp_max_adj = 0.0;
+            } 
+            else  // slide to next repeat in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (repeat2 != NULL)  // set above if repeat, NULL means next voice not repeat
+                {
+                  repeat1->amp_min_adj = (repeat2->amp_min - repeat1->amp_min)/ (double) snd1->tot_frames;
+                  repeat1->amp_max_adj = (repeat2->amp_max - repeat1->amp_max)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not repeat.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next repeat in time sequence!\n");
+            }
             break;
           }
         case 7:  // once
@@ -9704,6 +9730,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               repeat1->off1 += (repeat1->channels * fast_mult); // adjust number of shorts played.
               repeat1->split_now += (repeat1->split_adj * fast_mult);
+              repeat1->amp_min += (repeat1->amp_min_adj * fast_mult);  // adjust amplitude for slides
+              repeat1->amp_max += (repeat1->amp_max_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               repeat1->play -= fast_mult;  // adjust frames played
             }
