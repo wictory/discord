@@ -291,6 +291,8 @@ struct bell
   intmax_t next_play, sofar;             // Frames till next bell, how many so far
   intmax_t ring;                    // number of frames to ring the bell
   double amp_adj, split_adj;      // adjust while bell is ringing
+  double amp_min_slide_adj, amp_max_slide_adj;  // adjustments to slide amp to next voice in sequence
+  int slide;     // 1 if this sequence slides into the next bell
     /* to avoid discontinuities at the join between voices, use last offset into sin table of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
         the carrier being repeated is the same.
@@ -2583,6 +2585,7 @@ setup_bell (char *token, void **work)
   *work = bell1;
   bell1->next = NULL;
   bell1->type = 2;
+  bell1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into sin table as NULL  */ 
   bell1->last_off1 = NULL;
   /* initialize pointer to last voices next play, sofar, and ring frames as NULL  */ 
@@ -2729,6 +2732,10 @@ setup_bell (char *token, void **work)
   else if (behave < 1.0 || behave > 5.0)  // no errors, but outside behavior range
     error ("Tone behavior for bell cannot be less than 1 or greater than 5.\n%s\n%s", subtoken, original);
   bell1->behave = (int) behave;   // convert to int
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    bell1->slide = 1;
 
   /* create the time to first play of bell */
   if (bell1->repeat_min == bell1->repeat_max)
@@ -8326,6 +8333,25 @@ finish_non_beat_voice_setup ()
               } 
             } 
             /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (bell1->slide == 0)
+            { 
+              bell1->amp_min_slide_adj = bell1->amp_max_slide_adj = 0.0;
+            } 
+            else  // slide to next bell in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (bell2 != NULL)  // set above if bell, NULL means next voice not bell
+                {
+                  bell1->amp_min_slide_adj = (bell2->amp_min - bell1->amp_min)/ (double) snd1->tot_frames;
+                  bell1->amp_max_slide_adj = (bell2->amp_max - bell1->amp_max)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not bell.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next bell in time sequence!\n");
+            }
             break;
           }
         case 3:  // noise
@@ -9229,6 +9255,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               bell1->split_now += (bell1->split_adj * fast_mult);
               bell1->ring -= fast_mult;
             }
+            bell1->amp_min += (bell1->amp_min_slide_adj * fast_mult);  // adjust amplitude for slides, whether ring or not
+            bell1->amp_max += (bell1->amp_max_slide_adj * fast_mult);
           }
         }
         break;
