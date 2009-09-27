@@ -679,6 +679,39 @@ struct silence
   int type;                 // silence is type 22, no other fields necessary, return on validation
 } ;
 
+/* structure for spin loop of file with spin beat */
+typedef struct spin spin;
+struct spin
+{
+  void *prev;
+  void *next;
+  int type;                 // 23
+  short *sound;             // point to buffer of sound, contains whole file, 16 bit sound
+  intmax_t frames;                 // total frames length of sound, 
+  int channels;                 // number of channels in file, 1 or 2.
+  double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
+  double amp;             // Amplitude level 0-100%, stored as decimal i.e. .02
+  double spin_time;            // How long for one spin, in seconds.
+  double phase;                   // Current phase of the sound, -180 to +180, relative to center.
+  double phase_adj;     // Amount to adjust the phase, used while creating the spin beat.
+  double split;     // left fraction for sound, .5 means evenly split L and R
+  double split_adj; // amount to adjust the split to help create the spin effect, change/frame
+  intmax_t off1, play;   // Position in file for sample, currently playing
+  double amp_slide_adj;  // adjustments to slide amp to next voice in sequence
+  double spin_time_slide_adj;  // adjustments to slide spin_time to next voice in sequence
+  int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+  int slide;     // 1 if this sequence slides into the next spin
+    /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
+        voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
+        the sound being spun is the same.  Use the buffer pointer to determine that.
+    */
+  intmax_t *last_off1, *last_play;   
+  double *last_amp;
+  double *last_phase, *last_phase_adj;
+  double *last_split, *last_split_adj;
+  int first_pass;  // is this voice inactive?
+} ;
+
 /* structure for playing a slice of the output via thread, arguments  to alsa_play_*  and file_write */
 typedef struct slice slice;
 struct slice
@@ -728,6 +761,7 @@ void setup_pulse (char *token, void **work);
 void setup_phase (char *token, void **work);
 void setup_fm (char *token, void **work);
 void setup_silence (void **work);
+void setup_spin (char *token, void **work);
 void finish_beat_voice_setup ();
 void finish_non_beat_voice_setup ();
 snd_buffer * process_sound_file (char *filename);
@@ -2253,6 +2287,8 @@ setup_play_seq ()
         setup_fm (voice, &work);
       else if (strcasecmp (subtoken, "silence") == 0)
         setup_silence (&work);  // no parsing to be done, don't need token
+      else if (strcasecmp (subtoken, "spin") == 0)
+        setup_spin (voice, &work);
       else
         error ("Unrecognized time sequence type: %s\n", subtoken);
       /* Append this voice to the rest of the voices for the period/ time sequence */
@@ -4664,6 +4700,82 @@ setup_silence (void **work)
   *work = (void *) silence1;
   silence1->next = NULL;
   silence1->type = 22;
+}
+
+/* Set up a spin file sequence */
+
+void
+setup_spin (char *token, void **work)
+{
+  char *original;
+  char *endptr;
+  char *subtoken;
+  char *str2 = NULL;
+  char *saveptr2;
+  char filename [256];
+  spin *spin1 = NULL;
+  snd_buffer *sb1 = NULL;
+
+  spin1 = (spin *) Alloc (sizeof (spin) * 1);
+  *work = spin1;
+  spin1->next = NULL;
+  spin1->type = 23;
+  spin1->slide = 0;  // default to not slide
+  /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
+  spin1->last_off1 = spin1->last_play = NULL;
+  /* initialize pointer to last voices amplitude as NULL  */ 
+  spin1->last_amp = NULL;
+  /* initialize pointer to last voices phase, and phase adjust as NULL  */ 
+  spin1->last_phase = spin1->last_phase_adj = NULL;
+  /* initialize pointer to last voices split, and split adjust as NULL  */ 
+  spin1->last_split = spin1->last_split_adj = NULL;
+  spin1->first_pass = 1;  // inactive
+  original = StrDup (token);
+  str2 = token;
+  subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
+  str2 = NULL;
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  /* subtoken is file name for spin sound */
+  strcpy (filename, subtoken);
+  sb1 = process_sound_file (filename);
+  spin1->channels = sb1->channels;
+  spin1->mono = sb1->mono;
+  spin1->frames = sb1->frames;
+  spin1->sound = sb1->sound;
+  spin1->scale = sb1->scale;
+                                    
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double amp = strtod (subtoken, &endptr);
+  if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Amplitude for spin had an error.\n%s\n%s", subtoken, original);
+  else if (amp < 0.0 || amp > 100.0)  // no errors, but less than zero, greater than 100
+    error ("Amplitude for spin cannot be less than 0 or greater than 100.\n%s\n%s", subtoken, original);
+  spin1->amp = AMP_AD(amp);
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  errno = 0;
+  double spin_time = strtod (subtoken, &endptr);
+  if ((spin_time == 0.0 && strcmp (subtoken, endptr) == 0)
+      || (*endptr != '\0')
+      || errno != 0)
+    error ("Spin time for spin had an error.\n%s\n%s", subtoken, original);
+  else if (spin_time <= 0.0)  // no errors, but less than or equal to zero
+    error ("Spin time for spin must be greater than 0.\n%s\n%s", subtoken, original);
+  spin1->spin_time = spin_time;
+
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    spin1->slide = 1;
+
+  /* set play to initialize in generate frames */
+  spin1->play = 0LL;  // how much has played so far
+  spin1->phase = 0.0;      // starting phase for spin
+  spin1->phase_adj = 360. / ((double) out_rate * spin1->spin_time);  
+  spin1->split = .5;      // starting split for spin
+  spin1->split_adj = 0.2 / ((double) out_rate * spin1->spin_time);  // max split is not 1
 }
 
 /*  Initialize all values possible for each beat voice */
@@ -8597,6 +8709,53 @@ finish_non_beat_voice_setup ()
           { 
             break;
           }
+        case 23:  // spin
+          { 
+            spin *spin1 = NULL, *spin2 = NULL;
+
+            spin1 = (spin *) work1;
+            if (work2 != NULL)
+            { 
+              stub2 = (stub *) work2;
+              if (stub2->type == 23)  // also spin
+              { 
+                spin2 = (spin *) work2;
+                if (spin2->sound == spin1->sound)  // buffer ptr the same, the same sound sample continues
+                {
+                /* Set the pointers to the previous voice's values here so it can be used while running
+                   to continue the play with no discontinuity */
+                  spin2->last_off1 = &(spin1->off1);
+                  spin2->last_play = &(spin1->play);
+                  spin2->last_amp = &(spin1->amp);
+                  spin2->last_phase = &(spin1->phase);
+                  spin2->last_phase_adj = &(spin1->phase_adj);
+                  spin2->last_split = &(spin1->split);
+                  spin2->last_split_adj = &(spin1->split_adj);
+                }
+              } 
+            } 
+            /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (spin1->slide == 0)
+            { 
+              spin1->amp_slide_adj = spin1->spin_time_slide_adj = 0.0;
+            } 
+            else  // slide to next spin in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (spin2 != NULL)  // set above if spin, NULL means next voice not spin
+                {
+                  spin1->amp_slide_adj = (spin2->amp - spin1->amp)/ (double) snd1->tot_frames;
+                  spin1->spin_time_slide_adj = (spin2->spin_time - spin1->spin_time)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not spin.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next spin in time sequence!\n");
+            }
+            break;
+          }
         default:
           break;
       }
@@ -11797,6 +11956,123 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
         break;
       case 22:  // silence voice
         break;  // do nothing for silence
+      case 23:                // Spin file play
+        {
+          spin *spin1;
+
+          spin1 = (spin *) this;  // reassign void pointer as spin struct
+          /* if start of the voice, set starting values to be last values of previous voice, if available */
+          if (spin1->first_pass)
+          {
+            spin1->first_pass = 0;  // now active
+            /* check each pointer to the previous voice to see if it is valid */
+            if (spin1->last_off1 != NULL)
+              spin1->off1 = *spin1->last_off1;  // to start from buffer position of last voice
+            if (spin1->last_play != NULL)
+              spin1->play = *spin1->last_play;  // amount played already is amount from last voice
+            if (spin1->last_amp != NULL)
+              spin1->amp = *spin1->last_amp;  // use the same amplitude as last voice
+            if (spin1->last_phase != NULL)
+              spin1->phase = *spin1->last_phase;  // start from same phase as last voice
+            if (spin1->last_phase_adj != NULL)
+              spin1->phase_adj = *spin1->last_phase_adj;  // use same phase_adj as last voice
+            if (spin1->last_split != NULL)
+              spin1->split = *spin1->last_split;  // start from same split as last voice
+            if (spin1->last_split_adj != NULL)
+              spin1->split_adj = *spin1->last_split_adj;  // use same split_adj as last voice
+          }
+          for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
+          {
+            if (spin1->play <= 0)
+            {                     // time to play another spin
+              spin1->off1 = 0;
+              spin1->play = spin1->frames; // fixed play time
+              /* all other variables just continue on from where they are */
+            }
+            if (spin1->play > 0L)  // spin is active
+            {
+              double amp = spin1->amp * 2.;  // like binaural, double so each channel at amp with split
+              int phase_offset = (int) round((fabs(spin1->phase)/360.) * sin_siz);  // offset shift for phase
+              double phase_sin = (sin_table [phase_offset]);  // sin value for phase
+              int phase_adjust = (int) round(((double) out_rate / 1500.) * phase_sin);  // spin adjustment for phase
+              int left_offset = spin1->off1;
+              int right_offset = spin1->off1;
+              if (phase_adjust < 0)  // right is phase leading, phase adjust is negative
+              {
+                if (left_offset > abs(phase_adjust))
+                  left_offset += phase_adjust;
+                else  // wrap back to end
+                  left_offset = spin1->frames + (phase_adjust + left_offset);
+              }
+              else if (phase_adjust > 0)  // left is phase leading, phase adjust is positive
+              {
+                if (right_offset > abs(phase_adjust))
+                  right_offset -= phase_adjust;
+                else  // wrap back to end
+                  right_offset = spin1->frames - (phase_adjust - right_offset);
+              }
+              /* now that phase has been taken care of, adjust the amp for front and back */
+              if (spin1->phase > 90. && spin1->phase < 270.) // back
+                amp -= ((.10*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
+              else
+                amp += ((.20*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
+              if (spin1->channels == 2)  // stereo
+              {
+                if (spin1->mono == 0)  // stereo
+                {
+                  out_buffer[ii] += (spin1->split * amp
+                          * (((double) *(spin1->sound + left_offset)) * spin1->scale));
+                  out_buffer[ii+1] += ((1.0 - spin1->split) * amp
+                          * (double) ((*(spin1->sound + right_offset + 1)) * spin1->scale));
+                }
+                else if (spin1->mono == 1)  // mono in stereo form, left has sound, use left as right channel
+                {
+                  out_buffer[ii] += (spin1->split * amp
+                          * (((double) *(spin1->sound + left_offset)) * spin1->scale));
+                  out_buffer[ii+1] += ((1.0 - spin1->split) * amp
+                          * (((double) *(spin1->sound + right_offset)) * spin1->scale));
+                }
+                else if (spin1->mono == 2)  // mono in stereo form, right has sound, use right as left channel
+                {
+                  out_buffer[ii] += (spin1->split * amp
+                          * (((double) *(spin1->sound + left_offset + 1)) * spin1->scale));
+                  out_buffer[ii+1] += ((1.0 - spin1->split) * amp
+                          * (((double) *(spin1->sound + right_offset + 1)) * spin1->scale));
+                }
+              }
+              else if (spin1->channels == 1)  // mono, single channel split to be two
+              {
+                out_buffer[ii] += (spin1->split * amp
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));
+                out_buffer[ii+1] += ((1.0 - spin1->split) * amp
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));
+              }
+                  // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
+              spin1->off1 += (spin1->channels * fast_mult); // adjust number of shorts played.
+              spin1->phase += (spin1->phase_adj * fast_mult);
+              if (spin1->phase > 360.)
+                spin1->phase -= 360.;
+              if (fabs(phase_sin) <= 1.0e-20)  // phase adjust at 0, synch the split to take care of any error
+                spin1->split = .5;
+              if (spin1->phase > 90. && spin1->phase < 270.)
+                spin1->split -= (spin1->split_adj * fast_mult);
+              else
+                spin1->split += (spin1->split_adj * fast_mult);
+              if (spin1->slide == 1)
+              {
+                spin1->amp += (spin1->amp_slide_adj * fast_mult);  // adjust amplitude for slides
+                spin1->spin_time += (spin1->spin_time_slide_adj * fast_mult);
+                /* adjust phase_adj with each buffer played so slides have effect  */
+                spin1->phase_adj = 360. / ((double) out_rate * spin1->spin_time);  
+                /* adjust split_adj with each buffer played so slides have effect  */
+                spin1->split_adj = 0.2 / ((double) out_rate * spin1->spin_time);  // max split is not 1
+              }
+                  // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
+              spin1->play -= fast_mult;  // adjust frames played
+            }
+          }
+        }
+        break;
       default:               // do nothing if not recognized
         ;
     }
@@ -12230,6 +12506,27 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, "   silence\n");
       }
       break;
+    case 23:  // spin
+      {
+        spin *spin1;
+
+        spin1 = (spin *) this;
+        char_count += fprintf (fp, "   spin %jd %d",
+                        spin1->frames, spin1->channels);
+        char_count += fprintf (fp, " %.3f %.3f", 
+                        AMP_DA (spin1->amp), spin1->spin_time);
+        char_count += fprintf (fp, " %.3f %.3f", 
+                        spin1->phase, spin1->phase_adj);
+        char_count += fprintf (fp, " %.3f %.3f", 
+                        spin1->split, spin1->split_adj);
+        char_count += fprintf (fp, " %.3f %.3f", 
+                        spin1->amp_slide_adj, spin1->spin_time_slide_adj);
+        char_count += fprintf (fp, " %jd %jd",
+                        spin1->off1, spin1->play);
+        char_count += fprintf (fp, " %d\n",
+                        spin1->mono);
+      }
+      break;
     default:  // not known, do nothing
       ;
   }
@@ -12417,6 +12714,15 @@ fprint_voice (FILE *fp, void *this)
     case 22:  // silence
       {
         char_count += fprintf (fp, "   silence\n");
+      }
+      break;
+    case 23:  // spin
+      {
+        spin *spin1;
+
+        spin1 = (spin *) this;
+        char_count = fprintf (fp, "   spin %jd   %jd   %.3f   %.3f\n", 
+                      spin1->off1, spin1->play, AMP_DA (spin1->amp), spin1->spin_time);
       }
       break;
     default:  // not known, do nothing
