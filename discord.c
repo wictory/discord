@@ -9641,12 +9641,12 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               stoch1->off1 += (stoch1->channels * fast_mult);  // adjust shorts played
               stoch1->split_now += (stoch1->split_adj * fast_mult);
-              stoch1->amp_min += (stoch1->amp_min_adj * fast_mult);  // adjust amplitude for slides
-              stoch1->amp_max += (stoch1->amp_max_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               stoch1->play -= fast_mult;  // adjust frames played
             }
             stoch1->sofar += fast_mult;
+            stoch1->amp_min += (stoch1->amp_min_adj * fast_mult);  // adjust amplitude for slides, whether play or not
+            stoch1->amp_max += (stoch1->amp_max_adj * fast_mult);
           }
         }
         break;
