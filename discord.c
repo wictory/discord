@@ -99,7 +99,7 @@ int fast_mult = 1;              // default to normal speed
 int opt_h;                      // display help
 int opt_k = 0;                  // keep resampled files, default delete them
 int opt_l = 0;                  // use a list of files from specified file as input script files
-char *opt_l_list = NULL;        // tab separated strings naming files to process for input script files
+char *opt_l_filelist = NULL;     // save the name of list files so they are only processed once
 int opt_m = 0;                  // modify carrier and beat in script file by a random percentage +/-
 double opt_m_arg = 0.0;         // percentage of modification band for carrier and beat
 double opt_m_modify = 0.0;      // percentage in decimal form of modification band for carrier and beat
@@ -732,6 +732,8 @@ void debug (char *fmt, ...);
 void warn (char *fmt, ...);
 void *Alloc (size_t len);
 char *StrDup (char *str);
+char *StrMem (size_t slen);
+char *StrCat (char *target, char *append, size_t maxlen);
 double amp_comp (double freq);
 void error (char *fmt, ...);
 int read_time (char *, int *);
@@ -827,7 +829,7 @@ main (int argc, char **argv)
   parse_argv_options (argc, argv);  // parse command line options
   /* this has to be after the argv parse so the linked list of script filenames
    * has been created */
-  if (opt_l)  // listfile(s) to process
+  if (opt_l)  // listfile(s) from the command line to process, will process options 
     parse_listfile_options ();  // listfile options have priority of SCRIPT_OPTIONS
   int filecount = parse_argv_configs (argc, argv); // parse script/sequence files
   parse_discordrc (); // parse discord configuration file
@@ -987,26 +989,29 @@ parse_argv_options (int argc, char **argv)
 
       case 'l':  // read argument as file containing list of script files to use
         opt_l = 1;
+        opt_l = 1; // note that options will be read from any list file scripts processed here, on the command line
         if (optarg != NULL)     // has argument
         {
-          if (opt_l_list == NULL)  // no listfilenames yet
+          if (opt_l_filelist == NULL)  // no listfilenames yet
           {
-            opt_l_list = StrDup(optarg);
-            strcat (opt_l_list, "\t");
-            parse_listfile_for_script_filenames (optarg);  // process it
+            opt_l_filelist = StrDup(optarg);  // make it equal to this filename
+            /* append a tab to separate from subsequent names */
+            opt_l_filelist = StrCat (opt_l_filelist, "\t", strlen (opt_l_filelist));
+            parse_listfile_for_script_filenames (optarg);  // process list filename to pull out script names
           }
-          else  // already filenames present
+          else  // already list filenames present
           {
-            if (strstr (opt_l_list, optarg) == NULL)  // not a duplicate
+            if (strstr (opt_l_filelist, optarg) == NULL)  // not a duplicate list filename
             {
-              strcat (opt_l_list, StrDup(optarg));  // append it to string list
-              strcat (opt_l_list, "\t");
-              parse_listfile_for_script_filenames (optarg);  // process it
+              opt_l_filelist = StrCat (opt_l_filelist, optarg, strlen (opt_l_filelist));  // append this list filename to list
+              /* append a tab to separate from subsequent names */
+              opt_l_filelist = StrCat (opt_l_filelist, "\t", strlen (opt_l_filelist));
+              parse_listfile_for_script_filenames (optarg);  // process list filename to pull out script names
             }
           }
         }
         else  // argument is missing
-          error ("--listfile/-l needs a filename, with path if necessary, as an argument");
+          error ("--listfile/-l needs a filename, with path if necessary, as an argument\n%s", optarg);
         break;
 
       case 'q':
@@ -1036,19 +1041,20 @@ void
 parse_listfile_for_script_filenames (char *listfilename)
 {
   char *filename, *cmnt, *str1;
-  char worklin[512];
+  char *worklin;
   /* points to a string containing all the configuration file options */
   listfile_scripts *lff_new = NULL, *lff_work = NULL;
   size_t len;
   FILE *infile;
 
+  worklin = StrMem (512);
   infile = fopen (listfilename, "r");
   if (!infile)
     error ("Unable to open listfile %s", listfilename);
   memset (worklin, 0x00, 512);
-  fgets (worklin, sizeof (worklin), infile);
+  fgets (worklin, 512, infile);
   filename = worklin;
-  lff_work = LFS;
+  lff_work = LFS;  // point to listfile chain
   while (lff_work != NULL)  // while not at end of current list
     lff_work = lff_work->next;  // move to next node
   while (!feof (infile))
@@ -1082,10 +1088,11 @@ parse_listfile_for_script_filenames (char *listfilename)
       lff_work->filename = StrDup (filename);  // save the name
     }
     memset (worklin, 0x00, 512);
-    fgets (worklin, sizeof (worklin), infile);
+    fgets (worklin, 512, infile);
     filename = worklin;
   }
   fclose (infile);
+  free (worklin);
   return;
 }
 
@@ -1110,6 +1117,7 @@ parse_listfile_options ()
     read_script_file_options (filename, &config_options);
     append_options (&SCRIPT_OPTIONS, config_options);
     lff_work = lff_work->next;
+    free (config_options);
   }
   return;
 }
@@ -1133,6 +1141,7 @@ parse_argv_configs (int argc, char **argv)
       filename = argv[optind++];
       read_script_file_options (filename, &config_options);
       append_options (&SCRIPT_OPTIONS, config_options);
+      free (config_options);
     }
   }
   return filecount;             // count of configuration files
@@ -1341,17 +1350,20 @@ int
 read_script_file_options (char * filename, char **config_options)
 {
   char *curlin, *cmnt, *token;
-  char savelin[16384], worklin[16384], rawline[16384];
+  char *savelin, *worklin, *rawline;
   size_t len, destlen;
   int line_count = 0;
   FILE *infile;
 
+  savelin= StrMem (16384);
+  worklin= StrMem (16384);
+  rawline= StrMem (16384);
   infile = fopen (filename, "r");
   if (!infile)
     error ("Unable to open script file %s", filename);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
-  fgets (worklin, sizeof (worklin), infile);
+  fgets (worklin, 16384, infile);
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (!feof (infile))
@@ -1405,20 +1417,19 @@ read_script_file_options (char * filename, char **config_options)
       }
     }
     memset (worklin, 0x00, 16384);
-    fgets (worklin, sizeof (worklin), infile);
+    fgets (worklin, 16384, infile);
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
   fclose (infile);
   /* To separate the options from multiple script files, append a bogus option to the end
-   * of the rest of the options it there are any.
+   * of the rest of the options it there are any.  Options returned from here are appended
+   * to the main options list.
    */
-  destlen = strlen (savelin);
-  if (destlen == 0)  // no options saved yet
-    strncpy (savelin, "-~ ", 3);  // tilde is bogus
-  else if (savelin[0] == '-')  // already some options saved
-    strncat (savelin, "-~ ", 3);
-  *config_options = StrDup (savelin);    // save them for further processing
+  StrCat (savelin, "-~ ", 16384);  // tilde is bogus, just indicates a new file was processed for options
+  *config_options = savelin;       // pass them back for further processing
+  free (worklin);
+  free (rawline);
   return 0;
 }
 
@@ -1436,10 +1447,11 @@ parse_discordrc ()
   homedir = getenv("HOME");
   if ((homedir != NULL) && strlen(homedir))
   {
-    char config_file [512] = {'\0'};
+    char *config_file;
 
-    strncpy (config_file, homedir, sizeof(config_file) - 1);
-    strcat (config_file, "/.discordrc");
+    config_file = StrMem (512);
+    StrCat (config_file, homedir, 512);
+    StrCat (config_file, "/.discordrc", 512);
     int retval = stat(config_file, &stat_buffer);
     if (retval != -1)
     {
@@ -1451,8 +1463,10 @@ parse_discordrc ()
       read_config_file (infile, &config_options);
       append_options (&CONFIG_OPTIONS, config_options);
       fclose (infile);
+      free (config_file);
       return 1;
     }
+    free (config_file);
     return 0;
   }
   return 0;
@@ -1469,13 +1483,16 @@ int
 read_config_file (FILE * infile, char **config_options)
 {
   char *curlin, *cmnt, *token;
-  char savelin[16384], worklin[16384], rawline[16384];
+  char *savelin, *worklin, *rawline;
   size_t len, destlen;
   int line_count = 0;
 
+  savelin= StrMem (16384);
+  worklin= StrMem (16384);
+  rawline= StrMem (16384);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
-  fgets (worklin, sizeof (worklin), infile);
+  fgets (worklin, 16384, infile);
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (*curlin != '\0')
@@ -1508,7 +1525,7 @@ read_config_file (FILE * infile, char **config_options)
           if (savelin[0] == '-')  // already some options saved
             strncat (savelin, curlin, len);
           else
-            error ("Options are only permitted at start of sequence file:\n  %s", curlin);
+            error ("Only options are permitted in .discordrc file:\n  %s", savelin);
         }
       }
       else if (token[0] == '#') // line is a comment
@@ -1516,12 +1533,12 @@ read_config_file (FILE * infile, char **config_options)
       else
       {
         if (!opt_q)  // quiet
-          fprintf (stderr, "Skipped line %d in script file with invalid %s at start of line\n", 
+          fprintf (stderr, "Skipped line %d in .discordrc file with invalid %s at start of line\n", 
                           line_count, token);
       }
     }
     memset (worklin, 0x00, 16384);
-    fgets (worklin, sizeof (worklin), infile);
+    fgets (worklin, 16384, infile);
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
@@ -1529,14 +1546,22 @@ read_config_file (FILE * infile, char **config_options)
   {
     if (feof (infile))
     {                           
-      if (savelin[0] == '-')          // only options in the file, config file
+      if (savelin[0] == '-')          // only configuration options allowed in the file, config file .discordrc
       {
-        *config_options = StrDup (savelin);    // save them for further processing
+        *config_options = savelin;    // save them for further processing
+        free (worklin);
+        free (rawline);
         return 0;
       }
     }
+    free (savelin);
+    free (worklin);
+    free (rawline);
     error ("Read error on sequence file");
   }
+  free (savelin);
+  free (worklin);
+  free (rawline);
   return 0;
 }
 
@@ -1670,27 +1695,30 @@ set_options (saved_option *SO)
         opt_k = 1;
         break;
       case 'l':  // read argument as file containing list of script files to use
-        opt_l = 1;
+        opt_l = 1; // note that *no* options will be read from list file scripts processed here, only play sequences
         if (sow->option_string != NULL)     // has argument
         {
-          if (opt_l_list == NULL)  // no listfilenames yet
+          if (opt_l_filelist == NULL)  // no listfilenames yet
           {
-            opt_l_list = StrDup(sow->option_string);
-            strcat (opt_l_list, "\t");
-            parse_listfile_for_script_filenames (sow->option_string);  // process it
+            opt_l_filelist = StrDup(sow->option_string);  // make it equal to this filename
+            /* append a tab to separate from subsequent names */
+            opt_l_filelist = StrCat (opt_l_filelist, "\t", strlen (opt_l_filelist));
+            parse_listfile_for_script_filenames (sow->option_string);  // process list filename to pull out script names
           }
-          else  // already filenames present
+          else  // already list filenames present
           {
-            if (strstr (opt_l_list, sow->option_string) == NULL)  // not a duplicate
+            if (strstr (opt_l_filelist, sow->option_string) == NULL)  // not a duplicate list filename
             {
-              strcat (opt_l_list, StrDup(sow->option_string));  // append it to string list
-              strcat (opt_l_list, "\t");
-              parse_listfile_for_script_filenames (sow->option_string);  // process it
+              /* append this list filename to list */
+              opt_l_filelist = StrCat (opt_l_filelist, sow->option_string, strlen (opt_l_filelist));
+              /* append a tab to separate from subsequent names */
+              opt_l_filelist = StrCat (opt_l_filelist, "\t", strlen (opt_l_filelist));
+              parse_listfile_for_script_filenames (sow->option_string);  // process list filename to pull out script names
             }
           }
         }
         else  // argument is missing
-          error ("--listfile/-l needs a filename, with path if necessary, as an argument");
+          error ("--listfile/-l needs a filename, with path if necessary, as an argument\n%s", sow->option_string);
         break;
       case 'm':  // modify the script file carrier and beat frequencies by random amount of percentage provided
         opt_m = 1;
@@ -2014,6 +2042,7 @@ setup_listfile_scripts ()
     setup_play_seq ();
     lff_work = lff_work->next;
   }
+  free (opt_l_filelist);  // free listfile filename list here, definitely done with it.
   return;
 }
 
@@ -2027,18 +2056,21 @@ int
 read_script_file_sequence (char * filename)
 {
   char *curlin, *cmnt, *token;
-  char savelin[16384], worklin[16384], rawline[16384];
+  char *savelin, *worklin, *rawline;
   size_t len, destlen;
   int line_count = 0;
   time_seq *tsh = NULL, *tsw = NULL;
   FILE *infile;
 
+  savelin= StrMem (16384);
+  worklin= StrMem (16384);
+  rawline= StrMem (16384);
   infile = fopen (filename, "r");
   if (!infile)
     error ("Unable to open script file %s", filename);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
-  fgets (worklin, sizeof (worklin), infile);
+  fgets (worklin, 16384, infile);
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (!feof (infile))
@@ -2098,13 +2130,11 @@ read_script_file_sequence (char * filename)
         {
           strncpy (savelin, curlin, len);
         }
-        else if (destlen + len + 1 < 16384)
+        else  // StrCat takes care of any overflow in size
         {
-          strncat (savelin, "\t", 1);  // add trailing tab so voices are separate
-          strncat (savelin, curlin, len);  // add voices
+          StrCat (savelin, "\t", 16384);  // add trailing tab so voices are separate
+          StrCat (savelin, curlin, 16384);  // add voices
         }
-        else
-          error ("Too many voices to store in seqence %s", savelin);
       }
       else if (token[0] == '#') // line is a comment
         ;  // do nothing
@@ -2115,7 +2145,7 @@ read_script_file_sequence (char * filename)
       }
     }
     memset (worklin, 0x00, 16384);
-    fgets (worklin, sizeof (worklin), infile);
+    fgets (worklin, 16384, infile);
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
@@ -2135,12 +2165,17 @@ read_script_file_sequence (char * filename)
       tsw->next = tsh;
     }
     tsw = tsh;
-    tsw->sequence = StrDup (savelin);        // save them
+    tsw->sequence = savelin;        // save them
     fclose (infile);
+    free (worklin);
+    free (rawline);
     return 0;
   }
   error ("Read error on sequence file");
   fclose (infile);
+  free (savelin);
+  free (worklin);
+  free (rawline);
   return -1;
 }
 
@@ -2150,7 +2185,7 @@ int
 setup_play_seq ()
 {
   char *token, *subtoken;
-  char voice[256];
+  char *voice;
   char *str1 = NULL, *str2 = NULL;
   char *saveptr1 = NULL, *saveptr2 = NULL;
   int time_in_secs, len;
@@ -2160,6 +2195,7 @@ setup_play_seq ()
   chorus_voice *chorus_voice1 = NULL;
   void *work = NULL, *prev = NULL;
 
+  voice = StrMem (512);
   /* frame rate has been validated, set the millisecond fade global variables.
    * Multiplying by a factor will change the fade time to not be
    * a millisecond anymore.  Here we multiply by 10, to give 10 ms fade.  */
@@ -2227,21 +2263,20 @@ setup_play_seq ()
       str2 = token;
       subtoken = strtok_r (str2, separators, &saveptr2);    // get subtoken of token
       str2 = NULL;
-      memset (voice, 0x00, 256);
+      memset (voice, 0x00, 512);
       len = strlen (subtoken);
       strncpy (voice, subtoken, len);  // recreate the voice for setup as token = subtoken
-      strncat (voice, "''", 2);  // replace separator
+      StrCat (voice, "''", 512);  // replace separator
       len = strlen (saveptr2);
-      strncat (voice, saveptr2, len);
+      StrCat (voice, saveptr2, 512);
       if (strcasecmp (subtoken, "binaural") == 0)
         setup_binaural (voice, &work);
       else if (strcasecmp (subtoken, "bell") == 0)
         setup_bell (voice, &work);
       else if (strcasecmp (subtoken, "noise") == 0)
       {
-        char voice_save[256];
-        memset (voice_save, 0x00, 256);
-        strncpy (voice_save, voice, 256);  // save the voice characteristics for reuse
+        char *voice_save = StrMem (512);
+        strncpy (voice_save, voice, 512);  // save the voice characteristics for reuse
         int many = setup_noise (voice, &work);     // returns a multiple count for this voice
         if (many > 1)  // more than one requested
         {
@@ -2264,10 +2299,11 @@ setup_play_seq ()
               stub2->next = NULL;  // set the forward link for this voice
             }
             prev = work;  // point to new voice as previous voice
-            strncpy (voice, voice_save, 256);  // restore voice characteristics
+            strncpy (voice, voice_save, 512);  // restore voice characteristics
             setup_noise (voice, &work);  // create another copy of the voice
           }
         }
+        free (voice_save);
       }
       else if (strcasecmp (subtoken, "stoch") == 0)
         setup_stoch (voice, &work);
@@ -2333,6 +2369,7 @@ setup_play_seq ()
   }
   free (TS);  // free the root sequence node
   TS = NULL;  // so the next script file starts fresh
+  free (voice);
   finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
   finish_non_beat_voice_setup ();  // complete setup of non-beat voices now that sequences are known
   return 0;
@@ -3025,10 +3062,11 @@ setup_stoch (char *token, void **work)
   char *subtoken;
   char *str2 = NULL;
   char *saveptr2;
-  char filename [256];
+  char *filename;
   stoch *stoch1 = NULL;
   snd_buffer *sb1 = NULL;
 
+  filename = StrMem (256);
   stoch1 = (stoch *) Alloc (sizeof (stoch) * 1);
   *work = stoch1;
   stoch1->next = NULL;
@@ -3048,7 +3086,7 @@ setup_stoch (char *token, void **work)
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for stoch sound */
-  strcpy (filename, subtoken);
+  strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
   stoch1->channels = sb1->channels;
   stoch1->mono = sb1->mono;
@@ -3159,6 +3197,7 @@ setup_stoch (char *token, void **work)
     stoch1->next_play  = (intmax_t) ( (drand48 ()) * stoch1->repeat_max);  // random up to max repeat interval
   }
   stoch1->sofar = 0LL;
+  free (filename);
 }
 
 /* Set up a sample file sequence */
@@ -3171,10 +3210,11 @@ setup_sample (char *token, void **work)
   char *subtoken;
   char *str2 = NULL;
   char *saveptr2;
-  char filename [256];
+  char *filename;
   sample *sample1 = NULL;
   snd_buffer *sb1 = NULL;
 
+  filename = StrMem (256);
   sample1 = (sample *) Alloc (sizeof (sample) * 1);
   *work = sample1;
   sample1->next = NULL;
@@ -3191,7 +3231,7 @@ setup_sample (char *token, void **work)
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for sample sound */
-  strcpy (filename, subtoken);
+  strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
   sample1->channels = sb1->channels;
   sample1->mono = sb1->mono;
@@ -3284,6 +3324,7 @@ setup_sample (char *token, void **work)
   /* Set some defaults so sample position is determined randomly at start of generate frames */
   sample1->play = 0LL;  // start out with zero play size, let generate frames determine
   sample1->off1 = 0LL;  // set in generate frames when play is zero.
+  free (filename);
 }
 
 /* Set up a repeat file sequence */
@@ -3296,10 +3337,11 @@ setup_repeat (char *token, void **work)
   char *subtoken;
   char *str2 = NULL;
   char *saveptr2;
-  char filename [256];
+  char *filename;
   repeat *repeat1 = NULL;
   snd_buffer *sb1 = NULL;
 
+  filename = StrMem (256);
   repeat1 = (repeat *) Alloc (sizeof (repeat) * 1);
   *work = repeat1;
   repeat1->next = NULL;
@@ -3316,7 +3358,7 @@ setup_repeat (char *token, void **work)
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for repeat sound */
-  strcpy (filename, subtoken);
+  strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
   repeat1->channels = sb1->channels;
   repeat1->mono = sb1->mono;
@@ -3397,6 +3439,7 @@ setup_repeat (char *token, void **work)
 
   /* set play to initialize in generate frames */
   repeat1->play = 0LL;  // how much has played so far
+  free (filename);
 }
 
 /* Set up a once file sequence */
@@ -3409,10 +3452,11 @@ setup_once (char *token, void **work)
   char *subtoken;
   char *str2 = NULL;
   char *saveptr2;
-  char filename [256];
+  char *filename;
   once *once1 = NULL;
   snd_buffer *sb1 = NULL;
 
+  filename = StrMem (256);
   once1 = (once *) Alloc (sizeof (once) * 1);
   *work = once1;
   once1->next = NULL;
@@ -3430,7 +3474,7 @@ setup_once (char *token, void **work)
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for once sound */
-  strcpy (filename, subtoken);
+  strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
   once1->channels = sb1->channels;
   once1->mono = sb1->mono;
@@ -3517,6 +3561,7 @@ setup_once (char *token, void **work)
 
   /* set up play of once */
   once1->sofar = once1->play = (intmax_t) 0;
+  free (filename);
 }
 
 /* Set up a chronaural sequence */
@@ -4712,10 +4757,11 @@ setup_spin (char *token, void **work)
   char *subtoken;
   char *str2 = NULL;
   char *saveptr2;
-  char filename [256];
+  char *filename;
   spin *spin1 = NULL;
   snd_buffer *sb1 = NULL;
 
+  filename = StrMem (256);
   spin1 = (spin *) Alloc (sizeof (spin) * 1);
   *work = spin1;
   spin1->next = NULL;
@@ -4736,7 +4782,7 @@ setup_spin (char *token, void **work)
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
   /* subtoken is file name for spin sound */
-  strcpy (filename, subtoken);
+  strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
   spin1->channels = sb1->channels;
   spin1->mono = sb1->mono;
@@ -4776,6 +4822,7 @@ setup_spin (char *token, void **work)
   spin1->phase_adj = 360. / ((double) out_rate * spin1->spin_time);  
   spin1->split = .5;      // starting split for spin
   spin1->split_adj = 0.2 / ((double) out_rate * spin1->spin_time);  // max split is not 1
+  free (filename);
 }
 
 /*  Initialize all values possible for each beat voice */
@@ -8884,10 +8931,11 @@ process_sound_file (char *filename)
   sf_close (sndfile);
   if (flag != 0 && opt_k == 0)
   {  // if resampled and not keep option remove resampled file
-    char command [4096];
-    strcpy (command, "rm ");
-    strcat (command, filename);
+    char *command = StrMem (4096);
+    strncpy (command, "rm ", 3);
+    StrCat (command, filename, 4096);
     system (command);
+    free (command);
   }
   /* find the maximum amplitude in the sound file, always short int once read */
   for (k = 0 ; k < sb1->frames ; k += sb1->channels)
@@ -12783,8 +12831,46 @@ StrDup (char *str)
   char *rv = strdup (str);
 
   if (!rv)
-    error ("Out of memory");
+    error ("Out of memory in StrDup");
   return rv;
+}
+
+/* Allocate a string of the passed in size from memory.
+ * Strings allocated with this routine can use the StrCat
+ * routine below safely.  Does *not* allocate an extra
+ * position for the NULL terminator.  */
+char *
+StrMem (size_t slen)
+{
+  char *nstr = NULL;
+  nstr = (char *) Alloc (slen);
+  if (!nstr)
+    error ("Out of memory in StrMem");
+  return nstr;
+}
+
+/* concatenates strings making sure that overflow doesn't occur. 
+ * This should only be used with memory allocated strings,
+ * will cause bugs if used with stack allocated strings.  */
+char *
+StrCat (char *target, char *append, size_t maxlen)
+{
+  char *nstr = NULL;
+  size_t tlen = strlen (target);
+  size_t alen = strlen (append);
+
+  if (tlen + alen + 1 > maxlen)
+  {
+    nstr = (char *) Alloc (tlen + alen + 1);
+    strncpy (nstr, target, tlen);
+    strncat (nstr, append, alen);
+    free (target);
+    target = nstr;
+    // error ("Cat will overflow string %s %s", target, append);
+  }
+  else
+    strncat (target, append, alen);
+  return target;
 }
 
 /*
@@ -12864,22 +12950,21 @@ alsa_validate_device_and_rate ()
       goto catch_error ;
       } ;
 
-    char hw_from_default [32];
+    char *hw_from_default = StrMem (32);
     int cardno = snd_pcm_info_get_card (info_params); 
     if (cardno < 0)  // If default is user defined, this is set to actual card.
       cardno = 0;  //  If not, dmix leaves as -1 and defaults to card 0 (look at id in info).
     int devno = snd_pcm_info_get_device (info_params);
     if (devno < 0)  // This appears to always be set, just here as insurance.
       devno = 0;
-    int numchars = snprintf (hw_from_default, sizeof (hw_from_default), 
-                                  "plughw:%d,%d", cardno, devno); 
+    int numchars = snprintf (hw_from_default, 32, "plughw:%d,%d", cardno, devno); 
     if (!opt_q)  // not quiet
       fprintf (stderr, "Plughw  %s  numchars %d\n", hw_from_default, numchars);
     /*  Now reopen and get feasible hardware parameters with plughw instead of default.
      *  This will allow bypassing dmix in order to set rates other than 48000.
      */
     err = snd_pcm_open (&alsa_dev, hw_from_default, SND_PCM_STREAM_PLAYBACK, 0);
-    if (err < 0)
+    if (err < 0)  // this is where to open pulseaudio as last resort
     {	fprintf (stderr, "cannot open audio device \"%s\" (%s)\n", hw_from_default, snd_strerror (err)) ;
       fprintf (stderr, "Using default device at 48000 frame rate\n") ;
       samplerate = out_rate = 48000;  // set rate to dmix rate
@@ -12898,7 +12983,7 @@ alsa_validate_device_and_rate ()
      * as -a / --audio_device option so alsa_open can use it directly
      * and opens the same device that the rate came from */
     opt_a = 1;
-    opt_a_plughw = StrDup (hw_from_default);
+    opt_a_plughw = hw_from_default;
   }
   err = snd_pcm_hw_params_malloc (&hw_params);
 	if (err < 0)
@@ -13045,15 +13130,14 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
       goto catch_error ;
       } ;
 
-    char hw_from_default [32];
+    char *hw_from_default = StrMem (32);
     int cardno = snd_pcm_info_get_card (info_params); 
     if (cardno < 0)  // If default is user defined, this is set to actual card.
       cardno = 0;  //  If not, dmix leaves as -1 and defaults to card 0 (look at id in info).
     int devno = snd_pcm_info_get_device (info_params);
     if (devno < 0)  // This appears to always be set, just here as insurance.
       devno = 0;
-    int numchars = snprintf (hw_from_default, sizeof (hw_from_default), 
-                                  "plughw:%d,%d", cardno, devno); 
+    int numchars = snprintf (hw_from_default, 32, "plughw:%d,%d", cardno, devno); 
     if (!opt_q)  // not quiet
       fprintf (stderr, "Plughw  %s  numchars %d\n", hw_from_default, numchars);
     /*  Now reopen and get feasible hardware parameters with plughw instead of default.
@@ -13067,6 +13151,7 @@ alsa_open (snd_pcm_t *alsa_dev, int channels, unsigned samplerate, int realtime)
       } ;
 
     snd_pcm_info_free (info_params) ;  // done with info
+    free (hw_from_default);
   }
   err = snd_pcm_hw_params_malloc (&hw_params);
 	if (err < 0)
@@ -13425,9 +13510,9 @@ check_samplerate (char *inname)
       fprintf (stderr, "Converter     : %s\n\n", src_get_name (converter)) ;
     }
     /* Create the name for the new output file by appending the new rate to the input file */
-    char * ppos = strchr (inname, '.');  // last period
-    char * spos = strchr (inname, '/');  // last slash
-    char qual [256];
+    char *ppos = strchr (inname, '.');  // last period
+    char *spos = strchr (inname, '/');  // last slash
+    char *qual = StrMem (256);
     if (ppos != NULL  && ((spos != NULL && (ppos - spos) > 0) || (spos == NULL)))  // last period after last slash
     {
       sprintf (qual, "%s", ppos);  // save file qualifier
@@ -13435,10 +13520,10 @@ check_samplerate (char *inname)
     }
     else
       qual[0] = '\0';
-    char strrate[8];
+    char *strrate = StrMem(8);
     sprintf (strrate, "_%d", new_sample_rate);
-    strcat (inname, strrate);
-    strcat (inname, qual);
+    StrCat (inname, strrate, 256);
+    StrCat (inname, qual, 256);
     /* Delete the output file length to zero if already exists. */
     remove (inname) ;
     sfinfo.samplerate = new_sample_rate ;
@@ -13456,6 +13541,8 @@ check_samplerate (char *inname)
     }
     sf_close (infile) ;
     sf_close (outfile) ;
+    free (qual);
+    free (strrate);
     return (long) count ;
   }
   else  // no change in rate
