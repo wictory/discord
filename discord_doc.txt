@@ -117,7 +117,8 @@
   may be fixed periodic or occur at randomly generated times between
   selected upper and lower limits.  Decay or enhance for the tone can
   also be set.  Bells can interrupt each other before they are
-  finished playing.  No slide is available for bell.
+  finished playing.  Bell voices are allowed to slide into the next voice 
+  on min and max amplitude.
 
   noise
 
@@ -126,25 +127,34 @@
   generated times between selected upper and lower limits.  Decay or
   enhance for the tone can also be set.  Noise tones don't interrupt
   each other before they are finished playing.  No slide is available
-  for noise.
+  for noise.  Noise voices are allowed to slide into the next voice on
+  min and max amplitude.
+
 
   stoch
 
   Play a user supplied sound file at either fixed intervals or random
   intervals within specified times.  Pan and amplitude can vary for
-  each play, or remain fixed depending on options specified.
+  each play, or remain fixed depending on options specified.  Stoch
+  voices are allowed to slide into the next voice on min and max
+  amplitude.
+
 
   sample
 
   Play a randomly selected fixed time slices of a user supplied sound
   file continuously.  Pan and amplitude can vary with each sample or
-  remain fixed, depending on the options specified.
+  remain fixed, depending on the options specified.  Sample voices are
+  allowed to slide into the next voice on min and max amplitude.
+
 
   repeat
 
   Play a user supplied sound file continuously.  Pan and amplitude can
   vary with each repeat or remain fixed, depending on the options
-  specified.
+  specified.  Repeat voices are allowed to slide into the next voice
+  on min and max amplitude.
+
 
   once
 
@@ -743,12 +753,12 @@
   between lowest split and highest split.
 
   Example
-      frequency        begin split   high split  max time        decay
-        |                  |              |         |                |
-  bell'900.0'0.153'1.063'-1.0'-1.0'.050'.950'1.300'3.500'1.800'4.800'5
-    | |     |  |     |          |   |          |         |     |
-  name|     |min amp |          | low split    |    min next  max next 
-      separators   max amp   end split     min time             
+      frequency        begin split   high split  max time     decay
+        |                  |              |         |            |
+  bell'900.0'0.153'1.063'-1.0'-1.0'.050'.950'1.300'3.500'1.8'4.8'5'''>
+    | |     |  |     |          |   |          |         |     |     |
+  name|     |min amp |          | low split    |  min next  max next |
+      separators   max amp   end split     min time              slide          
 
   Fields for noise are name, minimum start frequency, maximum start
   frequency, minimum start amplitude, maximum start amplitude, beginning
@@ -774,7 +784,7 @@
   next play are relative to the end of the last play. i.e. unlike bell, noise
   will never interrupt itself.  The next voice in a slot will never start
   playing until after the current voice has finished.  If there is no repeat
-  on the end, 1 is the default.  To reduce crackle there is a 25 frame fade in
+  on the end, 1 is the default.  To reduce crackle there is a 10ms fade in
   and fade out on the noise voice.
 
   Example - line split for expository reasons, has to be single in script
@@ -786,10 +796,10 @@
 
   max allowed split  max time to play  max time to next play
       |                  |                  |
-  ''.950''''2.3000''''5.7000''''.10000''''.20000''''2''''4''''5
-              |                    |                |    |    |
-    min time to play  min time to next play  min decay   | repeats
-                                                   max decay   
+  ''.950''''2.3000''''5.7000''''.10000''''.20000''''2''''4''''5''''>
+              |                    |                |    |    |    |
+    min time to play  min time to next play  min decay   | repeats |
+                                                   max decay   slide
 
   Fields for stoch are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
@@ -797,13 +807,13 @@
   next play.  If beginning split or ending split are -1, they are set
   randomly between lowest split and highest split.
   Example
-                                                max time to next play
+                                               max time to next play
       file to play  max amplitude  end split  max allowed split   |
                |              |           |             |         |
-  stoch'''trig.aiff'''2.20'''3.303'''-1'''-1'''.050'''.950'''.5'''3.9
-   |                  |              |           |            |
-  name     min amplitude    begin split  min allowed split    |
-                                                min time to next play
+  stoch'''trig.aiff'''2.20'''3.303'''-1'''-1'''.050'''.950'''.5''3.9'>
+   |                  |              |           |            |      |
+  name     min amplitude    begin split  min allowed split    |  slide
+                                              min time to next play
 
   Fields for sample are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
@@ -814,9 +824,9 @@
   Example
       file to play  max amplitude  end split  max allowed split
                |              |           |             |
-  sample'''trig.aiff'''1.20'''2.30'''-1'''-1'''.050'''.950'''1.0
-   |                  |              |           |            |
-  name     min amplitude    begin split  min allowed split    |
+  sample'''trig.aiff'''1.20'''2.30'''-1'''-1'''.050'''.950'''1.0'''>
+   |                  |              |           |            |    |
+  name     min amplitude    begin split  min allowed split    |slide
                                                 length of sample
 
   Fields for repeat are name, file name, minimum amplitude, maximum
@@ -827,9 +837,9 @@
   Example
       file to play  max amplitude  end split  max allowed split
                |              |           |             |
-  repeat'''trig.aiff'''1.20'''3.30'''-1'''-1'''.050'''.950
-   |                  |              |           |
-  name     min amplitude    begin split  min allowed split
+  repeat'''trig.aiff'''1.20'''3.30'''-1'''-1'''.050'''.950''''''>
+   |                  |              |           |              |
+  name     min amplitude    begin split  min allowed split   slide
 
   Fields for once are name, file name, minimum amplitude, maximum
   amplitude, beginning split, ending split, lowest split allowed,
