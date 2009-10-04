@@ -3037,37 +3037,41 @@ setup_noise (char *token, void **work)
     error ("Tone behavior upper limit for noise cannot be less than lower limit, greater than 21.\n%s\n%s", subtoken, original);
   noise1->behave_high = (int) behave_high;         // convert to int
 
-    /* possible multiplier for a noise voice */
+    /* possible multiplier for a noise voice, but might be slide if no multiplier */
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   double multiple = 0.0;
-  if (subtoken)  // not null
-  {
-    errno = 0;
-    multiple = strtod (subtoken, &endptr);
-    if ((multiple == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Multiplier for noise had an error.\n%s\n%s", subtoken, original);
-    else if (multiple < 1.0)  // no errors, but less than 1
-      error ("Multiplier for noise cannot be less than 1.\n%s\n%s", subtoken, original);
-  }
-  else
-    multiple = 1.0;
-
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-    noise1->slide = 1;
-
-  /* create the time to first play of noise */
-  if (noise1->repeat_min == noise1->repeat_max)
-    // fixed period, random start
-    noise1->next_play = (intmax_t) (drand48() * noise1->repeat_min);
+  {
+    multiple = 1.0;  // no multiplier, set it to 1
+    noise1->slide = 1;  // there is a slide
+  }
   else
   {
-      // frames to next play random piece of possible interval
-    intmax_t delta = (intmax_t) ( (drand48 ()) * (noise1->repeat_max - noise1->repeat_min));
-    noise1->next_play = delta;      // frames to next play
+    if (subtoken)  // not NULL
+    {
+      errno = 0;
+      multiple = strtod (subtoken, &endptr);
+      if ((multiple == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Multiplier for noise had an error.\n%s\n%s", subtoken, original);
+      else if (multiple < 1.0)  // no errors, but less than 1
+        error ("Multiplier for noise cannot be less than 1.\n%s\n%s", subtoken, original);
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+        noise1->slide = 1;
+      /* else next token is NULL, no slide, already set above for slide  */
+    }
+    else  // next token is NULL
+      multiple = 1.0;  // no multiplier
+      /* no slide, already set above for slide  */
   }
+
+  /* create the time to first play of noise.  Make it short so that it immediately creates a
+   * more random distribution, especially important for multiples which will all get the 
+   * same value to start.  Has to be longer than fade in and fade out.  Make it 50 ms */
+  noise1->next_play = (intmax_t) (out_rate / 200);      // frames to next play
   noise1->sofar = noise1->next_play;  // immediate start
   return abs ((int) multiple);         // convert to int
 }
