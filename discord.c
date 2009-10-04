@@ -24,17 +24,17 @@
 //
 // SBaGen - Sequenced Binaural Beat Generator
 //
-// (c) 1999-2005 Jim Peters <jim@uazu.net>.  All Rights Reserved.
+// (c) 1999-2009 Jim Peters <jim@uazu.net>.  All Rights Reserved.
 // For latest version see http://sbagen.sf.net/ or
 // http://uazu.net/sbagen/.  Released under the GNU GPL version 2.
 // Use at your own risk.
 /*
 ** libsndfile
-** Copyright (C) 1999-2005 Erik de Castro Lopo <erikd@mega-nerd.com>
+** Copyright (C) 1999-2009 Erik de Castro Lopo <erikd@mega-nerd.com>
 */
 /*
 ** libsamplerate
-** Copyright (C) 2002-2004 Erik de Castro Lopo <erikd@mega-nerd.com>
+** Copyright (C) 2002-2009 Erik de Castro Lopo <erikd@mega-nerd.com>
 **
 */
 
@@ -1162,6 +1162,7 @@ append_options (saved_option **SO, char *config_options)
   char *str1, *str2;
   char *saveptr1, *saveptr2;
   int tlen;
+  int dash_count;
   saved_option *soh = NULL, *sow = NULL;
   static struct option long_options[] =
     {
@@ -1200,7 +1201,7 @@ append_options (saved_option **SO, char *config_options)
     }
     else
     {
-      if (sow == NULL)  // first time through, there are options
+      if (sow == NULL)  // first time through, and there are already options saved
       {
         sow = *SO;  // start at root of linked list of options
         while (sow->next != NULL)
@@ -1210,10 +1211,14 @@ append_options (saved_option **SO, char *config_options)
       sow->next = soh;
     }
     sow = soh;
-    while (*token == '-')       // allows long options with single leading -
+    dash_count = 0;
+    while (*token == '-')
+    {
       token++;
+      dash_count++;  // count the number of - in front of the option
+    }
     tlen = strlen (token);
-    if (tlen > 1) // long option, short option with arg, or multiple short options
+    if (dash_count == 2 && tlen > 1)  // long option
     {
       str2 = token;
       subtoken = strtok_r (str2, "=", &saveptr2);       // if arg assigned, remove
@@ -1222,92 +1227,39 @@ append_options (saved_option **SO, char *config_options)
 
       while (long_options[long_idx].name != NULL)       // look for long option
       {
-        if (strcasecmp (long_options[long_idx].name, subtoken) == 0)
+        if (strstr (long_options[long_idx].name, subtoken) != NULL)  // option str found in option list
         {
-          sow->option = long_options[long_idx].val;    // assign short option
-          if (long_options[long_idx].has_arg == 1)      // has argument
+          if (long_options[long_idx].flag == NULL)  // prepare for long options only, flag == NULL => short option
           {
-            subtoken = strtok_r (str2, "=", &saveptr2);
-            if (subtoken != NULL)       // = form of arg assignment
-              sow->option_string = StrDup (subtoken);
-            else                // get next token after spaces or tabs
+            sow->option = long_options[long_idx].val;    // assign short option
+            if (long_options[long_idx].has_arg == 1)      // has argument
             {
-              token = strtok_r (str1, " \t\n", &saveptr1);
-              sow->option_string = StrDup (token);
+              subtoken = strtok_r (str2, "=", &saveptr2);
+              if (subtoken != NULL)       // = form of arg assignment
+                sow->option_string = StrDup (subtoken);
+              else                // get next token after spaces or tabs
+              {
+                token = strtok_r (str1, " \t\n", &saveptr1);
+                if (token != NULL && token[0] != '-')  // exists and isn't another option string
+                  sow->option_string = StrDup (token);
+                else
+                  error ("Option %s requires an argument, not provided.", long_options[long_idx].name);
+              }
             }
+            else                  // no argument
+              sow->option_string = NULL;
+            break;
           }
-          else                  // no argument
-            sow->option_string = NULL;
-          break;
         }
         long_idx++;
       }
       if (long_options[long_idx].name == NULL) // not a long option, hit end of list
       {
-        if ( (found = strchr (ostr, (int) token[0])) != NULL)           // short option?
-        {
-          if (found[1] != ':')          // has no argument, must be multiple short options
-          {
-            sow->option = token[0];
-            sow->option_string = NULL;
-            token++;            // next option
-            tlen--;             // shorten token string
-            while (tlen > 0)    // rest of short options
-            {
-              // legitimate short option?
-              if ( (found = strchr (ostr, (int) token[0])) != NULL)
-              {
-                // just found another option above, can't be first
-                soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
-                soh->prev = sow;
-                soh->next = NULL;
-                sow->next = soh;
-                sow = soh;
-                sow->option = token[0];
-                if (found[1] != ':')    // has no argument
-                {
-                  sow->option_string = NULL;
-                  token++;      // next option
-                  tlen--;       // shorten token string
-                }
-                else if (tlen > 1)      // should have argument
-                {
-                  sow->option_string = StrDup (token + 1);      // rest of string is argument
-                  tlen = 0;
-                }
-                else            // next token is argument, tlen == 1
-                {
-                  token = strtok_r (str1, " \t\n", &saveptr1);          // get next token after spaces or tabs
-                  if (token != NULL && token[0] != '-')
-                  {
-                    sow->option_string = StrDup (token);        // token is argument
-                    tlen = 0;
-                  }
-                  else          // missing argument
-                  {
-                    free (sow);
-                    error ("Option %c requires an argument, not provided.\n", found[0]);
-                  }
-                }
-              }
-              else
-              {
-                free (sow);
-                error("Option %c is not legitimate.\n", token[0]);
-              }
-            }
-          }
-          else                // should have argument
-            sow->option_string = StrDup (token + 1);    // rest of string is argument
-        }
-        else
-        {
-          free (sow);
-          error("Option %c is not legitimate.\n", token[0]);
-        }
+        free (sow);
+        error("Option %s is not a legitimate long option.", token);
       }
     }
-    else if (tlen == 1)       // single character, has to be short option
+    else if (dash_count == 1 && tlen == 1)  // single character, has to be short option
     {
       if ( (found = strchr (ostr, (int) token[0])) != NULL)
       {
@@ -1325,16 +1277,82 @@ append_options (saved_option **SO, char *config_options)
           else
           {
             free (sow);
-            error ("Option %c requires an argument, not provided.\n", sow->option);
+            error ("Option %c requires an argument, not provided.", sow->option);
           }
         }
       }
       else
       {
         free (sow);
-        error("Option %c is not legitimate.\n", token[0]);
+        error("Option %c is not legitimate.", token[0]);
       }
     }
+    else if (dash_count == 1 && tlen > 1) // short option with arg, or multiple short options
+    {
+      if ( (found = strchr (ostr, (int) token[0])) != NULL)           // short option?
+      {
+        if (found[1] != ':')          // has no argument, must be multiple short options
+        {
+          sow->option = token[0];
+          sow->option_string = NULL;
+          token++;            // next option
+          tlen--;             // shorten token string
+          while (tlen > 0)    // rest of short options
+          {
+            // legitimate short option?
+            if ( (found = strchr (ostr, (int) token[0])) != NULL)
+            {
+              // just found another option above, can't be first
+              soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
+              soh->prev = sow;
+              soh->next = NULL;
+              sow->next = soh;
+              sow = soh;
+              sow->option = token[0];
+              if (found[1] != ':')    // has no argument
+              {
+                sow->option_string = NULL;
+                token++;      // next option
+                tlen--;       // shorten token string
+              }
+              else if (tlen > 1)      // should have argument
+              {
+                sow->option_string = StrDup (token + 1);      // rest of string is argument
+                tlen = 0;
+              }
+              else            // next token is argument, tlen == 1
+              {
+                token = strtok_r (str1, " \t\n", &saveptr1);          // get next token after spaces or tabs
+                if (token != NULL && token[0] != '-')
+                {
+                  sow->option_string = StrDup (token);        // token is argument
+                  tlen = 0;
+                }
+                else          // missing argument
+                {
+                  free (sow);
+                  error ("Option %c requires an argument, not provided.", found[0]);
+                }
+              }
+            }
+            else  // not valid
+            {
+              free (sow);
+              error("Option %c is not legitimate.", token[0]);
+            }
+          }
+        }
+        else                // should have argument
+          sow->option_string = StrDup (token + 1);    // rest of string is argument
+      }
+      else
+      {
+        free (sow);
+        error("Option %c is not legitimate.", token[0]);
+      }
+    }
+    else  // all other combinations are illegitimate
+      error("Option %s is not a legitimate option.", token);
     token = strtok_r (str1, " \t\n", &saveptr1);      // get next token after spaces or tabs
   }
   return 0;                   // successful exit
@@ -1464,10 +1482,10 @@ parse_discordrc ()
       append_options (&CONFIG_OPTIONS, config_options);
       fclose (infile);
       free (config_file);
-      return 1;
+      return 0;
     }
     free (config_file);
-    return 0;
+    return 1;
   }
   return 0;
 }
@@ -1778,7 +1796,7 @@ set_options (saved_option *SO)
         {
           if (opt_s_arg <= -100.)
             error ("Can't shift the carrier or beat to be negative, --shift/-s must be greater than -100.");
-          opt_s_shift = AMP_AD (opt_s_arg);  // convert to positive decimal and save in variable
+          opt_s_shift = AMP_AD (opt_s_arg);  // convert to decimal and save in variable
         }
         else                  // there was an error
           error ("--shift/-s expects numeric percentage %s", sow->option_string);
@@ -1983,7 +2001,8 @@ help ()
           "Control-C to quit while running" NL NL
           "Options:  -h --help         Display this help-text" NL
           "          -a --audio_device Alsa plug device to use.  When not specified, uses default as plughw device"NL
-          "          -b --bit_accuracy Number of bits to use to represent each sound: integer or float"NL
+          "                              The second sound device would be plughw:1,0, use aplay -l to find"NL
+          "          -b --bit_accuracy Number of bits to use to represent each sound: integer or float.  Default 16i"NL
           "          -c --compensate   Compensate for human hearing perceptual differences: see docs"NL
           "          -d --display      Display the full interpreted sequence instead of playing it"NL
           "          -e --every        Show a status line every x seconds while playing"NL
@@ -1991,14 +2010,15 @@ help ()
           "                              rather than wait for real time to pass"NL
           "          -k --keep         Keep the resampled input sound files"NL
           "          -l --listfile     Read the argument as a file containing script file names to parse"NL
-          "          -m --modify       Modify the carrier and beat in script file randomly in percentage band"NL
+          "          -m --modify       Modify the carrier and beat in script file randomly in a percentage band"NL
           "          -o --outfile      Output data to the given file instead of playing"NL
           "          -q --quiet        Don't display running status"NL
           "          -r --rate         Select the output rate (default is 44100 Hz)"NL
           "          -s --shift        Shift all carriers and beats in script file specific percentage"NL
           "          -t --thread       Use thread to play sound instead of blocking function call"NL
           "          -v --verbose      Use verbose form for output while playing"NL
-          "          -w --write        Write an output file instead of playing through sound card"NL);
+          "          -w --write        Write an output file instead of playing through sound card"NL
+          "          -y --vbr_quality  Set the variable bit rate quality vorbis uses for ogg file, 0.0 to 1.0"NL);
   exit (0);
 }
 
