@@ -8,12 +8,22 @@ complexity is that it allows the exploration of scripts that are
 different than any yet used.  And that in turn means there are 
 probably paths I haven't traversed which might have undiscovered bugs.
 
-After install, I recommend that you create a directory in your home
-directory and move all of your discord related files there.  This will
-prevent problems with permissions and will shorten the path names for
-sound samples in your scripts.  It is a good idea to use absolute
-paths when referring to any sound files as then it won't matter where
-you run them from.
+After install (see the INSTALL file), I recommend that you create a
+directory in your home directory and move all of your discord related
+files there.  This will prevent problems with permissions and will
+shorten the path names for sound samples in your scripts.  It is a
+good idea to use absolute paths when referring to any sound files as
+then it won't matter where you run them from.
+
+Changes in discord-3.2.1.  This was a bug fix release.  The package
+was unpacking in the current directory instead of creating a
+directory.  Also fix the discord_doc.html slide indicator for the non
+beat voice examples.
+
+For changes in discord-3.2.0, see the ChangeLog file.  The executive
+summary is that this was a tuning and maintenance release, the version
+bumped up to 2.0 because the changes touched memory allocation.  The
+INSTALL file talks about the details of how to actually build discord.
 
 discord-3.1.2 fixes a bug in the frame synchronization logic that
 allowed a segmentation fault to occur when the frame was not an even
