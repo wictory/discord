@@ -686,26 +686,27 @@ struct spin
   void *prev;
   void *next;
   int type;                 // 23
-  short *sound;             // point to buffer of sound, contains whole file, 16 bit sound
-  intmax_t frames;                 // total frames length of sound, 
-  int channels;                 // number of channels in file, 1 or 2.
-  double scale;            // Max amplitude in sound, between 0 and 32767, used to scale output
-  double amp;             // Amplitude level 0-100%, stored as decimal i.e. .02
-  double spin_time;            // How long for one spin, in seconds.
-  double phase;                   // Current phase of the sound, -180 to +180, relative to center.
-  double phase_adj;     // Amount to adjust the phase, used while creating the spin beat.
-  double split;     // left fraction for sound, .5 means evenly split L and R
-  double split_adj; // amount to adjust the split to help create the spin effect, change/frame
-  intmax_t off1, play;   // Position in file for sample, currently playing
-  double amp_slide_adj;  // adjustments to slide amp to next voice in sequence
+  short *sound;             // point to buffer of sound, contains whole file, 16 bit sound, always mono
+  intmax_t frames;          // total frames length of sound, 
+  short *sound_filtered;    // point to buffer of sound, contains whole file, 16 bit sound, filtered for spin effect
+  int channels;             // number of channels in file, 1 or 2.
+  double scale;             // Max amplitude in sound, between 0 and 32767, used to scale output
+  double scale_filtered;    // Max amplitude in sound, between 0 and 32767, used to scale output
+  double amp;               // Amplitude level 0-100%, stored as decimal i.e. .02
+  double spin_time;         // How long for one spin, in seconds.
+  double phase;             // Current phase of the sound, -180 to +180, relative to center.
+  double phase_adj;         // Amount to adjust the phase, used while creating the spin beat.
+  double split;             // left fraction for sound, .5 means evenly split L and R
+  double split_adj;         // amount to adjust the split to help create the spin effect, change/frame
+  intmax_t off1, off2, play; // Position in file for sample, currently playing
+  double amp_slide_adj;     // adjustments to slide amp to next voice in sequence
   double spin_time_slide_adj;  // adjustments to slide spin_time to next voice in sequence
-  int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
-  int slide;     // 1 if this sequence slides into the next spin
+  int slide;  // 1 if this sequence slides into the next spin
     /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
         the sound being spun is the same.  Use the buffer pointer to determine that.
     */
-  intmax_t *last_off1, *last_play;   
+  intmax_t *last_off1, *last_off2, *last_play;   
   double *last_amp;
   double *last_phase, *last_phase_adj;
   double *last_split, *last_split_adj;
@@ -766,7 +767,9 @@ void setup_silence (void **work);
 void setup_spin (char *token, void **work);
 void finish_beat_voice_setup ();
 void finish_non_beat_voice_setup ();
-snd_buffer * process_sound_file (char *filename);
+snd_buffer *process_sound_file (char *filename);
+void convert_to_mono (snd_buffer *sb1);
+snd_buffer *create_filtered_sample (snd_buffer *sb1);
 void play_loop ();
 void save_loop ();
 int generate_frames (struct sndstream *snd1, double *out_buffer, int at_offset, int frame_count);
@@ -4783,7 +4786,7 @@ setup_spin (char *token, void **work)
   char *saveptr2;
   char *filename;
   spin *spin1 = NULL;
-  snd_buffer *sb1 = NULL;
+  snd_buffer *sb1 = NULL, *sb2 = NULL;
 
   filename = StrMem (256);
   spin1 = (spin *) Alloc (sizeof (spin) * 1);
@@ -4808,8 +4811,9 @@ setup_spin (char *token, void **work)
   /* subtoken is file name for spin sound */
   strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
-  spin1->channels = sb1->channels;
-  spin1->mono = sb1->mono;
+  if (sb1->channels != 1)  // not mono
+    convert_to_mono (sb1);
+  spin1->channels = sb1->channels;  // mono at this point
   spin1->frames = sb1->frames;
   spin1->sound = sb1->sound;
   spin1->scale = sb1->scale;
@@ -4839,6 +4843,10 @@ setup_spin (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
   if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
     spin1->slide = 1;
+  
+  sb2 = create_filtered_sample (sb1);  // create the filtered sample
+  spin1->sound_filtered = sb2->sound;
+  spin1->scale_filtered = sb2->scale;
 
   /* set play to initialize in generate frames */
   spin1->play = 0LL;  // how much has played so far
@@ -4848,6 +4856,126 @@ setup_spin (char *token, void **work)
   spin1->split_adj = 0.2 / ((double) out_rate * spin1->spin_time);  // max split is not 1
   free (filename);
 }
+
+/* convert a stereo sample file into a mono file */
+
+void
+convert_to_mono (snd_buffer *sb1)
+{
+  short holder, peak=0;
+  short *tmpbuf;
+
+  /* Get a new buffer for the mono sound */
+  tmpbuf = (short *) Alloc ((sizeof (short)) * sb1->frames);
+  /* If actual stereo sound, there is a decision; merge the channels, or discard one of them?  
+   * I think I'll merge for now.  See how that goes.  If the format is stereo
+   * but there is only one channel of sound, use the channel of sound, don't merge.
+   * And find the maximum amplitude in the sound file, always short int once read */
+  intmax_t count_of_samples, offset_into_buffer;
+  
+  count_of_samples = sb1->frames * sb1->channels;
+  offset_into_buffer = 0;
+  while (offset_into_buffer < count_of_samples) 
+  { 
+    holder = abs (*(sb1->sound + offset_into_buffer)) ;  // check for largest value, save if it is
+    peak  = holder > peak ? holder : peak ;
+    holder = abs (*(sb1->sound + offset_into_buffer + 1)) ;
+    peak  = holder > peak ? holder : peak ;
+    if (sb1->mono == 0)
+      *(tmpbuf + (offset_into_buffer/2)) = *(sb1->sound + offset_into_buffer);  // use left channel 
+    /*
+      *(tmpbuf + (offset_into_buffer/2)) = ((*(sb1->sound + offset_into_buffer)/2) 
+                                          + (*(sb1->sound + offset_into_buffer + 1)/2));  // stereo, average
+    */
+    else if (sb1->mono == 1)
+      *(tmpbuf + (offset_into_buffer/2)) = *(sb1->sound + offset_into_buffer);  // left channel has sound
+    else if (sb1->mono == 2)
+      *(tmpbuf + (offset_into_buffer/2)) = *(sb1->sound + offset_into_buffer + 1);  // right channel has sound
+    offset_into_buffer += sb1->channels;
+  } 
+  free (sb1->sound);  // let the old stereo buffer go
+  sb1->sound = tmpbuf;  // set it to the new mono buffer
+  // scale factor is 1 divided by maximum amplitude in file
+  sb1->scale = 1.0 / ((double) peak + 10.0); // 10 ensures no clipping
+  sb1->channels = 1;  // set mono status
+  sb1->mono = 1;
+}
+
+/*  Create a filtered version of the spin input file in order to provide the spectral
+ *  cues necessary for convincing spin effect */
+
+snd_buffer * 
+create_filtered_sample (snd_buffer *sb1)
+{
+  snd_buffer *sb2 = NULL;
+  char *filenamef = NULL;
+
+  filenamef = StrMem (256);
+  size_t nlen = strlen (sb1->filename);
+  strncpy (filenamef, sb1->filename, nlen);
+  /* check if the file has been filtered before */
+  StrCat (filenamef, ".f", 256);
+  if (Sound_Files != NULL)
+  {
+    sb2 = Sound_Files;
+    do
+    {
+      if (strcmp (sb2->filename, filenamef) == 0)
+        return sb2;  // file already processed
+      else
+        sb2 = sb2->next;
+    }while (sb2 != NULL);
+  }
+  /* file not already processed, create a new node for it */
+  sb2 = (snd_buffer *) Alloc (sizeof (snd_buffer) * 1);
+  sb2->filename = filenamef; // save name with modification
+  sb2->channels = sb1->channels;
+  sb2->mono = sb1->mono;
+  sb2->frames = sb1->frames;
+  sb2->scale = sb1->scale;
+  sb2->sound = (short *) Alloc ((sizeof (short)) * sb2->frames * sb2->channels);
+  /* insert at front of list */
+  sb2->next = Sound_Files;
+  sb2->prev = NULL;
+  Sound_Files->prev = sb2;
+  Sound_Files = sb2;
+
+  /* This is the point to apply any true filtering to the two buffers that will be
+   * used to create the spin effect.
+   * */
+  /* First create the filtered sound buffer with a simple average of samples in sb1 to do some
+   * high frequency smoothing.
+   */
+  
+  intmax_t count_of_samples, offset_into_buffer, negative_correction;
+  
+  int samples_to_avg = (out_rate / 10000);  // try to smooth in order to damp above ~10000 hz, introduces light crackle
+  if (samples_to_avg % 2 == 0)
+    samples_to_avg += 1;  // always an odd number of samples so avg below works fine for zero point
+  count_of_samples = sb1->frames * sb1->channels;
+  offset_into_buffer = 0;
+  int holder, peak=0;
+  int ii, sum, avg;
+  while (offset_into_buffer < count_of_samples) 
+  {  // always mono sound in sb1, required for spin effects
+    sum = 0;
+    for (ii=-samples_to_avg/2; ii <= samples_to_avg/2; ii++)
+    {
+      negative_correction = count_of_samples + ii;  // if ii is negative, > offset, modulo operation fails
+      sum += *(sb1->sound + ((offset_into_buffer + negative_correction) % count_of_samples));  // wrap when necessary
+    }
+    avg = sum / samples_to_avg;
+    *(sb2->sound + offset_into_buffer) = (short) avg;
+    holder = abs ((short) avg) ;  // check for largest value, save if it is
+    peak  = holder > peak ? holder : peak ;
+    offset_into_buffer++;
+  }
+  /* scale factor is 1 divided by maximum amplitude in file  */
+  sb2->scale = 1.0 / ((double) peak + 10.0); // 10 ensures no clipping
+
+  return sb2;
+}
+ 
 
 /*  Initialize all values possible for each beat voice */
 
@@ -8796,6 +8924,7 @@ finish_non_beat_voice_setup ()
                 /* Set the pointers to the previous voice's values here so it can be used while running
                    to continue the play with no discontinuity */
                   spin2->last_off1 = &(spin1->off1);
+                  spin2->last_off2 = &(spin1->off2);
                   spin2->last_play = &(spin1->play);
                   spin2->last_amp = &(spin1->amp);
                   spin2->last_phase = &(spin1->phase);
@@ -12040,6 +12169,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             /* check each pointer to the previous voice to see if it is valid */
             if (spin1->last_off1 != NULL)
               spin1->off1 = *spin1->last_off1;  // to start from buffer position of last voice
+            if (spin1->last_off2 != NULL)
+              spin1->off2 = *spin1->last_off2;  // to start from filtered buffer position of last voice
             if (spin1->last_play != NULL)
               spin1->play = *spin1->last_play;  // amount played already is amount from last voice
             if (spin1->last_amp != NULL)
@@ -12058,7 +12189,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (spin1->play <= 0)
             {                     // time to play another spin
               spin1->off1 = 0;
-              spin1->play = spin1->frames; // fixed play time
+              spin1->off2 = 0;
+              spin1->play = spin1->frames; // fixed play time, both buffers same size
               /* all other variables just continue on from where they are */
             }
             if (spin1->play > 0L)  // spin is active
@@ -12084,43 +12216,55 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   right_offset = spin1->frames - (phase_adjust - right_offset);
               }
               /* now that phase has been taken care of, adjust the amp for front and back */
-              if (spin1->phase > 90. && spin1->phase < 270.) // back
-                amp -= ((.10*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
-              else
-                amp += ((.20*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
-              if (spin1->channels == 2)  // stereo
+              if (spin1->phase > 110. && spin1->phase < 250.) // back
+                amp -= ((.25*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
+              else  // front
+                amp += ((.10*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
+              double fraction = 0.0;
+              /* always mono for spin, converted if not, single channel split to be two  */
+              if (spin1->phase <= 110.) // front right quadrant
               {
-                if (spin1->mono == 0)  // stereo
-                {
-                  out_buffer[ii] += (spin1->split * amp
-                          * (((double) *(spin1->sound + left_offset)) * spin1->scale));
-                  out_buffer[ii+1] += ((1.0 - spin1->split) * amp
-                          * (double) ((*(spin1->sound + right_offset + 1)) * spin1->scale));
-                }
-                else if (spin1->mono == 1)  // mono in stereo form, left has sound, use left as right channel
-                {
-                  out_buffer[ii] += (spin1->split * amp
-                          * (((double) *(spin1->sound + left_offset)) * spin1->scale));
-                  out_buffer[ii+1] += ((1.0 - spin1->split) * amp
-                          * (((double) *(spin1->sound + right_offset)) * spin1->scale));
-                }
-                else if (spin1->mono == 2)  // mono in stereo form, right has sound, use right as left channel
-                {
-                  out_buffer[ii] += (spin1->split * amp
-                          * (((double) *(spin1->sound + left_offset + 1)) * spin1->scale));
-                  out_buffer[ii+1] += ((1.0 - spin1->split) * amp
-                          * (((double) *(spin1->sound + right_offset + 1)) * spin1->scale));
-                }
-              }
-              else if (spin1->channels == 1)  // mono, single channel split to be two
-              {
-                out_buffer[ii] += (spin1->split * amp
-                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));
+                fraction = 1.0 - (spin1->phase / 110.);
+                out_buffer[ii] += (spin1->split * amp * fraction
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
                 out_buffer[ii+1] += ((1.0 - spin1->split) * amp
-                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));
+                        * (double) ((*(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (spin1->split * amp * (1. - fraction)
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale));  // back l
+              }
+              else if (spin1->phase > 110. && spin1->phase <= 180.) // back right quadrant
+              {
+                fraction = 1.0 - ((spin1->phase - 110.) / 70.);
+                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * fraction
+                        * (double) ((*(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (spin1->split * amp
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale));  // back l
+                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * (1. - fraction)
+                        * (double) ((*(spin1->sound_filtered + right_offset)) * spin1->scale));  // back r
+              }
+              else if (spin1->phase > 180. && spin1->phase <= 250.) // back left quadrant
+              {
+                fraction = 1.0 - ((spin1->phase - 180.) / 70.);
+                out_buffer[ii] += (spin1->split * amp * (1. - fraction)
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii] += (spin1->split * amp * fraction
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale));  // back l
+                out_buffer[ii+1] += ((1.0 - spin1->split) * amp
+                        * (double) ((*(spin1->sound_filtered + right_offset)) * spin1->scale));  // back r
+              }
+              else  // front left quadrant
+              {
+                fraction = 1.0 - ((spin1->phase - 250.) / 110.);
+                out_buffer[ii] += (spin1->split * amp
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * (1. - fraction)
+                        * (double) ((*(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * fraction
+                        * (double) ((*(spin1->sound_filtered + right_offset)) * spin1->scale));  // back r
               }
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               spin1->off1 += (spin1->channels * fast_mult); // adjust number of shorts played.
+              spin1->off2 += (spin1->channels * fast_mult); // adjust number of shorts played.
               spin1->phase += (spin1->phase_adj * fast_mult);
               if (spin1->phase > 360.)
                 spin1->phase -= 360.;
@@ -12593,10 +12737,8 @@ fprint_voice_all (FILE *fp, void *this)
                         spin1->split, spin1->split_adj);
         char_count += fprintf (fp, " %.3f %.3f", 
                         spin1->amp_slide_adj, spin1->spin_time_slide_adj);
-        char_count += fprintf (fp, " %jd %jd",
+        char_count += fprintf (fp, " %jd %jd\n",
                         spin1->off1, spin1->play);
-        char_count += fprintf (fp, " %d\n",
-                        spin1->mono);
       }
       break;
     default:  // not known, do nothing
@@ -12875,7 +13017,8 @@ StrMem (size_t slen)
 
 /* concatenates strings making sure that overflow doesn't occur. 
  * This should only be used with memory allocated strings,
- * will cause bugs if used with stack allocated strings.  */
+ * will cause bugs if used with stack allocated strings.  
+ * All strings in discord should be memory allocated now.  */
 char *
 StrCat (char *target, char *append, size_t maxlen)
 {
