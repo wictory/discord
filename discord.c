@@ -120,7 +120,8 @@ int opt_y;                      // user has requested a vbr quality setting
 double opt_y_arg = -1.0;        // for OGG, output VBR quality to write - 0.0 to 1.0, default it to -1.0, no set
 double vbr_quality = 0.5;       // for OGG, output VBR quality to write - 0.0 to 1.0, default it to 0.5
 const char *separators = "=' |,;";  // separators for time sequences, mix and match, multiples ok
-double *sin_table;
+double *sin_table;              // holds external pointer to sin table, syntactic sugar for use in beat variation
+double *wavetable [5];          // holds the pointers to the various tables required for different wave styles
 int status_t_retval = 0;  // return integer for status_t thread
 int alsa_write_retval = 0;  // return integer for alsa_write thread
 int msec_fade_count;      // how many frames to make a millisecond
@@ -243,6 +244,8 @@ struct binaural
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for binaural tones, offset + increment into sine
   int inc2, off2;               // table for each channel
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int amp_inc1, amp_off1;       // sin table ofset and increment for left amp
   int amp_inc2, amp_off2;       // sin table ofset and increment for right amp
   double carr_adj, beat_adj, amp_adj;   // continuous adjustment if desired
@@ -286,8 +289,9 @@ struct bell
      4 increase linearly to 1.10,
      5 decrease exponentially to 0 */
   int behave;
-  int inc1, off1;               // for bell tones, offset + increment into sine
-                                // table for each channel
+  int inc1, off1;               // for bell tones, offset + increment into wave table
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   intmax_t next_play, sofar;             // Frames till next bell, how many so far
   intmax_t ring;                    // number of frames to ring the bell
   double amp_adj, split_adj;      // adjust while bell is ringing
@@ -337,6 +341,8 @@ struct noise
   // 15-21 above with 10% carrier rise
   // values the same, then constant
   int inc1, off1;               // for noise tones, offset + increment into sine
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   intmax_t next_play, sofar;             // Samples till next noise, how many so far
   intmax_t play;                    // number of frames to play the noise
   double carrier_adj, amp_adj, split_adj;      // adjust while noise is playing
@@ -511,6 +517,8 @@ struct chronaural
   int slide;     // 1 if this sequence slides into the next (binaurals and chronaurals slide)
   int inc1, off1;               // for chronaural tones, offset + increment into sine table for carrier of left channel
   int inc3, off3;               // for chronaural tones, offset + increment into sine table for carrier of right channel
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int off2;               // offset into sine table for beat
   double inc2;            // increment of offset into sine table for beat
   double carr_adj, beat_adj, amp_adj, phase_adj;   // continuous adjustment if desired
@@ -558,6 +566,8 @@ struct pulse
   int slide;     // nonzero if this sequence slides into the next (binaurals, chronaurals, and phases slide)
   int inc1, off1;               // for pulse tones, offset + increment into sine table for carrier of left channel
   int inc3, off3;               // for pulse tones, offset + increment into sine table for carrier of right channel
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int off2;               // offset into sine table for beat
   double inc2;            // increment of offset into sine table for beat
   double carr_adj, beat_adj, time_adj, amp_adj, phase_adj;   // continuous adjustment if desired
@@ -593,6 +603,8 @@ struct phase
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for phase tones, offset + increment into sin table for each channel
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int shift;                    // cumulative shift for phase adjustment
   int direction;                // direction that phase adjust is moving, +ve towards max phase, -ve towards in phase
   double split_begin, split_end, split_now;      // left fraction for phase, .5 means evenly split L and R
@@ -640,6 +652,8 @@ struct fm
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for fm tones, offset + increment into sin table for each channel
+  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   double shift;                 // cumulative shift for freq adjustment to the carrier, moves between 0 and band
   int direction;                // direction that freq adjust is moving, +ve towards band, -ve towards carrier
   double split_begin, split_end, split_now;      // left fraction for fm, .5 means evenly split L and R
@@ -728,7 +742,7 @@ pthread_mutex_t mtx_play = PTHREAD_MUTEX_INITIALIZER;  // mutex for play thread
 pthread_mutex_t mtx_write = PTHREAD_MUTEX_INITIALIZER;  // mutex for write thread
 
 int main (int argc, char **argv);
-void init_sin_table ();
+void init_wave_tables ();
 void debug (char *fmt, ...);
 void warn (char *fmt, ...);
 void *Alloc (size_t len);
@@ -840,10 +854,10 @@ main (int argc, char **argv)
   set_options (SCRIPT_OPTIONS);  // set the script file options, next priority
   set_options (ARGV_OPTIONS);  // reset the command line options, highest priority
   /* validate device and hardware rate 
-   * before sin table size, frame rate 
+   * before wave table size, frame rate 
    * and any resample are set */
   alsa_validate_device_and_rate ();
-  init_sin_table ();  // now that rate is known, create lookup sin table
+  init_wave_tables ();  // now that rate is known, create lookup tables for carrier waves
   if (opt_l)  // listfile(s) to process
     setup_listfile_scripts ();  // uses global LFS linked list of listfile names
   int offset = argc - filecount;  // first script file name offset in argv
@@ -2025,24 +2039,78 @@ help ()
   exit (0);
 }
 
-/* create the lookup table of sin values, double the sample rate */
+/* create the lookup array of the table of wave values, double the sample rate.
+ * Currently they are 0 for sin, 1 for square, 2 for triangle, 3 for saw, and 4 for reverse saw.
+ * At 192 KHz, these use a total of approx 20 MB. At 44100, approx 5 MB */
 
 void
-init_sin_table ()
+init_wave_tables ()  // now that rate is known, create lookup tables for carrier waves
 {
-  int a;
-  int sin_siz = (2 * out_rate);
-  double delta, radians;
-  double *arr = (double *) Alloc (sin_siz * sizeof (double));
+  /* create the lookup table of sin values, double the sample rate */
 
-  delta = (2 * 3.1415926535897932384626) / sin_siz;
+  int a;
+  int table_size = (2 * out_rate);
+  double delta, radians;
+
+  double *arr = (double *) Alloc (table_size * sizeof (double));
+  delta = (2 * 3.1415926535897932384626) / table_size;
   radians = 0.0;
-  for (a = 0; a < sin_siz; a++)
-  {
-    arr[a] = (double) sin (radians);
+  for (a = 0; a < table_size; a++)
+  { arr[a] = (double) sin (radians);
     radians += delta;
   }
-  sin_table = arr;
+  wavetable [0] = arr;
+  sin_table = arr;  // use directly for beat and phase variations where sin is required
+
+  /* create the lookup table of square values, double the sample rate,
+   * this could be simplified because it is only two values.  That would
+   * require logic in each voice in generate frames. */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  for (a = 0; a < out_rate; a++)
+    arr[a] = 1.;
+  for (a = out_rate; a < table_size; a++)
+    arr[a] = -1.;
+  wavetable [1] = arr;
+
+  /* create the lookup table of triangle values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  arr[0] = 0.0;
+  for (a = 1; a < out_rate/2; a++)
+    arr[a] = ((double) a / (double) (out_rate/2));
+  arr[out_rate/2] = 1.;
+  for (a = out_rate/2 + 1; a < out_rate; a++)
+    arr[a] = 1. + ((double) ((out_rate/2) - a) / (double) (out_rate/2));
+  arr[out_rate] = 0.;
+  for (a = out_rate + 1; a < (out_rate + (out_rate/2)); a++)
+    arr[a] = -((double) (a - out_rate) / (double) (out_rate/2));
+  arr[out_rate + (out_rate/2)] = -1.;
+  for (a = out_rate + out_rate/2 + 1; a < table_size; a++)
+    arr[a] = -1. + ((double) (a - (out_rate + out_rate/2)) / (double) (out_rate/2));
+  wavetable [2] = arr;
+
+  /* create the lookup table of saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  arr[0] = 0.;
+  for (a = 1; a < out_rate; a++)
+    arr[a] = ( (double) a / (double) out_rate);
+  arr[out_rate] = 0.;
+  for (a = out_rate + 1; a < table_size; a++)
+    arr[a] = -((double) (a - out_rate) / (double) out_rate);
+  wavetable [3] = arr;
+
+  /* create the lookup table of reverse saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  arr[0] = 1.;
+  for (a = 1; a < out_rate; a++)
+    arr[a] = (1. - ( (double) a / (double) out_rate));
+  arr[out_rate] = -1.;
+  for (a = out_rate + 1; a < table_size; a++)
+    arr[a] = (-1. + ((double) (a - out_rate) / (double) out_rate));
+  wavetable [4] = arr;
 }
 
 /* Parse any listfile script filenames from the LFS linked list
@@ -2414,6 +2482,8 @@ setup_binaural (char *token, void **work)
   *work = (void *) binaural1;
   binaural1->next = NULL;
   binaural1->type = 1;
+  binaural1->wavestyle = 0;  // default to sin
+  binaural1->table = wavetable[0];  // default to sin
   binaural1->slide = 0;  // default to not slide
   binaural1->off1 = binaural1->off2 = 0;  // begin at 0 degrees
   binaural1->last_off1 = binaural1->last_off2 = NULL;  // no previous voice offsets yet
@@ -2683,6 +2753,8 @@ setup_bell (char *token, void **work)
   *work = bell1;
   bell1->next = NULL;
   bell1->type = 2;
+  bell1->wavestyle = 0;  // default to sin
+  bell1->table = wavetable[0];  // default to sin
   bell1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into sin table as NULL  */ 
   bell1->last_off1 = NULL;
@@ -2864,6 +2936,8 @@ setup_noise (char *token, void **work)
   *work = noise1;
   noise1->next = NULL;
   noise1->type = 3;
+  noise1->wavestyle = 0;  // default to sin
+  noise1->table = wavetable[0];  // default to sin
   noise1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into sin table, and last behave as NULL  */ 
   noise1->last_off1 = noise1->last_behave = NULL;
@@ -3607,6 +3681,8 @@ setup_chronaural (char *token, void **work)
   *work = (void *) chronaural1;
   chronaural1->next = NULL;
   chronaural1->type = 8;
+  chronaural1->wavestyle = 0;  // default to sin
+  chronaural1->table = wavetable[0];  // default to sin
   chronaural1->slide = 0;  // default to not slide
   chronaural1->off1 = chronaural1->off3 = chronaural1->off2 = 0;  // begin at 0 degrees
   chronaural1->last_off1 = chronaural1->last_off3 = chronaural1->last_off2 = NULL;  // no previous voice offsets yet
@@ -3852,6 +3928,8 @@ setup_pulse (char *token, void **work)
   *work = (void *) pulse1;
   pulse1->next = NULL;
   pulse1->type = 13;
+  pulse1->wavestyle = 0;  // default to sin
+  pulse1->table = wavetable[0];  // default to sin
   pulse1->slide = 0;  // default to not slide
   pulse1->off1 = pulse1->off3 = pulse1->off2 = 0;  // begin at 0 degrees
   pulse1->last_off1 = pulse1->last_off3 = pulse1->last_off2 = NULL;  // no previous voice offsets yet
@@ -4084,6 +4162,8 @@ setup_phase (char *token, void **work)
   *work = (void *) phase1;
   phase1->next = NULL;
   phase1->type = 16;
+  phase1->wavestyle = 0;  // default to sin
+  phase1->table = wavetable[0];  // default to sin
   phase1->slide = 0;  // default to not slide
   phase1->off1 = 0;  // begin at 0 degrees
   phase1->shift = 0;  // begin at 0 shift
@@ -4424,6 +4504,8 @@ setup_fm (char *token, void **work)
   *work = (void *) fm1;
   fm1->next = NULL;
   fm1->type = 19;
+  fm1->wavestyle = 0;  // default to sin
+  fm1->table = wavetable[0];  // default to sin
   fm1->slide = 0;  // default to not slide
   fm1->off1 = 0;  // begin at 0 degrees
   fm1->shift = 0.0;  // begin at 0 shift
@@ -9452,7 +9534,7 @@ int
 generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int frame_count)
 {
   int ii;
-  int sin_siz = 2 * out_rate;
+  int table_size = 2 * out_rate;
   int channels = 2;  // always output stereo
   stub *stub1;
   void *this, *next;
@@ -9515,11 +9597,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             binaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
             binaural1->off1 += binaural1->inc1;
             binaural1->off1 = binaural1->off1 % (out_rate * 2);
-            out_buffer[ii] += (amp1 * sin_table[binaural1->off1]);
+            out_buffer[ii] += (amp1 * binaural1->table[binaural1->off1]);
             binaural1->inc2 = (int) round(freq2*2);  // (freq2 / out_rate) * (out_rate * 2));
             binaural1->off2 += binaural1->inc2;
             binaural1->off2 = binaural1->off2 % (out_rate * 2);
-            out_buffer[ii+1] += (amp2 * sin_table[binaural1->off2]);
+            out_buffer[ii+1] += (amp2 * binaural1->table[binaural1->off2]);
             if (binaural1->slide)
             { /* adjust values for next pass only if this binaural is sliding */
               binaural1->carrier += (binaural1->carr_adj * fast_mult);
@@ -9627,8 +9709,8 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             if (bell1->ring > 0LL)
             {
-              out_buffer[ii] += bell1->split_now * bell1->amp * sin_table[bell1->off1];
-              out_buffer[ii+1] += (1.0 - bell1->split_now) * bell1->amp * sin_table[bell1->off1];
+              out_buffer[ii] += bell1->split_now * bell1->amp * bell1->table[bell1->off1];
+              out_buffer[ii+1] += (1.0 - bell1->split_now) * bell1->amp * bell1->table[bell1->off1];
               //bell1->inc1 = (( (bell1->carrier * (out_rate * 2)) / out_rate));  // what below actually is
               bell1->inc1 = (int) round( bell1->carrier * 2.);
               bell1->off1 += bell1->inc1;
@@ -9856,24 +9938,24 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               if (noise1->play > msec_fade_count && noise1->fade_factor < 1.0)  // in play range of fade in, to soften attack
               {
                 noise1->fade_factor += msec_fade_adjust;  // ramp up from 0.0 to 1.0
-                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
+                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * noise1->table[noise1->off1]
                                    * noise1->fade_factor);
-                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
+                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * noise1->table[noise1->off1]
                                    * noise1->fade_factor);
               }
               else  // fade out to reduce crackle at end
               if (noise1->play  < msec_fade_count)  // in play range for fade out
               {
                 noise1->fade_factor -= msec_fade_adjust;  // ramp down from 1.0 to 0.0
-                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1]
+                out_buffer[ii] += (noise1->split_now * noise1->amp * sin_factor * noise1->table[noise1->off1]
                                    * noise1->fade_factor);
-                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1]
+                out_buffer[ii+1] += ((1.0 - noise1->split_now) * noise1->amp * sin_factor * noise1->table[noise1->off1]
                                    * noise1->fade_factor);
               }
               else  // in full volume play range between fade in and fade out
               {
-                out_buffer[ii] += noise1->split_now * noise1->amp * sin_factor * sin_table[noise1->off1];
-                out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_factor * sin_table[noise1->off1];
+                out_buffer[ii] += noise1->split_now * noise1->amp * sin_factor * noise1->table[noise1->off1];
+                out_buffer[ii+1] += (1.0 - noise1->split_now) * noise1->amp * sin_factor * noise1->table[noise1->off1];
               }
               /* Move offset adjustment to end so always start at offset where sin == 0.0, thus no fade in */
               //noise1->inc1 = (( (noise1->carrier * (out_rate * 2)) / out_rate));  // what below actually is
@@ -10360,10 +10442,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             chronaural1->inc2 += (fabs(chronaural1->beat) * 2. * fast_mult);  //inc to next sin value, allow for -ve beat
             chronaural1->off2 += (int) round(chronaural1->inc2);  // offset for beat frequency into sin table
             chronaural1->inc2 -= round (chronaural1->inc2);  // remaining increment is only fractional part, +ve or -ve
-            chronaural1->off2 = chronaural1->off2 % sin_siz;  // mod to wrap offset
-            int shift = (int) ((chronaural1->phase/360.) * sin_siz);  // offset shift for phase
+            chronaural1->off2 = chronaural1->off2 % table_size;  // mod to wrap offset
+            int shift = (int) ((chronaural1->phase/360.) * table_size);  // offset shift for phase
             sinval = sin_table [chronaural1->off2];  // sin val at current beat point
-            sinval2 = sin_table [(chronaural1->off2 + shift) % sin_siz];  // sin val at current beat point plus shift
+            sinval2 = sin_table [(chronaural1->off2 + shift) % table_size];  // sin val at current beat point plus shift
             /*  check the unshifted beat to see if it is time to play, play the unshifted channel if necessary */
             if (sinval >= 0.0 && sinval >= chronaural1->sin_threshold)  // time to play, only on positive sine
             {
@@ -10404,44 +10486,44 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               {
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               else if (chronaural1->beat_behave == 2)      // square wave, full volume
               {
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               else if (chronaural1->beat_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval, 5.); // quint the sin to make pseudo dirac
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               else if (chronaural1->beat_behave == 4)  // extreme dirac delta approximation
               {
                 double filter = pow(sinval, 15.); // 15th power of the sin to make extreme pseudo dirac
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               chronaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
               chronaural1->off1 += chronaural1->inc1;
-              chronaural1->off1 = chronaural1->off1 % sin_siz;
+              chronaural1->off1 = chronaural1->off1 % table_size;
             }
             /*  check the phase shifted beat to see if it is time to play, play the shifted channel if necessary */
             if (sinval2 >= 0.0 && sinval2 >= chronaural1->sin_threshold)  // time to play, only on positive sine
@@ -10483,44 +10565,44 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               {
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * sinval2 * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval2 * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 2)      // square wave, full volume
               {
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval2, 5.); // quint the sin to make pseudo dirac
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 4)  // extreme dirac delta approximation
               {
                 double filter = pow(sinval2, 15.); // 15th power of the sin to make extreme pseudo dirac
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               chronaural1->inc3 = (int) round(freq2*2);  // (freq2 / out_rate) * (out_rate * 2));
               chronaural1->off3 += chronaural1->inc3;
-              chronaural1->off3 = chronaural1->off3 % sin_siz;
+              chronaural1->off3 = chronaural1->off3 % table_size;
             }
             /*  Adjust split or split beat even when not playing beat */
             chronaural1->split_now += chronaural1->split_adj * fast_mult;
@@ -10664,11 +10746,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             binaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
             binaural1->off1 += binaural1->inc1;
             binaural1->off1 = binaural1->off1 % (out_rate * 2);
-            out_buffer[ii] += (amp1 * sin_table[binaural1->off1]);
+            out_buffer[ii] += (amp1 * binaural1->table[binaural1->off1]);
             binaural1->inc2 = (int) round(freq2*2);  // (freq2 / out_rate) * (out_rate * 2));
             binaural1->off2 += binaural1->inc2;
             binaural1->off2 = binaural1->off2 % (out_rate * 2);
-            out_buffer[ii+1] += (amp2 * sin_table[binaural1->off2]);
+            out_buffer[ii+1] += (amp2 * binaural1->table[binaural1->off2]);
             if (binaural1->slide)
             { /* adjust values for next pass only if this binaural is sliding */
               binaural1->carrier += (binaural1->carr_adj * fast_mult);
@@ -10727,10 +10809,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             chronaural1->inc2 += (fabs(chronaural1->beat) * 2. * fast_mult);  //inc to next sin value, allow for -ve beat
             chronaural1->off2 += (int) round(chronaural1->inc2);  // offset for beat frequency into sin table
             chronaural1->inc2 -= round (chronaural1->inc2);  // remaining increment is only fractional part, +ve or -ve
-            chronaural1->off2 = chronaural1->off2 % sin_siz;  // mod to wrap offset
-            int shift = (int) ((chronaural1->phase/360.) * sin_siz);  // offset shift for phase
+            chronaural1->off2 = chronaural1->off2 % table_size;  // mod to wrap offset
+            int shift = (int) ((chronaural1->phase/360.) * table_size);  // offset shift for phase
             sinval = sin_table [chronaural1->off2];  // sin val at current beat point
-            sinval2 = sin_table [(chronaural1->off2 + shift) % sin_siz];  // sin val at current beat point plus shift
+            sinval2 = sin_table [(chronaural1->off2 + shift) % table_size];  // sin val at current beat point plus shift
             /*  check the unshifted beat to see if it is time to play, play the unshifted channel if necessary */
             if (sinval >= 0.0 && sinval >= chronaural1->sin_threshold)  // time to play, only on positive sine
             {
@@ -10771,44 +10853,44 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               {
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * sinval * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               else if (chronaural1->beat_behave == 2)      // square wave, full volume
               {
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               else if (chronaural1->beat_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval, 5.); // quint the sin to make pseudo dirac
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               else if (chronaural1->beat_behave == 4)  // extreme dirac delta approximation
               {
                 double filter = pow(sinval, 15.); // 15th power of the sin to make extreme pseudo dirac
                 if (chronaural1->beat > 0.0)  // left channel no phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
                 else if (chronaural1->beat < 0.0)  // right channel no phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor
-                                                          * sin_table[chronaural1->off1]);
+                                                          * chronaural1->table[chronaural1->off1]);
               }
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               chronaural1->inc1 = (int) round(freq1*2);  // (freq1 / out_rate) * (out_rate * 2));
               chronaural1->off1 += chronaural1->inc1;
-              chronaural1->off1 = chronaural1->off1 % sin_siz;
+              chronaural1->off1 = chronaural1->off1 % table_size;
             }
             /*  check the phase shifted beat to see if it is time to play, play the shifted channel if necessary */
             if (sinval2 >= 0.0 && sinval2 >= chronaural1->sin_threshold)  // time to play, only on positive sine
@@ -10850,44 +10932,44 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               {
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * sinval2 * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * sinval2 * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 2)      // square wave, full volume
               {
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 3)  // dirac delta approximation
               {
                 double filter = pow(sinval2, 5.); // quint the sin to make pseudo dirac
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               else if (chronaural1->beat_behave == 4)  // extreme dirac delta approximation
               {
                 double filter = pow(sinval2, 15.); // 15th power of the sin to make extreme pseudo dirac
                 if (chronaural1->beat < 0.0)  // left channel has phase shift
                   out_buffer[ii] += (chronaural1->split_now * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
                 else if (chronaural1->beat > 0.0)  // right channel has phase shift
                   out_buffer[ii+1] += ((1.0 - chronaural1->split_now) * filter * amp1 * chronaural1->fade_factor2
-                                                          * sin_table[chronaural1->off3]);
+                                                          * chronaural1->table[chronaural1->off3]);
               }
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               chronaural1->inc3 = (int) round(freq2*2);  // (freq2 / out_rate) * (out_rate * 2));
               chronaural1->off3 += chronaural1->inc3;
-              chronaural1->off3 = chronaural1->off3 % sin_siz;
+              chronaural1->off3 = chronaural1->off3 % table_size;
             }
             /*  Adjust split or split beat even when not playing beat */
             chronaural1->split_now += chronaural1->split_adj * fast_mult;
@@ -10992,14 +11074,14 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             pulse1->inc2 += (fabs(pulse1->beat) * 2. * fast_mult);  //inc to next sin value, allow for -ve beat
             pulse1->off2 += (int) round(pulse1->inc2);  // offset for beat frequency into sin table
             pulse1->inc2 -= round (pulse1->inc2);  // remaining increment is only fractional part, +ve or -ve
-            pulse1->off2 = pulse1->off2 % sin_siz;  // mod with sin table size, to wrap offset
-            int shift = (int) ((pulse1->phase/360.) * sin_siz);  // offset shift for phase
+            pulse1->off2 = pulse1->off2 % table_size;  // mod with sin table size, to wrap offset
+            int shift = (int) ((pulse1->phase/360.) * table_size);  // offset shift for phase
             if (pulse1->beat < 0.0)  // left channel leads
             {
               if (off2_prev > pulse1->off2)  // time to play left channel, beat offset just wrapped to start of sin table
                 pulse1->frames_left = (int) (pulse1->time * out_rate);  // number of frames to play
               /* time to play right channel, shifted beat offset just wrapped to start of sin table */
-              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+              if ((off2_prev + shift) % table_size > (pulse1->off2 + shift) % table_size)
                 pulse1->frames_right = (int) (pulse1->time * out_rate);  // number of frames to play
               /* fade out begins one millisecond from end  */
               if (pulse1->frames_left > 0 && pulse1->frames_left <= msec_fade_count)  
@@ -11020,7 +11102,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else if (pulse1->beat > 0.0)  // right channel leads
             {
               /* time to play left channel, shifted beat offset just wrapped to start of sin table */
-              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+              if ((off2_prev + shift) % table_size > (pulse1->off2 + shift) % table_size)
                 pulse1->frames_left = (int) (pulse1->time * out_rate);  // number of frames to play
               if (off2_prev > pulse1->off2)  // time to play right channel, beat offset just wrapped to start of sin table
                 pulse1->frames_right = (int) (pulse1->time * out_rate);  // number of frames to play
@@ -11070,11 +11152,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor_left
-                                                        * sin_table[pulse1->off1]);
+                                                        * pulse1->table[pulse1->off1]);
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               pulse1->inc1 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
               pulse1->off1 += pulse1->inc1;  // don't worry about fractional portion, frequency high enough to ignore
-              pulse1->off1 = pulse1->off1 % sin_siz;  // mod with sin table size, to wrap offset
+              pulse1->off1 = pulse1->off1 % table_size;  // mod with sin table size, to wrap offset
             }
             if (pulse1->frames_right > 0)  // playing a pulse in right channel
             {
@@ -11085,11 +11167,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor_right
-                                                        * sin_table[pulse1->off3]);
+                                                        * pulse1->table[pulse1->off3]);
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               pulse1->inc3 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
               pulse1->off3 += pulse1->inc3;  // don't worry about fractional portion, frequency high enough to ignore
-              pulse1->off3 = pulse1->off3 % sin_siz;  // mod with sin table size, to wrap offset
+              pulse1->off3 = pulse1->off3 % table_size;  // mod with sin table size, to wrap offset
             }
             /*  Adjust split or split beat even when not playing beat */
             pulse1->split_now += pulse1->split_adj * fast_mult;
@@ -11212,13 +11294,13 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             pulse1->off2 += (int) round(pulse1->inc2);  // offset for beat frequency into sin table
             pulse1->inc2 -= round (pulse1->inc2);  // remaining increment is only fractional part, +ve or -ve
             pulse1->off2 = pulse1->off2 % (out_rate * 2);  // mod with sin table size, to wrap offset
-            int shift = (int) ((pulse1->phase/360.) * sin_siz);  // offset shift for phase
+            int shift = (int) ((pulse1->phase/360.) * table_size);  // offset shift for phase
             if (pulse1->beat < 0.0)  // left channel leads
             {
               if (off2_prev > pulse1->off2)  // time to play left channel, beat offset just wrapped to start of sin table
                 pulse1->frames_left = (int) (pulse1->time * out_rate);  // number of frames to play
               /* time to play right channel, shifted beat offset just wrapped to start of sin table */
-              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+              if ((off2_prev + shift) % table_size > (pulse1->off2 + shift) % table_size)
                 pulse1->frames_right = (int) (pulse1->time * out_rate);  // number of frames to play
               /* fade out begins one millisecond from end  */
               if (pulse1->frames_left > 0 && pulse1->frames_left <= msec_fade_count)  
@@ -11239,7 +11321,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             else if (pulse1->beat > 0.0)  // right channel leads
             {
               /* time to play left channel, shifted beat offset just wrapped to start of sin table */
-              if ((off2_prev + shift) % sin_siz > (pulse1->off2 + shift) % sin_siz)
+              if ((off2_prev + shift) % table_size > (pulse1->off2 + shift) % table_size)
                 pulse1->frames_left = (int) (pulse1->time * out_rate);  // number of frames to play
               if (off2_prev > pulse1->off2)  // time to play right channel, beat offset just wrapped to start of sin table
                 pulse1->frames_right = (int) (pulse1->time * out_rate);  // number of frames to play
@@ -11289,11 +11371,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii] += (pulse1->split_now * amp1 * pulse1->fade_factor_left
-                                                        * sin_table[pulse1->off1]);
+                                                        * pulse1->table[pulse1->off1]);
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               pulse1->inc1 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
               pulse1->off1 += pulse1->inc1;  // don't worry about fractional portion, frequency high enough to ignore
-              pulse1->off1 = pulse1->off1 % sin_siz;  // mod with sin table size, to wrap offset
+              pulse1->off1 = pulse1->off1 % table_size;  // mod with sin table size, to wrap offset
             }
             if (pulse1->frames_right > 0)  // playing a pulse in right channel
             {
@@ -11304,11 +11386,11 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               amp1 *= 2.;  // like binaural, double so each channel at amp with split
               /* pulse is always square wave, full volume  */
               out_buffer[ii+1] += ((1.0 - pulse1->split_now) * amp1 * pulse1->fade_factor_right
-                                                        * sin_table[pulse1->off3]);
+                                                        * pulse1->table[pulse1->off3]);
               /* always start at zero, adjust at the end of pass so the zero not incremented on first pass */
               pulse1->inc3 = (int) round(pulse1->carrier * 2 * fast_mult);  // (freq1 / out_rate) * (out_rate * 2));
               pulse1->off3 += pulse1->inc3;  // don't worry about fractional portion, frequency high enough to ignore
-              pulse1->off3 = pulse1->off3 % sin_siz;  // mod with sin table size, to wrap offset
+              pulse1->off3 = pulse1->off3 % table_size;  // mod with sin table size, to wrap offset
             }
             /*  Adjust split or split beat even when not playing beat */
             pulse1->split_now += pulse1->split_adj * fast_mult;
@@ -11422,22 +11504,22 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             {
               phase1->amp_inc1 = (int) round(phase1->amp_beat1*2.);
               phase1->amp_off1 += phase1->amp_inc1;
-              phase1->amp_off1 = phase1->amp_off1 % sin_siz;
+              phase1->amp_off1 = phase1->amp_off1 % table_size;
               amp1 += ((amp1 * phase1->amp_pct1) * sin_table[phase1->amp_off1]);
             }
             if (phase1->amp_beat2 > 0.0)
             {
               phase1->amp_inc2 = (int) round(phase1->amp_beat2*2.);
               phase1->amp_off2 += phase1->amp_inc2;
-              phase1->amp_off2 = phase1->amp_off2 % sin_siz;
+              phase1->amp_off2 = phase1->amp_off2 % table_size;
               amp2 += ((amp2 * phase1->amp_pct2) * sin_table[phase1->amp_off2]);
             }
             phase1->inc1 = (int) round(phase1->carrier*2);  // (phase1->carrier / out_rate) * (out_rate * 2));
             phase1->off1 += phase1->inc1;
-            phase1->off1 = phase1->off1 % sin_siz;  // base offset
-            int max_shift = (int) ((phase1->phase/360.) * sin_siz);  // maximum offset shift allowed for phase
+            phase1->off1 = phase1->off1 % table_size;  // base offset
+            int max_shift = (int) ((phase1->phase/360.) * table_size);  // maximum offset shift allowed for phase
               /* shift offset adjust for this frame to satisfy the phase shift beat in sin table offset units */
-            int shift_adjust = (int) (((phase1->phase/360.) * sin_siz * 2. * fabs(phase1->beat)) / out_rate);
+            int shift_adjust = (int) (((phase1->phase/360.) * table_size * 2. * fabs(phase1->beat)) / out_rate);
               /* add this frame's shift adjust to the cumulative shift */
             phase1->shift += (shift_adjust * phase1->direction);  
             if (phase1->shift > max_shift)  // shifted too far away from base
@@ -11459,7 +11541,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
             }
             // else // inner case, already set above
-            int phase_shifted_offset = (phase1->off1 + phase1->shift) % sin_siz;
+            int phase_shifted_offset = (phase1->off1 + phase1->shift) % table_size;
             /* Here is the difference between phase and fm.  Phase always has
              * a drone tone at the unshifted carrier frequency as well as the
              * phase shifted tone.  fm doesn't.  So here split the two tones between the
@@ -11467,10 +11549,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
              * First do the unshifted carrier tone, then the phase shifted
              * carrier tone.  
              * */
-            out_buffer[ii] += ((1. - phase1->split_now) * amp1 * sin_table[phase1->off1]);
-            out_buffer[ii+1] += (phase1->split_now * amp2 * sin_table[phase1->off1]);
-            out_buffer[ii] += (phase1->split_now * amp1 * sin_table[phase_shifted_offset]);
-            out_buffer[ii+1] += ((1. - phase1->split_now) * amp2 * sin_table[phase_shifted_offset]);
+            out_buffer[ii] += ((1. - phase1->split_now) * amp1 * phase1->table[phase1->off1]);
+            out_buffer[ii+1] += (phase1->split_now * amp2 * phase1->table[phase1->off1]);
+            out_buffer[ii] += (phase1->split_now * amp1 * phase1->table[phase_shifted_offset]);
+            out_buffer[ii+1] += ((1. - phase1->split_now) * amp2 * phase1->table[phase_shifted_offset]);
             /*  Adjust either the split or split beat for next pass */
             phase1->split_now += phase1->split_adj * fast_mult;
             if (phase1->split_dist == 0.0)  // split dist set to zero during setup as flag for pan
@@ -11612,10 +11694,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             phase1->inc1 = (int) round(phase1->carrier*2);  // (phase1->carrier / out_rate) * (out_rate * 2));
             phase1->off1 += phase1->inc1;
-            phase1->off1 = phase1->off1 % sin_siz;  // base offset
-            int max_shift = (int) ((phase1->phase/360.) * sin_siz);  // maximum offset shift allowed for phase
+            phase1->off1 = phase1->off1 % table_size;  // base offset
+            int max_shift = (int) ((phase1->phase/360.) * table_size);  // maximum offset shift allowed for phase
               /* shift offset adjust for this frame to satisfy the phase shift beat in sin table offset units */
-            int shift_adjust = (int) (((phase1->phase/360.) * sin_siz * 2. * phase1->beat) / out_rate);
+            int shift_adjust = (int) (((phase1->phase/360.) * table_size * 2. * phase1->beat) / out_rate);
               /* add this frame's shift adjust to the cumulative shift */
             phase1->shift += (shift_adjust * phase1->direction);  
             if (phase1->shift > max_shift)  // shifted too far away from base
@@ -11637,7 +11719,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               }
             }
             // else // inner case, already set above
-            int phase_shifted_offset = (phase1->off1 + phase1->shift) % sin_siz;
+            int phase_shifted_offset = (phase1->off1 + phase1->shift) % table_size;
             /* Here is the difference between phase and fm.  Phase always has
              * a drone tone at the unshifted carrier frequency as well as the
              * phase shifted tone.  fm doesn't.  So here split the two tones between the
@@ -11645,10 +11727,10 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
              * First do the unshifted carrier tone, then the phase shifted
              * carrier tone.  
              * */
-            out_buffer[ii] += ((1. - phase1->split_now) * amp1 * sin_table[phase1->off1]);
-            out_buffer[ii+1] += (phase1->split_now * amp2 * sin_table[phase1->off1]);
-            out_buffer[ii] += (phase1->split_now * amp1 * sin_table[phase_shifted_offset]);
-            out_buffer[ii+1] += ((1. - phase1->split_now) * amp2 * sin_table[phase_shifted_offset]);
+            out_buffer[ii] += ((1. - phase1->split_now) * amp1 * phase1->table[phase1->off1]);
+            out_buffer[ii+1] += (phase1->split_now * amp2 * phase1->table[phase1->off1]);
+            out_buffer[ii] += (phase1->split_now * amp1 * phase1->table[phase_shifted_offset]);
+            out_buffer[ii+1] += ((1. - phase1->split_now) * amp2 * phase1->table[phase_shifted_offset]);
             /*  Adjust either the split or split beat for next pass */
             phase1->split_now += phase1->split_adj * fast_mult;
             if (phase1->split_dist == 0.0)  // split dist set to zero during setup as flag for pan
@@ -11763,35 +11845,35 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             {
               fm1->amp_inc1 = (int) round(fm1->amp_beat1*2.);
               fm1->amp_off1 += fm1->amp_inc1;
-              fm1->amp_off1 = fm1->amp_off1 % sin_siz;
+              fm1->amp_off1 = fm1->amp_off1 % table_size;
               amp1 += ((amp1 * fm1->amp_pct1) * sin_table[fm1->amp_off1]);
             }
             if (fm1->amp_beat2 > 0.0)
             {
               fm1->amp_inc2 = (int) round(fm1->amp_beat2*2.);
               fm1->amp_off2 += fm1->amp_inc2;
-              fm1->amp_off2 = fm1->amp_off2 % sin_siz;
+              fm1->amp_off2 = fm1->amp_off2 % table_size;
               amp2 += ((amp2 * fm1->amp_pct2) * sin_table[fm1->amp_off2]);
             }
             fm1->inc1 = (int) round((fm1->carrier+fm1->shift)*2);  // (fm1->carrier / out_rate) * (out_rate * 2));
             fm1->off1 += fm1->inc1;
-            fm1->off1 = fm1->off1 % sin_siz;  // base offset
-            int phase_offset = (int) ((fabs(fm1->phase)/360.) * sin_siz);  // offset shift for phase
-            int phase_shifted_offset = (fm1->off1 + phase_offset) % sin_siz;
+            fm1->off1 = fm1->off1 % table_size;  // base offset
+            int phase_offset = (int) ((fabs(fm1->phase)/360.) * table_size);  // offset shift for phase
+            int phase_shifted_offset = (fm1->off1 + phase_offset) % table_size;
             if (fm1->phase > 0.0)  // add the phase shift to the right channel
             {
-              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
-              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[phase_shifted_offset]);  // right leads left
+              out_buffer[ii] += (fm1->split_now * amp1 * fm1->table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * fm1->table[phase_shifted_offset]);  // right leads left
             }
             else if (fm1->phase < 0.0)  // add the phase shift to the left channel
             {
-              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[phase_shifted_offset]);  // left leads right
-              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+              out_buffer[ii] += (fm1->split_now * amp1 * fm1->table[phase_shifted_offset]);  // left leads right
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * fm1->table[fm1->off1]);
             }
             else  // no phase shift
             {
-              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
-              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+              out_buffer[ii] += (fm1->split_now * amp1 * fm1->table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * fm1->table[fm1->off1]);
             }
               /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second.
                * This probably only has to happen every frame if there is a slide changing the relevant variables.
@@ -11995,23 +12077,23 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             }
             fm1->inc1 = (int) round((fm1->carrier+fm1->shift)*2);  // (fm1->carrier / out_rate) * (out_rate * 2));
             fm1->off1 += fm1->inc1;
-            fm1->off1 = fm1->off1 % sin_siz;  // base offset
-            int phase_offset = (int) ((fabs(fm1->phase)/360.) * sin_siz);  // offset shift for phase
-            int phase_shifted_offset = (fm1->off1 + phase_offset) % sin_siz;
+            fm1->off1 = fm1->off1 % table_size;  // base offset
+            int phase_offset = (int) ((fabs(fm1->phase)/360.) * table_size);  // offset shift for phase
+            int phase_shifted_offset = (fm1->off1 + phase_offset) % table_size;
             if (fm1->phase > 0.0)  // add the phase shift to the right channel
             {
-              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
-              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[phase_shifted_offset]);  // right leads left
+              out_buffer[ii] += (fm1->split_now * amp1 * fm1->table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * fm1->table[phase_shifted_offset]);  // right leads left
             }
             else if (fm1->phase < 0.0)  // add the phase shift to the left channel
             {
-              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[phase_shifted_offset]);  // left leads right
-              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+              out_buffer[ii] += (fm1->split_now * amp1 * fm1->table[phase_shifted_offset]);  // left leads right
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * fm1->table[fm1->off1]);
             }
             else  // no phase shift
             {
-              out_buffer[ii] += (fm1->split_now * amp1 * sin_table[fm1->off1]);
-              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * sin_table[fm1->off1]);
+              out_buffer[ii] += (fm1->split_now * amp1 * fm1->table[fm1->off1]);
+              out_buffer[ii+1] += ((1. - fm1->split_now) * amp2 * fm1->table[fm1->off1]);
             }
               /* Adjustment to make to the carrier frequency addition so the band occurs beat times per second.
                * This probably only has to happen every frame if there is a slide changing the relevant variables.
@@ -12196,7 +12278,7 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             if (spin1->play > 0L)  // spin is active
             {
               double amp = spin1->amp * 2.;  // like binaural, double so each channel at amp with split
-              int phase_offset = (int) round((fabs(spin1->phase)/360.) * sin_siz);  // offset shift for phase
+              int phase_offset = (int) round((fabs(spin1->phase)/360.) * table_size);  // offset shift for phase
               double phase_sin = (sin_table [phase_offset]);  // sin value for phase
               int phase_adjust = (int) round(((double) out_rate / 1500.) * phase_sin);  // spin adjustment for phase
               int left_offset = spin1->off1;
