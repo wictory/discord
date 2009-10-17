@@ -121,7 +121,7 @@ double opt_y_arg = -1.0;        // for OGG, output VBR quality to write - 0.0 to
 double vbr_quality = 0.5;       // for OGG, output VBR quality to write - 0.0 to 1.0, default it to 0.5
 const char *separators = "=' |,;";  // separators for time sequences, mix and match, multiples ok
 double *sin_table;              // holds external pointer to sin table, syntactic sugar for use in beat variation
-double *wavetable [5];          // holds the pointers to the various tables required for different wave styles
+double *wavetable [7];          // holds the pointers to the various tables required for different wave styles
 int status_t_retval = 0;  // return integer for status_t thread
 int alsa_write_retval = 0;  // return integer for alsa_write thread
 int msec_fade_count;      // how many frames to make a millisecond
@@ -244,7 +244,8 @@ struct binaural
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for binaural tones, offset + increment into sine
   int inc2, off2;               // table for each channel
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int amp_inc1, amp_off1;       // sin table ofset and increment for left amp
   int amp_inc2, amp_off2;       // sin table ofset and increment for right amp
@@ -290,7 +291,8 @@ struct bell
      5 decrease exponentially to 0 */
   int behave;
   int inc1, off1;               // for bell tones, offset + increment into wave table
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   intmax_t next_play, sofar;             // Frames till next bell, how many so far
   intmax_t ring;                    // number of frames to ring the bell
@@ -341,7 +343,8 @@ struct noise
   // 15-21 above with 10% carrier rise
   // values the same, then constant
   int inc1, off1;               // for noise tones, offset + increment into sine
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   intmax_t next_play, sofar;             // Samples till next noise, how many so far
   intmax_t play;                    // number of frames to play the noise
@@ -517,7 +520,8 @@ struct chronaural
   int slide;     // 1 if this sequence slides into the next (binaurals and chronaurals slide)
   int inc1, off1;               // for chronaural tones, offset + increment into sine table for carrier of left channel
   int inc3, off3;               // for chronaural tones, offset + increment into sine table for carrier of right channel
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int off2;               // offset into sine table for beat
   double inc2;            // increment of offset into sine table for beat
@@ -566,7 +570,8 @@ struct pulse
   int slide;     // nonzero if this sequence slides into the next (binaurals, chronaurals, and phases slide)
   int inc1, off1;               // for pulse tones, offset + increment into sine table for carrier of left channel
   int inc3, off3;               // for pulse tones, offset + increment into sine table for carrier of right channel
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int off2;               // offset into sine table for beat
   double inc2;            // increment of offset into sine table for beat
@@ -603,7 +608,8 @@ struct phase
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for phase tones, offset + increment into sin table for each channel
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int shift;                    // cumulative shift for phase adjustment
   int direction;                // direction that phase adjust is moving, +ve towards max phase, -ve towards in phase
@@ -652,7 +658,8 @@ struct fm
   double amp_beat1, amp_beat2;  // Amplitude beat for each channel, frequency of variation
   double amp_pct1, amp_pct2;    // Amplitude adjustment for each channel, per cent band to vary +/- within
   int inc1, off1;               // for fm tones, offset + increment into sin table for each channel
-  int wavestyle; // wave style in wavetable for the carrier voice, 0 sin, 1 square, 2 triangle, 3 saw, 4 reverse-saw
+  int wavestyle; // wave style in wavetable for the carrier voice, 
+                 // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   double shift;                 // cumulative shift for freq adjustment to the carrier, moves between 0 and band
   int direction;                // direction that freq adjust is moving, +ve towards band, -ve towards carrier
@@ -2040,8 +2047,9 @@ help ()
 }
 
 /* create the lookup array of the table of wave values, double the sample rate.
- * Currently they are 0 for sin, 1 for square, 2 for triangle, 3 for saw, and 4 for reverse saw.
- * At 192 KHz, these use a total of approx 20 MB. At 44100, approx 5 MB */
+ * Currently they are
+ * 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
+ * At 192 KHz, these use approx 4 MB each. At 44100, approx 1 MB */
 
 void
 init_wave_tables ()  // now that rate is known, create lookup tables for carrier waves
@@ -2090,7 +2098,7 @@ init_wave_tables ()  // now that rate is known, create lookup tables for carrier
     arr[a] = -1. + ((double) (a - (out_rate + out_rate/2)) / (double) (out_rate/2));
   wavetable [2] = arr;
 
-  /* create the lookup table of saw values, double the sample rate */
+  /* create the lookup table of half-saw values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
   arr[0] = 0.;
@@ -2101,7 +2109,7 @@ init_wave_tables ()  // now that rate is known, create lookup tables for carrier
     arr[a] = -((double) (a - out_rate) / (double) out_rate);
   wavetable [3] = arr;
 
-  /* create the lookup table of reverse saw values, double the sample rate */
+  /* create the lookup table of reverse half-saw values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
   arr[0] = 1.;
@@ -2111,6 +2119,29 @@ init_wave_tables ()  // now that rate is known, create lookup tables for carrier
   for (a = out_rate + 1; a < table_size; a++)
     arr[a] = (-1. + ((double) (a - out_rate) / (double) out_rate));
   wavetable [4] = arr;
+
+  /* create the lookup table of saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  arr[0] = -1.;
+  for (a = 1; a < out_rate; a++)
+    arr[a] = -1. + ( (double) a / (double) out_rate);
+  arr[out_rate] = 0.;
+  for (a = out_rate + 1; a < table_size; a++)
+    arr[a] = ((double) (a - out_rate) / (double) out_rate);
+  wavetable [5] = arr;
+
+
+  /* create the lookup table of reverse saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  arr[0] = 1.;
+  for (a = 1; a < out_rate; a++)
+    arr[a] = 1. - ( (double) a / (double) out_rate);
+  arr[out_rate] = 0.;
+  for (a = out_rate + 1; a < table_size; a++)
+    arr[a] = -((double) (a - out_rate) / (double) out_rate);
+  wavetable [6] = arr;
 }
 
 /* Parse any listfile script filenames from the LFS linked list
