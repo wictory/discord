@@ -1066,6 +1066,7 @@ parse_listfile_for_script_filenames (char *listfilename)
 {
   char *filename, *cmnt, *str1;
   char *worklin;
+  char *retptr;
   /* points to a string containing all the configuration file options */
   listfile_scripts *lff_new = NULL, *lff_work = NULL;
   size_t len;
@@ -1076,7 +1077,9 @@ parse_listfile_for_script_filenames (char *listfilename)
   if (!infile)
     error ("Unable to open listfile %s", listfilename);
   memset (worklin, 0x00, 512);
-  fgets (worklin, 512, infile);
+  retptr = fgets (worklin, 512, infile);
+  if (retptr == NULL)
+    error ("Unable to read line from listfile %s", listfilename);
   filename = worklin;
   lff_work = LFS;  // point to listfile chain
   while (lff_work != NULL)  // while not at end of current list
@@ -1112,7 +1115,7 @@ parse_listfile_for_script_filenames (char *listfilename)
       lff_work->filename = StrDup (filename);  // save the name
     }
     memset (worklin, 0x00, 512);
-    fgets (worklin, 512, infile);
+    retptr = fgets (worklin, 512, infile);
     filename = worklin;
   }
   fclose (infile);
@@ -1393,6 +1396,7 @@ read_script_file_options (char * filename, char **config_options)
 {
   char *curlin, *cmnt, *token;
   char *savelin, *worklin, *rawline;
+  char *retptr;
   size_t len, destlen;
   int line_count = 0;
   FILE *infile;
@@ -1405,7 +1409,9 @@ read_script_file_options (char * filename, char **config_options)
     error ("Unable to open script file %s", filename);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
-  fgets (worklin, 16384, infile);
+  retptr = fgets (worklin, 16384, infile);
+  if (retptr == NULL)
+    error ("Unable to read line from script file %s", filename);
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (!feof (infile))
@@ -1459,7 +1465,7 @@ read_script_file_options (char * filename, char **config_options)
       }
     }
     memset (worklin, 0x00, 16384);
-    fgets (worklin, 16384, infile);
+    retptr = fgets (worklin, 16384, infile);
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
@@ -1526,6 +1532,7 @@ read_config_file (FILE * infile, char **config_options)
 {
   char *curlin, *cmnt, *token;
   char *savelin, *worklin, *rawline;
+  char *retptr;
   size_t len, destlen;
   int line_count = 0;
 
@@ -1534,7 +1541,9 @@ read_config_file (FILE * infile, char **config_options)
   rawline= StrMem (16384);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
-  fgets (worklin, 16384, infile);
+  retptr = fgets (worklin, 16384, infile);
+  if (retptr == NULL)
+    error ("Unable to read line from configuration file");
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (*curlin != '\0')
@@ -1580,7 +1589,7 @@ read_config_file (FILE * infile, char **config_options)
       }
     }
     memset (worklin, 0x00, 16384);
-    fgets (worklin, 16384, infile);
+    retptr = fgets (worklin, 16384, infile);
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
@@ -2179,6 +2188,7 @@ read_script_file_sequence (char * filename)
 {
   char *curlin, *cmnt, *token;
   char *savelin, *worklin, *rawline;
+  char *retptr;
   size_t len, destlen;
   int line_count = 0;
   time_seq *tsh = NULL, *tsw = NULL;
@@ -2192,7 +2202,9 @@ read_script_file_sequence (char * filename)
     error ("Unable to open script file %s", filename);
   memset (savelin, 0x00, 16384);
   memset (worklin, 0x00, 16384);
-  fgets (worklin, 16384, infile);
+  retptr = fgets (worklin, 16384, infile);
+  if (retptr == NULL)
+    error ("Unable to read line from script file %s", filename);
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (!feof (infile))
@@ -2267,7 +2279,7 @@ read_script_file_sequence (char * filename)
       }
     }
     memset (worklin, 0x00, 16384);
-    fgets (worklin, 16384, infile);
+    retptr = fgets (worklin, 16384, infile);
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
