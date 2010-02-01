@@ -51,11 +51,7 @@
 #include <sys/time.h>
 #include <sys/times.h>
 #include <sys/soundcard.h>
-#ifdef static_libsamplerate
-  #include "lib_src/libsamplerate-0.1.7/src/samplerate.h"
-#else
-  #include <samplerate.h>
-#endif
+#include <samplerate.h>
 #ifdef static_libsndfile
   #include "lib_src/libsndfile-1.0.20/src/sndfile.h"
 #else
@@ -71,6 +67,8 @@
 #include <poll.h>
 #include <pthread.h>
 #include <dlfcn.h>
+#include <complex.h>
+#include <fftw3.h>
 
 #define SIGNED_SIZEOF(x) ((int) sizeof (x))
 #define BUFFER_LEN   (2048)
@@ -120,8 +118,11 @@ int opt_y;                      // user has requested a vbr quality setting
 double opt_y_arg = -1.0;        // for OGG, output VBR quality to write - 0.0 to 1.0, default it to -1.0, no set
 double vbr_quality = 0.5;       // for OGG, output VBR quality to write - 0.0 to 1.0, default it to 0.5
 const char *separators = "=' |,;";  // separators for time sequences, mix and match, multiples ok
-double *sin_table;              // holds external pointer to sin table, syntactic sugar for use in beat variation
-double *wavetable [7];          // holds the pointers to the various tables required for different wave styles
+double *sin_table;              // holds external pointer to sin table in wavetable, simplifies use in beat variation
+double PI = 3.14159265358979323846;  // value for pi from math.h
+//double PI = M_PI;  // value for pi from math.h, should truncate and use maximum allowed
+double RADIAN = 180. / 3.14159265358979323846;  // long value for degrees in a radian
+double *wavetable [12];          // holds the pointers to the various tables required for different wave styles
 int status_t_retval = 0;  // return integer for status_t thread
 int alsa_write_retval = 0;  // return integer for alsa_write thread
 int msec_fade_count;      // how many frames to make a millisecond
@@ -219,7 +220,7 @@ struct chorus_voice
 } ;
 
 // master container for all the sound streams making up the current play sequence
-chorus_voice *stream_container = NULL;
+chorus_voice *STREAM_CONTAINER = NULL;
 
 /* structure to set a stub for handling voices */
 typedef struct stub stub;
@@ -246,6 +247,7 @@ struct binaural
   int inc2, off2;               // table for each channel
   int wavestyle; // wave style in wavetable for the carrier voice, 
                  // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
+                 // 7 smooth square, 8 smooth half-saw, 9 smooth reverse-half-saw, 10 smooth saw, 11 smooth reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   int amp_inc1, amp_off1;       // sin table ofset and increment for left amp
   int amp_inc2, amp_off2;       // sin table ofset and increment for right amp
@@ -293,6 +295,7 @@ struct bell
   int inc1, off1;               // for bell tones, offset + increment into wave table
   int wavestyle; // wave style in wavetable for the carrier voice, 
                  // 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
+                 // 7 smooth square, 8 smooth half-saw, 9 smooth reverse-half-saw, 10 smooth saw, 11 smooth reverse-saw
   double *table; // pointer to the wavestyle format in the wavetable to use for this voice
   intmax_t next_play, sofar;             // Frames till next bell, how many so far
   intmax_t ring;                    // number of frames to ring the bell
@@ -480,7 +483,9 @@ struct once
   intmax_t play;  //offset into buffer in frames, frames that have been played
   intmax_t off1;  //short offset into buffer
   double split_adj; // adjust split while sound is playing
+  double amp_min_adj, amp_max_adj;  // adjustments to slide amp to next voice in sequence
   int mono;  // can be mono sound even with 2 channels.  0:stereo, 1:left mono, 2:right mono
+  int slide;     // 1 if this sequence slides into the next repeat
   int not_played;  // has the single play occurred yet?
     /* to avoid discontinuities at the join between voices, use last offset into stored sound buffer of previous
         voice as starting offset for this voice.  Store a pointer to it during setup.  This only applies if 
@@ -715,10 +720,9 @@ struct spin
   double scale_filtered;    // Max amplitude in sound, between 0 and 32767, used to scale output
   double amp;               // Amplitude level 0-100%, stored as decimal i.e. .02
   double spin_time;         // How long for one spin, in seconds.
-  double phase;             // Current phase of the sound, -180 to +180, relative to center.
-  double phase_adj;         // Amount to adjust the phase, used while creating the spin beat.
-  double split;             // left fraction for sound, .5 means evenly split L and R
-  double split_adj;         // amount to adjust the split to help create the spin effect, change/frame
+  double spin_dir;          // direction of spin, 1 is right or CW looked at from above, -1 is left or CCW.
+  double angle;             // Current angle of the sound, -180 to +180, relative to center.
+  double angle_adj;         // Amount to adjust the angle, used while creating the spin beat.
   intmax_t off1, off2, play; // Position in file for sample, currently playing
   double amp_slide_adj;     // adjustments to slide amp to next voice in sequence
   double spin_time_slide_adj;  // adjustments to slide spin_time to next voice in sequence
@@ -729,8 +733,7 @@ struct spin
     */
   intmax_t *last_off1, *last_off2, *last_play;   
   double *last_amp;
-  double *last_phase, *last_phase_adj;
-  double *last_split, *last_split_adj;
+  double *last_angle, *last_angle_adj;
   int first_pass;  // is this voice inactive?
 } ;
 
@@ -791,6 +794,7 @@ void finish_non_beat_voice_setup ();
 snd_buffer *process_sound_file (char *filename);
 void convert_to_mono (snd_buffer *sb1);
 snd_buffer *create_filtered_sample (snd_buffer *sb1);
+double *make_windowed_sinc (double freq_cut, int sample_points);
 void play_loop ();
 void save_loop ();
 int generate_frames (struct sndstream *snd1, double *out_buffer, int at_offset, int frame_count);
@@ -871,7 +875,6 @@ main (int argc, char **argv)
   while (filecount-- > 0)
   {  // set the play sequences for each file now that options complete
     read_script_file_sequence (argv [offset++]);
-    setup_play_seq ();
   }
   if (opt_w)  // write a file
     save_loop ();  // save the sequences to a file until done
@@ -882,46 +885,51 @@ main (int argc, char **argv)
 
 int
 read_time (char *p, int *timp)
-{                               // Rets chars consumed, or 0 error
-  int nn = 0, hh, mm, ss;
-  char *token, *empty = NULL, **endptr = NULL;
+{ int nn = 0, hh, mm, ss;  // Rets chars consumed, or 0 error 
+  char *token, *empty = NULL, *endptr [1];
+  char *save;
 
-  token = strtok (p, ":");
+  save = StrDup (p);
+  endptr [0] = NULL;
+  token = strtok (p, ":");  // get the hours chars
   if (token)
-  {
-    hh = (int) strtol (token, endptr, 10);
+  { hh = (int) strtol (token, endptr, 10);
+    if (*endptr [0] != '\0')  // invalid conversion
+      error ("Time string %s has invalid hours value %s", save, token);
+    nn += (strlen (token) + 1);                  // add hours chars
     token = strtok (empty, ":");
     if (token)
-    {
-      nn += 3;                  // hours chars
-      endptr = NULL;
+    { endptr [0] = NULL;
       mm = (int) strtol (token, endptr, 10);
+      if (*endptr [0] != '\0')  // invalid conversion
+        error ("Time string %s has invalid minutes value %s", save, token);
+      nn += (strlen (token) + 1);                  // add minute chars
       empty = NULL;
       token = strtok (empty, ":");
       if (token)
-      {
-        nn += 5;                // min + sec chars
-        endptr = NULL;
+      { endptr [0] = NULL;
         ss = (int) strtol (token, endptr, 10);
+        if (*endptr [0] != '\0')  // invalid conversion
+          error ("Time string %s has invalid seconds value %s", save, token);
+        nn += (strlen (token) + 1);                  // add second chars
       }
       else
-      {
-        nn += 2;                // min chars
+      { nn += 2;                // min chars
         ss = 0;
       }
     }
     else
-    {
-      nn += 2;                  // hours chars
+    { nn += 2;                  // hours chars
       mm = ss = 0;
     }
   }
   else
     hh = mm = ss = 0;
-  if (hh < 0 || hh >= 24 || mm < 0 || mm >= 60 || ss < 0 || ss >= 60)
-    return 0;
+  if (hh < 0 || mm < 0 || ss < 0 || (hh + mm + ss) == 0)
+    error ("Time string %s has invalid values", save);
   else
-    *timp = ( (hh * 60 + mm) * 60 + ss);
+    *timp = ( (((hh * 60) + mm) * 60) + ss);
+  free (save);
   return nn;
 }
 
@@ -2058,6 +2066,7 @@ help ()
 /* create the lookup array of the table of wave values, double the sample rate.
  * Currently they are
  * 0 sin, 1 square, 2 triangle, 3 half-saw, 4 reverse-half-saw, 5 saw, 6 reverse-saw
+ * 7 smooth square, 8 smooth half-saw, 9 smooth reverse-half-saw, 10 smooth saw, 11 smooth reverse-saw
  * At 192 KHz, these use approx 4 MB each. At 44100, approx 1 MB */
 
 void
@@ -2065,15 +2074,17 @@ init_wave_tables ()  // now that rate is known, create lookup tables for carrier
 {
   /* create the lookup table of sin values, double the sample rate */
 
-  int a;
+  int ii;
   int table_size = (2 * out_rate);
   double delta, radians;
+  double adjusted, increment;
+  //double PI = 3.1415926535897932384626;
 
   double *arr = (double *) Alloc (table_size * sizeof (double));
-  delta = (2 * 3.1415926535897932384626) / table_size;
+  delta = (2 * PI) / table_size;
   radians = 0.0;
-  for (a = 0; a < table_size; a++)
-  { arr[a] = (double) sin (radians);
+  for (ii = 0; ii < table_size; ii++)
+  { arr[ii] = (double) sin (radians);
     radians += delta;
   }
   wavetable [0] = arr;
@@ -2084,73 +2095,227 @@ init_wave_tables ()  // now that rate is known, create lookup tables for carrier
    * require logic in each voice in generate frames. */
 
   arr = (double *) Alloc (table_size * sizeof (double));
-  for (a = 0; a < out_rate; a++)
-    arr[a] = 1.;
-  for (a = out_rate; a < table_size; a++)
-    arr[a] = -1.;
+  for (ii = 0; ii < out_rate; ii++)
+    arr[ii] = 1.;
+  for (ii = out_rate; ii < table_size; ii++)
+    arr[ii] = -1.;
   wavetable [1] = arr;
 
   /* create the lookup table of triangle values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
-  arr[0] = 0.0;
-  for (a = 1; a < out_rate/2; a++)
-    arr[a] = ((double) a / (double) (out_rate/2));
-  arr[out_rate/2] = 1.;
-  for (a = out_rate/2 + 1; a < out_rate; a++)
-    arr[a] = 1. + ((double) ((out_rate/2) - a) / (double) (out_rate/2));
-  arr[out_rate] = 0.;
-  for (a = out_rate + 1; a < (out_rate + (out_rate/2)); a++)
-    arr[a] = -((double) (a - out_rate) / (double) (out_rate/2));
-  arr[out_rate + (out_rate/2)] = -1.;
-  for (a = out_rate + out_rate/2 + 1; a < table_size; a++)
-    arr[a] = -1. + ((double) (a - (out_rate + out_rate/2)) / (double) (out_rate/2));
+  increment = 2. / (double) (out_rate);
+  adjusted = 0.;
+  for (ii = 0; ii < out_rate/2; ii++)
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
+  adjusted = 1.;
+  for (ii = out_rate/2; ii < out_rate; ii++)
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
+  adjusted = 0.;
+  for (ii = out_rate; ii < (out_rate + (out_rate/2)); ii++)
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
+  adjusted = -1.;
+  for (ii = out_rate + out_rate/2; ii < table_size; ii++)
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
   wavetable [2] = arr;
 
   /* create the lookup table of half-saw values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
-  arr[0] = 0.;
-  for (a = 1; a < out_rate; a++)
-    arr[a] = ( (double) a / (double) out_rate);
-  arr[out_rate] = 0.;
-  for (a = out_rate + 1; a < table_size; a++)
-    arr[a] = -((double) (a - out_rate) / (double) out_rate);
+  increment = 1. / (double) out_rate;
+  adjusted = 0.;
+  for (ii = 0; ii < out_rate; ii++)
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
+  adjusted = 0.;
+  for (ii = out_rate; ii < table_size; ii++)
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
   wavetable [3] = arr;
 
   /* create the lookup table of reverse half-saw values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
-  arr[0] = 1.;
-  for (a = 1; a < out_rate; a++)
-    arr[a] = (1. - ( (double) a / (double) out_rate));
-  arr[out_rate] = -1.;
-  for (a = out_rate + 1; a < table_size; a++)
-    arr[a] = (-1. + ((double) (a - out_rate) / (double) out_rate));
+  adjusted = 1.;
+  increment = 1. / (double) out_rate;
+  for (ii = 0; ii < out_rate; ii++)
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
+  adjusted = -1.;
+  for (ii = out_rate; ii < table_size; ii++)
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
   wavetable [4] = arr;
 
   /* create the lookup table of saw values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
-  arr[0] = -1.;
-  for (a = 1; a < out_rate; a++)
-    arr[a] = -1. + ( (double) a / (double) out_rate);
-  arr[out_rate] = 0.;
-  for (a = out_rate + 1; a < table_size; a++)
-    arr[a] = ((double) (a - out_rate) / (double) out_rate);
+  adjusted = -1.;
+  increment = 2. / (double) table_size;
+  for (ii = 0; ii < table_size; ii++)
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
   wavetable [5] = arr;
-
 
   /* create the lookup table of reverse saw values, double the sample rate */
 
   arr = (double *) Alloc (table_size * sizeof (double));
-  arr[0] = 1.;
-  for (a = 1; a < out_rate; a++)
-    arr[a] = 1. - ( (double) a / (double) out_rate);
-  arr[out_rate] = 0.;
-  for (a = out_rate + 1; a < table_size; a++)
-    arr[a] = -((double) (a - out_rate) / (double) out_rate);
+  adjusted = 1.;
+  increment = 2. / (double) table_size;
+  for (ii = 0; ii < table_size; ii++)
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
   wavetable [6] = arr;
+
+  /* frame rate has been validated, set the smoothing variables.
+   * Here we multiply by 10, to give 10 ms smooth. 
+   * Also multiply by 2 because the table is twice the rate in size so 
+   * it takes two entries to equal one in real time.
+   * This is the same logic as is in setup_play_seq, set separately here
+   * so there can be independent control of the two items. */
+
+  int smooth_count = (int) (round ( (2 * 10 * out_rate) / 1000.));
+  double smooth_adjust = 1.0 / (double) smooth_count;
+
+  /* create the lookup table of smooth square values, double the sample rate,
+   * Put a 10 ms smooth in and out in order to stop artifacts
+   * because of abrupt changes in value. */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  adjusted = 0.;
+  for (ii = 0; ii < smooth_count; ii++)  // smooth to 1
+  { arr[ii] = adjusted;
+    adjusted += smooth_adjust;
+  }
+  for (ii = smooth_count; ii < out_rate - smooth_count; ii++)
+    arr[ii] = 1.;
+  adjusted = 1.;
+  for (ii = out_rate - smooth_count; ii < out_rate; ii++)  // smooth to 0
+  { arr[ii] = adjusted;
+    adjusted -= smooth_adjust;
+  }
+  adjusted = 0.;
+  for (ii = out_rate; ii < out_rate + smooth_count; ii++)  // smooth to -1
+  { arr[ii] = adjusted;
+    adjusted -= smooth_adjust;
+  }
+  for (ii = out_rate + smooth_count; ii < table_size - smooth_count; ii++)
+    arr[ii] = -1.;
+  adjusted = -1.;
+  for (ii = table_size - smooth_count; ii < table_size; ii++)  // smooth to 0
+  { arr[ii] = adjusted;
+    adjusted += smooth_adjust;
+  }
+  wavetable [7] = arr;
+
+  /* create the lookup table of smooth half-saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  increment = 1. / (double) (out_rate - smooth_count);  // hits 1. 10 ms early
+  adjusted = 0.;
+  for (ii = 0; ii < out_rate - smooth_count; ii++)  // up to 1
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
+  adjusted = 1.;
+  for (ii = out_rate - smooth_count; ii < out_rate; ii++)  // smooth to 0
+  { arr[ii] = adjusted;
+    adjusted -= smooth_adjust;
+  }
+  adjusted = 0.;
+  for (ii = out_rate; ii < table_size - smooth_count; ii++)  // down to -1
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
+  adjusted = -1.;
+  for (ii = table_size - smooth_count; ii < table_size; ii++)  // smooth to 0
+  { arr[ii] = adjusted;
+    adjusted += smooth_adjust;
+  }
+  wavetable [8] = arr;
+
+  /* create the lookup table of reverse half-saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  increment = 1. / (double) (out_rate - smooth_count);  // hits 1. 10 ms early
+  adjusted = 0.;
+  for (ii = 0; ii < smooth_count; ii++)  // smooth to 1
+  { arr[ii] = adjusted;
+    adjusted += smooth_adjust;
+  }
+  adjusted = 1.;
+  for (ii = smooth_count; ii < out_rate; ii++)  // down to 0 
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
+  adjusted = 0.;
+  for (ii = out_rate; ii < out_rate + smooth_count; ii++)  // smooth to -1
+  { arr[ii] = adjusted;
+    adjusted -= smooth_adjust;
+  }
+  adjusted = -1.;
+  for (ii = out_rate + smooth_count; ii < table_size; ii++) // up to 0
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
+  wavetable [9] = arr;
+
+  /* create the lookup table of smooth saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  increment = 2. / (double) (table_size - (2 * smooth_count));
+  adjusted = 0.;
+  for (ii = 0; ii < smooth_count; ii++)  // smooth to -1
+  { arr[ii] = adjusted;
+    adjusted -= smooth_adjust;
+  }
+  adjusted = -1.;
+  for (ii = smooth_count; ii < table_size - smooth_count; ii++)
+  { arr[ii] = adjusted;
+    adjusted += increment;
+  }
+  adjusted = 1.;
+  for (ii = table_size - smooth_count; ii < table_size; ii++)  // smooth to 0
+  { arr[ii] = adjusted;
+    adjusted -= smooth_adjust;
+  }
+  wavetable [10] = arr;
+
+  /* create the lookup table of smooth reverse saw values, double the sample rate */
+
+  arr = (double *) Alloc (table_size * sizeof (double));
+  increment = 2. / (double) (table_size - (2 * smooth_count));
+  adjusted = 0.;
+  for (ii = 0; ii < smooth_count; ii++)  // smooth to 1
+  { arr[ii] = adjusted;
+    adjusted += smooth_adjust;
+  }
+  adjusted = 1.;
+  for (ii = smooth_count; ii < table_size - smooth_count; ii++)
+  { arr[ii] = adjusted;
+    adjusted -= increment;
+  }
+  adjusted = -1.;
+  for (ii = table_size - smooth_count; ii < table_size; ii++)  // smooth to 0
+  { arr[ii] = adjusted;
+    adjusted += smooth_adjust;
+  }
+  wavetable [11] = arr;
+
 }
 
 /* Parse any listfile script filenames from the LFS linked list
@@ -2170,7 +2335,6 @@ setup_listfile_scripts ()
   {
     filename = lff_work->filename;
     read_script_file_sequence (filename);  // call the setup with the filename
-    setup_play_seq ();
     lff_work = lff_work->next;
   }
   free (opt_l_filelist);  // free listfile filename list here, definitely done with it.
@@ -2185,135 +2349,173 @@ setup_listfile_scripts ()
 
 int
 read_script_file_sequence (char * filename)
-{
-  char *curlin, *cmnt, *token;
-  char *savelin, *worklin, *rawline;
+{ char *curlin, *cmnt, *token, *newline;
+  char *saveline, *worklin, *rawline;
   char *retptr;
   size_t len, destlen;
   int line_count = 0;
   time_seq *tsh = NULL, *tsw = NULL;
   FILE *infile;
 
-  savelin= StrMem (16384);
-  worklin= StrMem (16384);
-  rawline= StrMem (16384);
+  saveline = StrMem (16384);
+  worklin = StrMem (16384);
+  rawline = StrMem (16384);
   infile = fopen (filename, "r");
   if (!infile)
     error ("Unable to open script file %s", filename);
-  memset (savelin, 0x00, 16384);
+  memset (saveline, 0x00, 16384);
   memset (worklin, 0x00, 16384);
   retptr = fgets (worklin, 16384, infile);
   if (retptr == NULL)
     error ("Unable to read line from script file %s", filename);
+  newline = strchr (worklin, '\n');  // get pointer to newline in just read line
+  strncpy (newline, "$\0", 2);     // truncate at newline, add termination character
   strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
   curlin = rawline;
   while (!feof (infile))
-  //while (*curlin != '\0')
-  {
-    line_count++;
-    token = strtok (worklin, " \t\n");    // get first token separated by spaces, tabs, or newline
+  { line_count++;
+    token = strtok (worklin, " $");    // get first token separated by spaces and termination character
     if (token)                  // not an empty line
-    {
-      cmnt = strchr (curlin, '#');
+    { cmnt = strchr (curlin, '#');
       if (cmnt && cmnt[1] == '#')
-      {
-        if (!opt_q)  // quiet
-        {
-          fprintf (stderr, "Configuration comment  %s\n", curlin);
+      { if (!opt_q)  // quiet
+        { fprintf (stderr, "Configuration comment  %s\n", curlin);
           fflush (stderr);
         }
       }
       if (token[0] == '-')      // options line
-      {
         ;  // do nothing
-      }
-      else if (isdigit (token[0]) && strchr (token, ':') != NULL) // start of a time sequence
-      {
-        if (strchr(savelin, ':') != NULL)   // just finished a time sequence
-        {
-          tsh = (time_seq *) Alloc (sizeof (time_seq) * 1);      // allocate struct for it
+      else if (token[0] == '#') // line is a comment
+        ;  // do nothing
+      else if (isdigit (token[0]) && strchr (token, ':') != NULL) // start of a time sequence sub section
+      { if (strchr(saveline, ':') != NULL)   // just finished a time sequence sub section
+        { tsh = (time_seq *) Alloc (sizeof (time_seq) * 1);      // allocate struct for just finished sub section
           tsh->next = NULL;
           if (TS == NULL)       // time seq list doesn't exist
-          {
-            tsh->prev = NULL;
+          { tsh->prev = NULL;
             TS = tsh;
           }
-          else
-          {
-            tsh->prev = tsw;
+          else  // if TS isn't NULL then tsw won't be NULL either.
+          { tsh->prev = tsw;
             tsw->next = tsh;
           }
           tsw = tsh;
-          tsw->sequence = StrDup (savelin);        // save them
-          memset (savelin, 0x00, 16384);         // reset saved line
+          tsw->sequence = StrDup (saveline);        // save them
+          memset (saveline, 0x00, 16384);         // reset saved line
         }
         if (cmnt)
-          strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
+          strncpy (cmnt, "$\0", 2);     // truncate at comment, add trailing delimiter
         while (isspace (*curlin))       // remove leading spaces, not really necessary
           curlin++;
         len = strlen (curlin);
-        strncpy (savelin, curlin, len);  // here only at start of time sequence
+        strncpy (saveline, curlin, (len+1));  // here only at start of time sequence, save start of new sub section
       }
-      else if (isalpha (token[0]))    // a sequence continuation, can't split voice
-      {
-        if (cmnt)
-          strncpy (cmnt, " \0", 2);     // truncate at comment, add trailing space
-        destlen = strlen (savelin);
+      else if (isalpha (token[0]))    // new voice within this sub section
+      { if (cmnt)
+          strncpy (cmnt, "$\0", 2);     // truncate at comment, add trailing delimiter
+        destlen = strlen (saveline);
         len = strlen (curlin);
-        if (destlen == 0)
-        {
-          strncpy (savelin, curlin, len);
+        if (destlen == 0)  // voice without preceding time specification, should never happen
+        { strncpy (saveline, curlin, (len+1));
         }
         else  // StrCat takes care of any overflow in size
-        {
-          StrCat (savelin, "\t", 16384);  // add trailing tab so voices are separate
-          StrCat (savelin, curlin, 16384);  // add voices
+        { StrCat (saveline, curlin, 16384);  // add voice
         }
       }
-      else if (token[0] == '#') // line is a comment
-        ;  // do nothing
+      else if (strchr (separators, token[0]) != NULL)
+      { /* starts with a separator, so is a continuation of the last read line.
+         * the usage of strtok has removed any leading space, so only the 
+         * non space separators count here
+         */
+        if (cmnt)
+          strncpy (cmnt, "$\0", 2);     // truncate at comment, add trailing delimiter
+        destlen = strlen (saveline);
+        len = strlen (curlin);
+        if (destlen == 0)  // this should never hit because the time indicator is always there
+        { error ("Continuation %c found at start of line %s in time sequence with no prior voice.", token [0], rawline);
+        }
+        else  //  append to previous voice, StrCat takes care of any overflow in size
+        { saveline[destlen-1] = ' ';  // convert previous terminator to space
+          StrCat (saveline, curlin, 16384);  // add voice continuation
+        }
+      }
+      else if (token[0] == '@') // line is a time sequence delimiter
+      {  // need to process the previous time sequence if there is one
+        if (strlen (saveline) > 0)
+        { // save last time sequence sub section
+          tsh = (time_seq *) Alloc ((sizeof (time_seq)) * 1);
+          tsh->next = NULL;
+          if (TS == NULL)           // time seq list doesn't exist
+          { tsh->prev = NULL;
+            TS = tsh;
+          }
+          else
+          { tsh->prev = tsw;
+            tsw->next = tsh;
+          }
+          tsw = tsh;
+          tsw->sequence = StrDup (saveline);        // save the time sequence sub section
+          memset (saveline, 0x00, 16384);         // reset saved line
+        }
+        if (TS != NULL)  // there is a previous time sequence
+        { setup_play_seq ();  // set up this sound stream (time sequence) as a chorus node
+          finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
+          finish_non_beat_voice_setup ();  // complete setup of non-beat voices now that sequences are known
+        }
+      }
       else
-      {
-        if (!opt_q)  // quiet
+      { if (!opt_q)  // quiet
           fprintf (stderr, "Skipped line with token %s at start of line\n", token);
       }
     }
     memset (worklin, 0x00, 16384);
     retptr = fgets (worklin, 16384, infile);
+    newline = strchr (worklin, '\n');  // get pointer to newline in just read line
+    if (newline != NULL)
+      strncpy (newline, "$\0", 2);     // truncate at newline, add tab and space
     strncpy (rawline, worklin, 16384); // strtok is destructive, save raw copy of line
     curlin = rawline;
   }
   if (feof (infile))
-  {                           
-    // save last time sequence
-    tsh = (time_seq *) Alloc ((sizeof (time_seq)) * 1);
-    tsh->next = NULL;
-    if (TS == NULL)           // time seq list doesn't exist
-    {
-      tsh->prev = NULL;
-      TS = tsh;
+  { if (strlen (saveline) > 0)
+    { // save last time sequence sub section
+      tsh = (time_seq *) Alloc ((sizeof (time_seq)) * 1);
+      tsh->next = NULL;
+      if (TS == NULL)           // time seq list doesn't exist
+      { tsh->prev = NULL;
+        TS = tsh;
+      }
+      else
+      { tsh->prev = tsw;
+        tsw->next = tsh;
+      }
+      tsw = tsh;
+      tsw->sequence = StrDup (saveline);        // save the time sequence sub section
     }
-    else
-    {
-      tsh->prev = tsw;
-      tsw->next = tsh;
+    if (TS != NULL)
+    { setup_play_seq ();  // set up this sound stream as a chorus node
+      finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
+      finish_non_beat_voice_setup ();  // complete setup of non-beat voices now that sequences are known
     }
-    tsw = tsh;
-    tsw->sequence = savelin;        // save them
     fclose (infile);
+    free (saveline);
     free (worklin);
     free (rawline);
     return 0;
   }
-  error ("Read error on sequence file");
-  fclose (infile);
-  free (savelin);
-  free (worklin);
-  free (rawline);
-  return -1;
+  else
+  { error ("Read error on sequence file");
+    fclose (infile);
+    free (saveline);
+    free (worklin);
+    free (rawline);
+    return -1;
+  }
 }
 
-/* Set up the sequence of voices that will play in a time sequence */
+/* Set up the sequence of voices that will play in a time sequence and link
+ * them into the chorus voice linked list of all time sequences that are playing.
+ * */
 
 int
 setup_play_seq ()
@@ -2347,14 +2549,14 @@ setup_play_seq ()
   chorus_voice1->cur_frames = (intmax_t) (0);
   chorus_voice1->play_seq = NULL;
   chorus_voice1->buffer = (double *) Alloc ((sizeof (double)) * BUFFER_LEN);
-  if (stream_container == NULL)  // make it the root node
+  if (STREAM_CONTAINER == NULL)  // make it the root node
   {
     chorus_voice1->prev = NULL;
-    stream_container = chorus_voice1;
+    STREAM_CONTAINER = chorus_voice1;
   }
   else  // link in the new chorus voice
   {
-    chorus_voice *chorus_voice2 = stream_container;  // root node of chorus voices
+    chorus_voice *chorus_voice2 = STREAM_CONTAINER;  // root node of chorus voices
     while (chorus_voice2->next != NULL)  // step through until the last chorus voice processed
       chorus_voice2 = chorus_voice2->next;  // that's the one to link to here
     chorus_voice1->prev = chorus_voice2;
@@ -2371,7 +2573,7 @@ setup_play_seq ()
   while (tsw != NULL)           // move through time sequence linked list
   {
     str1 = tsw->sequence;
-    token = strtok_r (str1, "\t\n", &saveptr1);        // get first token after tabs
+    token = strtok_r (str1, "$", &saveptr1);        // get first token after separated by $
     str2 = token;
     subtoken = strtok_r (str2, separators, &saveptr2);    // get subtoken of token, time indicator
     read_time (subtoken, &time_in_secs);
@@ -2391,7 +2593,7 @@ setup_play_seq ()
     else  // default is no fade
       sndstream1->fade = 0;
     str1 = NULL;
-    token = strtok_r (str1, "\t\n", &saveptr1);        // get next token
+    token = strtok_r (str1, "$", &saveptr1);        // get next token
     while (token != NULL)
     {
       str2 = token;
@@ -2478,7 +2680,7 @@ setup_play_seq ()
         stub2->next = NULL;  // set the forward link for this voice
       }
       prev = work;  // point to new voice as previous voice
-      token = strtok_r (str1, "\t\n", &saveptr1);      // get next token
+      token = strtok_r (str1, "$", &saveptr1);      // get next token
     }
     tsw = tsw->next;  // get next period, time sequence
     if (tsw != NULL)
@@ -2504,8 +2706,6 @@ setup_play_seq ()
   free (TS);  // free the root sequence node
   TS = NULL;  // so the next script file starts fresh
   free (voice);
-  finish_beat_voice_setup ();  // complete setup of beat voices now that sequences are known
-  finish_non_beat_voice_setup ();  // complete setup of non-beat voices now that sequences are known
   return 0;
 }
 
@@ -2595,124 +2795,56 @@ setup_binaural (char *token, void **work)
   binaural1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
-    binaural1->slide = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
-  {
-    binaural1->type = 9;  // binaural step
-    binaural1->slide = 2;  // binaural step slide
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && (isdigit (*subtoken) || *subtoken == '.'))  // digit or period, must be amp beat
+    { errno = 0;
+      double amp_beat1 = strtod (subtoken, &endptr);
+      if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude beat1 for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (amp_beat1 < 0.0)  // no errors, but less than zero
+        error ("Amplitude beat1 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
+      binaural1->amp_beat1 = amp_beat1;
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    binaural1->steps = (int) steps;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_beat2 = strtod (subtoken, &endptr);
+      if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude beat2 for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (amp_beat2 < 0.0)  // no errors, but less than zero
+        error ("Amplitude beat2 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
+      binaural1->amp_beat2 = amp_beat2;
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    binaural1->slide_time = slide_time;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_pct1 = strtod (subtoken, &endptr);
+      if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude adj1 for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (amp_pct1 < 0.0)  // no errors, but less than zero
+        error ("Amplitude adj1 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
+      binaural1->amp_pct1 = AMP_AD(amp_pct1);
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double fuzz = strtod (subtoken, &endptr);
-    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Fuzz for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (fuzz < 0.0)  // no errors, but less than zero
-      error ("Fuzz for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
-    binaural1->fuzz = AMP_AD(fuzz);
-  }
-  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
-  {
-    binaural1->type = 11;  // binaural vary
-    binaural1->slide = 3;  // binaural vary slide
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    binaural1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    binaural1->slide_time = slide_time;
-  }
-  else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
-  {
-    errno = 0;
-    double amp_beat1 = strtod (subtoken, &endptr);
-    if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude beat1 for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (amp_beat1 < 0.0)  // no errors, but less than zero
-      error ("Amplitude beat1 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
-    binaural1->amp_beat1 = amp_beat1;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_beat2 = strtod (subtoken, &endptr);
-    if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude beat2 for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (amp_beat2 < 0.0)  // no errors, but less than zero
-      error ("Amplitude beat2 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
-    binaural1->amp_beat2 = amp_beat2;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_pct1 = strtod (subtoken, &endptr);
-    if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude adj1 for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (amp_pct1 < 0.0)  // no errors, but less than zero
-      error ("Amplitude adj1 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
-    binaural1->amp_pct1 = AMP_AD(amp_pct1);
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_pct2 = strtod (subtoken, &endptr);
-    if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude adj2 for binaural had an error.\n%s\n%s", subtoken, original);
-    else if (amp_pct2 < 0.0)  // no errors, but less than zero
-      error ("Amplitude adj2 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
-    binaural1->amp_pct2 = AMP_AD(amp_pct2);
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_pct2 = strtod (subtoken, &endptr);
+      if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude adj2 for binaural had an error.\n%s\n%s", subtoken, original);
+      else if (amp_pct2 < 0.0)  // no errors, but less than zero
+        error ("Amplitude adj2 for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
+      binaural1->amp_pct2 = AMP_AD(amp_pct2);
+    }
+    else if (strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
       binaural1->slide = 1;
-    else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // step slide
-    {
-      binaural1->type = 9;  // binaural step
+    else if (strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
+    { binaural1->type = 9;  // binaural step
       binaural1->slide = 2;  // binaural step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -2748,9 +2880,8 @@ setup_binaural (char *token, void **work)
         error ("Fuzz for binaural cannot be less than 0.\n%s\n%s", subtoken, original);
       binaural1->fuzz = AMP_AD(fuzz);
     }
-    else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
-    {
-      binaural1->type = 11;  // binaural vary
+    else if (strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
+    { binaural1->type = 11;  // binaural vary
       binaural1->slide = 3;  // binaural vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -2775,9 +2906,58 @@ setup_binaural (char *token, void **work)
         error ("Slide time for binaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       binaural1->slide_time = slide_time;
     }
-    else if (subtoken != NULL) // invalid slide indicator
-      error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { binaural1->wavestyle = 0;
+      binaural1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { binaural1->wavestyle = 1;
+      binaural1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { binaural1->wavestyle = 2;
+      binaural1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { binaural1->wavestyle = 3;
+      binaural1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { binaural1->wavestyle = 4;
+      binaural1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { binaural1->wavestyle = 5;
+      binaural1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { binaural1->wavestyle = 6;
+      binaural1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { binaural1->wavestyle = 7;
+      binaural1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { binaural1->wavestyle = 8;
+      binaural1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { binaural1->wavestyle = 9;
+      binaural1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { binaural1->wavestyle = 10;
+      binaural1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { binaural1->wavestyle = 11;
+      binaural1->table = wavetable [11];
+    }
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
   }
+  free (original);
 }
 
 /* Set up a bell sequence */
@@ -2947,8 +3127,61 @@ setup_bell (char *token, void **work)
   bell1->behave = (int) behave;   // convert to int
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-    bell1->slide = 1;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (strcmp (subtoken, ">") == 0)  // slide
+      bell1->slide = 1;
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { bell1->wavestyle = 0;
+      bell1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { bell1->wavestyle = 1;
+      bell1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { bell1->wavestyle = 2;
+      bell1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { bell1->wavestyle = 3;
+      bell1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { bell1->wavestyle = 4;
+      bell1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { bell1->wavestyle = 5;
+      bell1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { bell1->wavestyle = 6;
+      bell1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { bell1->wavestyle = 7;
+      bell1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { bell1->wavestyle = 8;
+      bell1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { bell1->wavestyle = 9;
+      bell1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { bell1->wavestyle = 10;
+      bell1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { bell1->wavestyle = 11;
+      bell1->table = wavetable [11];
+    }
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
+  }
 
   /* create the time to first play of bell */
   if (bell1->repeat_min == bell1->repeat_max)
@@ -2961,6 +3194,7 @@ setup_bell (char *token, void **work)
     bell1->next_play = delta/2;  // bias towards sooner
   }
   bell1->sofar = 0LL;
+  free (original);
 }
 
 /* Set up a noise sequence */
@@ -3157,19 +3391,12 @@ setup_noise (char *token, void **work)
     error ("Tone behavior upper limit for noise cannot be less than lower limit, greater than 21.\n%s\n%s", subtoken, original);
   noise1->behave_high = (int) behave_high;         // convert to int
 
-    /* possible multiplier for a noise voice, but might be slide if no multiplier */
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  int ii = 0;
   double multiple = 0.0;
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-  {
-    multiple = 1.0;  // no multiplier, set it to 1
-    noise1->slide = 1;  // there is a slide
-  }
-  else
-  {
-    if (subtoken)  // not NULL
-    {
-      errno = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && isdigit (*subtoken))  // digit, must be multiple
+    { errno = 0;
       multiple = strtod (subtoken, &endptr);
       if ((multiple == 0.0 && strcmp (subtoken, endptr) == 0)
           || (*endptr != '\0')
@@ -3177,15 +3404,59 @@ setup_noise (char *token, void **work)
         error ("Multiplier for noise had an error.\n%s\n%s", subtoken, original);
       else if (multiple < 1.0)  // no errors, but less than 1
         error ("Multiplier for noise cannot be less than 1.\n%s\n%s", subtoken, original);
-
-      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-      if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-        noise1->slide = 1;
-      /* else next token is NULL, no slide, already set above for slide  */
     }
-    else  // next token is NULL
-      multiple = 1.0;  // no multiplier
-      /* no slide, already set above for slide  */
+    else if (strcmp (subtoken, ">") == 0)  // slide
+      noise1->slide = 1;
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { noise1->wavestyle = 0;
+      noise1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { noise1->wavestyle = 1;
+      noise1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { noise1->wavestyle = 2;
+      noise1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { noise1->wavestyle = 3;
+      noise1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { noise1->wavestyle = 4;
+      noise1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { noise1->wavestyle = 5;
+      noise1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { noise1->wavestyle = 6;
+      noise1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { noise1->wavestyle = 7;
+      noise1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { noise1->wavestyle = 8;
+      noise1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { noise1->wavestyle = 9;
+      noise1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { noise1->wavestyle = 10;
+      noise1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { noise1->wavestyle = 11;
+      noise1->table = wavetable [11];
+    }
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
   }
 
   /* create the time to first play of noise.  Make it short so that it immediately creates a
@@ -3193,7 +3464,11 @@ setup_noise (char *token, void **work)
    * same value to start.  Has to be longer than fade in and fade out.  Make it 50 ms */
   noise1->next_play = (intmax_t) (out_rate / 200);      // frames to next play
   noise1->sofar = noise1->next_play;  // immediate start
-  return abs ((int) multiple);         // convert to int
+  free (original);
+  if (multiple == 0.0)
+    return 1;  // no multiple specified, set to single occurrence
+  else
+    return abs ((int) multiple);         // convert input value to int
 }
 
 /* Set up a stoch file sequence */
@@ -3328,8 +3603,13 @@ setup_stoch (char *token, void **work)
   stoch1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-    stoch1->slide = 1;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (strcmp (subtoken, ">") == 0)  // slide
+      stoch1->slide = 1;
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
+  }
 
   /* set up frames till first play of stoch */
   if (stoch1->repeat_min == stoch1->repeat_max)
@@ -3341,6 +3621,7 @@ setup_stoch (char *token, void **work)
     stoch1->next_play  = (intmax_t) ( (drand48 ()) * stoch1->repeat_max);  // random up to max repeat interval
   }
   stoch1->sofar = 0LL;
+  free (original);
   free (filename);
 }
 
@@ -3462,12 +3743,18 @@ setup_sample (char *token, void **work)
   sample1->size = (intmax_t) (sample_size * out_rate);  // convert from seconds to frames 
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-    sample1->slide = 1;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (strcmp (subtoken, ">") == 0)  // slide
+      sample1->slide = 1;
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
+  }
 
   /* Set some defaults so sample position is determined randomly at start of generate frames */
   sample1->play = 0LL;  // start out with zero play size, let generate frames determine
   sample1->off1 = 0LL;  // set in generate frames when play is zero.
+  free (original);
   free (filename);
 }
 
@@ -3578,11 +3865,17 @@ setup_repeat (char *token, void **work)
   repeat1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-    repeat1->slide = 1;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (strcmp (subtoken, ">") == 0)  // slide
+      repeat1->slide = 1;
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
+  }
 
   /* set play to initialize in generate frames */
   repeat1->play = 0LL;  // how much has played so far
+  free (original);
   free (filename);
 }
 
@@ -3703,8 +3996,18 @@ setup_once (char *token, void **work)
     error ("Play time for once cannot be less than 0.\n%s\n%s", subtoken, original);
   once1->play_when = (intmax_t) (play_when * out_rate);      // convert to frames from seconds
 
+  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (strcmp (subtoken, ">") == 0)  // slide
+      once1->slide = 1;
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
+  }
+
   /* set up play of once */
   once1->sofar = once1->play = (intmax_t) 0;
+  free (original);
   free (filename);
 }
 
@@ -3729,6 +4032,9 @@ setup_chronaural (char *token, void **work)
   chronaural1->slide = 0;  // default to not slide
   chronaural1->off1 = chronaural1->off3 = chronaural1->off2 = 0;  // begin at 0 degrees
   chronaural1->last_off1 = chronaural1->last_off3 = chronaural1->last_off2 = NULL;  // no previous voice offsets yet
+  chronaural1->split_begin = chronaural1->split_end = .5; // default left fraction for chronaural, .5 means evenly split L and R
+  chronaural1->split_low = chronaural1->split_high = .5; // range allowed for random split, .5 means evenly split L and R
+  chronaural1->split_beat = 0.0;   // defaults split beat to 0
   chronaural1->first_pass = 1;  // inactive
   /* used for step and vary */
   chronaural1->step_next = NULL;  // default no steps
@@ -3826,133 +4132,183 @@ setup_chronaural (char *token, void **work)
   chronaural1->beat_behave = beat_behave;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Beginning split for chronaural had an error.\n%s\n%s", subtoken, original);
-  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Beginning split for chronaural cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", 
-                                                                   subtoken, original);
-  chronaural1->split_begin = split_begin;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && (isdigit (*subtoken) || *subtoken == '.'))  // digit or period, must be split
+    { errno = 0;
+      double split_begin = strtod (subtoken, &endptr);
+      if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Beginning split for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but < 0 or > 1
+        error ("Beginning split for chronaural cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", 
+                                                                       subtoken, original);
+      chronaural1->split_begin = split_begin;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_end = strtod (subtoken, &endptr);
-  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Ending split for chronaural had an error.\n%s\n%s", subtoken, original);
-  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Ending split for chronaural cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  chronaural1->split_end = split_end;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_end = strtod (subtoken, &endptr);
+      if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Ending split for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Ending split for chronaural cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", 
+                                                                       subtoken, original);
+      chronaural1->split_end = split_end;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_low = strtod (subtoken, &endptr);
-  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Low split limit for chronaural had an error.\n%s\n%s", subtoken, original);
-  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Low split limit for chronaural cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
-  chronaural1->split_low = split_low;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_low = strtod (subtoken, &endptr);
+      if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Low split limit for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Low split limit for chronaural cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
+      chronaural1->split_low = split_low;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_high = strtod (subtoken, &endptr);
-  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("High split limit for chronaural had an error.\n%s\n%s", subtoken, original);
-  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
-    error ("High split limit for chronaural cannot be less than low split limit or greater than 1.\n%s\n%s", 
-                                                                    subtoken, original);
-  chronaural1->split_high = split_high;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_high = strtod (subtoken, &endptr);
+      if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("High split limit for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+        error ("High split limit for chronaural cannot be less than low split limit or greater than 1.\n%s\n%s", 
+                                                                        subtoken, original);
+      chronaural1->split_high = split_high;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_beat = strtod (subtoken, &endptr);
-  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Split beat for chronaural had an error.\n%s\n%s", subtoken, original);
-  else if (split_beat < 0.0)  // no errors, but less than 0
-    error ("Split beat for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
-  chronaural1->split_beat = split_beat;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_beat = strtod (subtoken, &endptr);
+      if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Split beat for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (split_beat < 0.0)  // no errors, but less than 0
+        error ("Split beat for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
+      chronaural1->split_beat = split_beat;
+    }
+    else if (strcmp (subtoken, ">") == 0)  // slide
+      chronaural1->slide = 1;
+    else if (strcmp (subtoken, "&") == 0)  // step slide
+    { chronaural1->type = 10;  // chronaural step slide
+      chronaural1->slide = 2;  // chronaural step slide
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)
-    chronaural1->slide = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there a step slide, no amp variation
-  {
-    chronaural1->type = 10;  // chronaural step slide
-    chronaural1->slide = 2;  // chronaural step slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      chronaural1->steps = (int) steps;
 
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      chronaural1->slide_time = slide_time;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double fuzz = strtod (subtoken, &endptr);
+      if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Fuzz for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (fuzz < 0.0)  // no errors, but less than zero
+        error ("Fuzz for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
+      chronaural1->fuzz = AMP_AD(fuzz);
+    }
+    else if (strcmp (subtoken, "~") == 0)  // vary slide
+    { chronaural1->type = 12;  // chronaural vary slide
+      chronaural1->slide = 3;  // chronaural vary slide
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      chronaural1->steps = (int) steps;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for chronaural had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      chronaural1->slide_time = slide_time;
+    }
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { chronaural1->wavestyle = 0;
+      chronaural1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { chronaural1->wavestyle = 1;
+      chronaural1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { chronaural1->wavestyle = 2;
+      chronaural1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { chronaural1->wavestyle = 3;
+      chronaural1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { chronaural1->wavestyle = 4;
+      chronaural1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { chronaural1->wavestyle = 5;
+      chronaural1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { chronaural1->wavestyle = 6;
+      chronaural1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { chronaural1->wavestyle = 7;
+      chronaural1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { chronaural1->wavestyle = 8;
+      chronaural1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { chronaural1->wavestyle = 9;
+      chronaural1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { chronaural1->wavestyle = 10;
+      chronaural1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { chronaural1->wavestyle = 11;
+      chronaural1->table = wavetable [11];
+    }
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for chronaural had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    chronaural1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for chronaural had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    chronaural1->slide_time = slide_time;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double fuzz = strtod (subtoken, &endptr);
-    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Fuzz for chronaural had an error.\n%s\n%s", subtoken, original);
-    else if (fuzz < 0.0)  // no errors, but less than zero
-      error ("Fuzz for chronaural cannot be less than 0.\n%s\n%s", subtoken, original);
-    chronaural1->fuzz = AMP_AD(fuzz);
+    ii += 1;
   }
-  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there a vary, no amp variation
-  {
-    chronaural1->type = 12;  // chronaural vary slide
-    chronaural1->slide = 3;  // chronaural vary slide
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for chronaural had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    chronaural1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for chronaural had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for chronaural cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    chronaural1->slide_time = slide_time;
-  }
-  else if (subtoken != NULL) // invalid slide indicator
-    error ("Slide indicator for chronaural had an error.\n%s\n%s", subtoken, original);
+  free (original);
 }
 
 /* Set up a pulse sequence */
@@ -3976,6 +4332,9 @@ setup_pulse (char *token, void **work)
   pulse1->slide = 0;  // default to not slide
   pulse1->off1 = pulse1->off3 = pulse1->off2 = 0;  // begin at 0 degrees
   pulse1->last_off1 = pulse1->last_off3 = pulse1->last_off2 = NULL;  // no previous voice offsets yet
+  pulse1->split_begin = pulse1->split_end = 0.5; // default left fraction for pulse, .5 means evenly split L and R
+  pulse1->split_low = pulse1->split_high = 0.5; // range allowed for random split, .5 means evenly split L and R
+  pulse1->split_beat = 0.0;   // defaults split beat to 0
   pulse1->first_pass = 1;  // inactive
   /* used for step and vary */
   pulse1->step_next = NULL;  // default no steps
@@ -4062,131 +4421,181 @@ setup_pulse (char *token, void **work)
   pulse1->time = time;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Beginning split for pulse had an error.\n%s\n%s", subtoken, original);
-  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Beginning split for pulse cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  pulse1->split_begin = split_begin;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && (isdigit (*subtoken) || *subtoken == '.'))  // digit or period, must be split
+    { errno = 0;
+      double split_begin = strtod (subtoken, &endptr);
+      if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Beginning split for pulse had an error.\n%s\n%s", subtoken, original);
+      else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but < 0 or > 1
+        error ("Beginning split for pulse cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+      pulse1->split_begin = split_begin;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_end = strtod (subtoken, &endptr);
-  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Ending split for pulse had an error.\n%s\n%s", subtoken, original);
-  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Ending split for pulse cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  pulse1->split_end = split_end;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_end = strtod (subtoken, &endptr);
+      if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Ending split for pulse had an error.\n%s\n%s", subtoken, original);
+      else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Ending split for pulse cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+      pulse1->split_end = split_end;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_low = strtod (subtoken, &endptr);
-  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Low split limit for pulse had an error.\n%s\n%s", subtoken, original);
-  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Low split limit for pulse cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
-  pulse1->split_low = split_low;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_low = strtod (subtoken, &endptr);
+      if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Low split limit for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Low split limit for pulse cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
+      pulse1->split_low = split_low;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_high = strtod (subtoken, &endptr);
-  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("High split limit for pulse had an error.\n%s\n%s", subtoken, original);
-  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
-    error ("High split limit for pulse cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
-  pulse1->split_high = split_high;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_high = strtod (subtoken, &endptr);
+      if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("High split limit for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+        error ("High split limit for pulse cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
+      pulse1->split_high = split_high;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_beat = strtod (subtoken, &endptr);
-  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Split beat for pulse had an error.\n%s\n%s", subtoken, original);
-  else if (split_beat < 0.0)  // no errors, but less than 0
-    error ("Split beat for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
-  pulse1->split_beat = split_beat;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_beat = strtod (subtoken, &endptr);
+      if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Split beat for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (split_beat < 0.0)  // no errors, but less than 0
+        error ("Split beat for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
+      pulse1->split_beat = split_beat;
+    }
+    else if (strcmp (subtoken, ">") == 0)  // slide
+      pulse1->slide = 1;
+    else if (strcmp (subtoken, "&") == 0)  // step slide
+    { pulse1->type = 14;  // pulse step slide
+      pulse1->slide = 2;  // pulse step slide
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // regular slide
-    pulse1->slide = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // a step slide
-  {
-    pulse1->type = 14;  // pulse step slide
-    pulse1->slide = 2;  // pulse step slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      pulse1->steps = (int) steps;
 
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      pulse1->slide_time = slide_time;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double fuzz = strtod (subtoken, &endptr);
+      if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Fuzz for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (fuzz < 0.0)  // no errors, but less than zero
+        error ("Fuzz for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
+      pulse1->fuzz = AMP_AD(fuzz);
+    }
+    else if (strcmp (subtoken, "~") == 0)  // a vary slide
+    {
+      pulse1->type = 15;  // pulse vary slide
+      pulse1->slide = 3;  // pulse vary slide
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double steps = strtod (subtoken, &endptr);
+      if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Step count for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (steps <= 0.0)  // no errors, but less than equal to zero
+        error ("Step count for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      pulse1->steps = (int) steps;
+
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double slide_time = strtod (subtoken, &endptr);
+      if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Slide time for pulse had an error.\n%s\n%s", subtoken, original);
+      else if (slide_time <= 0.0)  // no errors, but less than equal to zero
+        error ("Slide time for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
+      pulse1->slide_time = slide_time;
+    }
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { pulse1->wavestyle = 0;
+      pulse1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { pulse1->wavestyle = 1;
+      pulse1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { pulse1->wavestyle = 2;
+      pulse1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { pulse1->wavestyle = 3;
+      pulse1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { pulse1->wavestyle = 4;
+      pulse1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { pulse1->wavestyle = 5;
+      pulse1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { pulse1->wavestyle = 6;
+      pulse1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { pulse1->wavestyle = 7;
+      pulse1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { pulse1->wavestyle = 8;
+      pulse1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { pulse1->wavestyle = 9;
+      pulse1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { pulse1->wavestyle = 10;
+      pulse1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { pulse1->wavestyle = 11;
+      pulse1->table = wavetable [11];
+    }
     subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for pulse had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    pulse1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for pulse had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    pulse1->slide_time = slide_time;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double fuzz = strtod (subtoken, &endptr);
-    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Fuzz for pulse had an error.\n%s\n%s", subtoken, original);
-    else if (fuzz < 0.0)  // no errors, but less than zero
-      error ("Fuzz for pulse cannot be less than 0.\n%s\n%s", subtoken, original);
-    pulse1->fuzz = AMP_AD(fuzz);
+    ii += 1;
   }
-  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // a vary slide
-  {
-    pulse1->type = 15;  // pulse vary slide
-    pulse1->slide = 3;  // pulse vary slide
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for pulse had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    pulse1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for pulse had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for pulse cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    pulse1->slide_time = slide_time;
-  }
-  else if (subtoken != NULL) // invalid slide indicator
-    error ("Slide indicator for pulse had an error.\n%s\n%s", subtoken, original);
+  free (original);
 }
 
 /* Set up a phase sequence */
@@ -4212,6 +4621,11 @@ setup_phase (char *token, void **work)
   phase1->shift = 0;  // begin at 0 shift
   phase1->direction = 1;  // begin with shift towards maximum phase
   phase1->last_off1 = NULL;  // no previous voice offsets yet
+  phase1->split_begin = phase1->split_end = 0.5; // default left fraction for phase, .5 means evenly split L and R
+  phase1->split_low = phase1->split_high = 0.5; // range allowed for random split, .5 means evenly split L and R
+  phase1->split_beat = 0.0;   // defaults split beat to 0
+  phase1->amp_beat1 = phase1->amp_beat2 = 0.0;  // default to no amp beat
+  phase1->amp_pct1 = phase1->amp_pct2 = 0.0;  // default to no amp pct
   phase1->last_shift = phase1->last_direction = NULL;  // no previous shift or direction offsets yet
   phase1->last_amp_off1 = phase1->last_amp_off2 = NULL;  // no previous voice offsets yet
   phase1->first_pass = 1;  // inactive
@@ -4222,6 +4636,7 @@ setup_phase (char *token, void **work)
   phase1->steps = 0;  // no steps
   phase1->slide_time = 0.0;  // no slide between steps
   phase1->fuzz = 0.0;  // no fuzziness around step frequency
+  /* used for voice fade in and out */
   original = StrDup (token);
   str2 = token;
 
@@ -4291,177 +4706,111 @@ setup_phase (char *token, void **work)
   phase1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Beginning split for phase had an error.\n%s\n%s", subtoken, original);
-  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Beginning split for phase cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  phase1->split_begin = split_begin;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && (isdigit (*subtoken) || *subtoken == '.'))  // digit or period, must be split and amp beat
+    { errno = 0;
+      double split_begin = strtod (subtoken, &endptr);
+      if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Beginning split for phase had an error.\n%s\n%s", subtoken, original);
+      else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but < 0, > 1
+        error ("Beginning split for phase cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+      phase1->split_begin = split_begin;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_end = strtod (subtoken, &endptr);
-  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Ending split for phase had an error.\n%s\n%s", subtoken, original);
-  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Ending split for phase cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  phase1->split_end = split_end;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_end = strtod (subtoken, &endptr);
+      if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Ending split for phase had an error.\n%s\n%s", subtoken, original);
+      else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Ending split for phase cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+      phase1->split_end = split_end;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_low = strtod (subtoken, &endptr);
-  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Low split limit for phase had an error.\n%s\n%s", subtoken, original);
-  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Low split limit for phase cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
-  phase1->split_low = split_low;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_low = strtod (subtoken, &endptr);
+      if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Low split limit for phase had an error.\n%s\n%s", subtoken, original);
+      else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Low split limit for phase cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
+      phase1->split_low = split_low;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_high = strtod (subtoken, &endptr);
-  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("High split limit for phase had an error.\n%s\n%s", subtoken, original);
-  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
-    error ("High split limit for phase cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
-  phase1->split_high = split_high;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_high = strtod (subtoken, &endptr);
+      if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("High split limit for phase had an error.\n%s\n%s", subtoken, original);
+      else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+        error ("High split limit for phase cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
+      phase1->split_high = split_high;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_beat = strtod (subtoken, &endptr);
-  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Split beat for phase had an error.\n%s\n%s", subtoken, original);
-  else if (split_beat < 0.0)  // no errors, but less than 0
-    error ("Split beat for phase cannot be less than 0.\n%s\n%s", subtoken, original);
-  phase1->split_beat = split_beat;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_beat = strtod (subtoken, &endptr);
+      if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Split beat for phase had an error.\n%s\n%s", subtoken, original);
+      else if (split_beat < 0.0)  // no errors, but less than 0
+        error ("Split beat for phase cannot be less than 0.\n%s\n%s", subtoken, original);
+      phase1->split_beat = split_beat;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there and slide, done, no amp variation
-    phase1->slide = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
-  {
-    phase1->type = 17;  // phase step
-    phase1->slide = 2;  // phase step slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_beat1 = strtod (subtoken, &endptr);
+      if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude beat1 for phase had an error.\n%s\n%s", subtoken, original);
+      else if (amp_beat1 < 0.0)  // no errors, but less than zero
+        error ("Amplitude beat1 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
+      phase1->amp_beat1 = amp_beat1;
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for phase had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    phase1->steps = (int) steps;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_beat2 = strtod (subtoken, &endptr);
+      if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude beat2 for phase had an error.\n%s\n%s", subtoken, original);
+      else if (amp_beat2 < 0.0)  // no errors, but less than zero
+        error ("Amplitude beat2 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
+      phase1->amp_beat2 = amp_beat2;
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for phase had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    phase1->slide_time = slide_time;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_pct1 = strtod (subtoken, &endptr);
+      if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude adj1 for phase had an error.\n%s\n%s", subtoken, original);
+      else if (amp_pct1 < 0.0)  // no errors, but less than zero
+        error ("Amplitude adj1 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
+      phase1->amp_pct1 = AMP_AD(amp_pct1);
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double fuzz = strtod (subtoken, &endptr);
-    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Fuzz for phase had an error.\n%s\n%s", subtoken, original);
-    else if (fuzz < 0.0)  // no errors, but less than zero
-      error ("Fuzz for phase cannot be less than 0.\n%s\n%s", subtoken, original);
-    phase1->fuzz = AMP_AD(fuzz);
-  }
-  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
-  {
-    phase1->type = 18;  // phase vary
-    phase1->slide = 3;  // phase vary slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_pct2 = strtod (subtoken, &endptr);
+      if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude adj2 for phase had an error.\n%s\n%s", subtoken, original);
+      else if (amp_pct2 < 0.0)  // no errors, but less than zero
+        error ("Amplitude adj2 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
+      phase1->amp_pct2 = AMP_AD(amp_pct2);
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for phase had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    phase1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for phase had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    phase1->slide_time = slide_time;
-  }
-  else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
-  {
-    errno = 0;
-    double amp_beat1 = strtod (subtoken, &endptr);
-    if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude beat1 for phase had an error.\n%s\n%s", subtoken, original);
-    else if (amp_beat1 < 0.0)  // no errors, but less than zero
-      error ("Amplitude beat1 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
-    phase1->amp_beat1 = amp_beat1;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_beat2 = strtod (subtoken, &endptr);
-    if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude beat2 for phase had an error.\n%s\n%s", subtoken, original);
-    else if (amp_beat2 < 0.0)  // no errors, but less than zero
-      error ("Amplitude beat2 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
-    phase1->amp_beat2 = amp_beat2;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_pct1 = strtod (subtoken, &endptr);
-    if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude adj1 for phase had an error.\n%s\n%s", subtoken, original);
-    else if (amp_pct1 < 0.0)  // no errors, but less than zero
-      error ("Amplitude adj1 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
-    phase1->amp_pct1 = AMP_AD(amp_pct1);
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_pct2 = strtod (subtoken, &endptr);
-    if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude adj2 for phase had an error.\n%s\n%s", subtoken, original);
-    else if (amp_pct2 < 0.0)  // no errors, but less than zero
-      error ("Amplitude adj2 for phase cannot be less than 0.\n%s\n%s", subtoken, original);
-    phase1->amp_pct2 = AMP_AD(amp_pct2);
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+    }
+    else if (strcmp (subtoken, ">") == 0)  // slide
       phase1->slide = 1;
-    else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // step slide
+    else if (strcmp (subtoken, "&") == 0)  // step slide
     {
       phase1->type = 17;  // phase step
       phase1->slide = 2;  // phase step slide
@@ -4499,7 +4848,7 @@ setup_phase (char *token, void **work)
         error ("Fuzz for phase cannot be less than 0.\n%s\n%s", subtoken, original);
       phase1->fuzz = AMP_AD(fuzz);
     }
-    else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
+    else if (strcmp (subtoken, "~") == 0)  // vary slide
     {
       phase1->type = 18;  // phase vary
       phase1->slide = 3;  // phase vary slide
@@ -4526,9 +4875,58 @@ setup_phase (char *token, void **work)
         error ("Slide time for phase cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       phase1->slide_time = slide_time;
     }
-    else if (subtoken != NULL) // invalid slide indicator
-      error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { phase1->wavestyle = 0;
+      phase1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { phase1->wavestyle = 1;
+      phase1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { phase1->wavestyle = 2;
+      phase1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { phase1->wavestyle = 3;
+      phase1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { phase1->wavestyle = 4;
+      phase1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { phase1->wavestyle = 5;
+      phase1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { phase1->wavestyle = 6;
+      phase1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { phase1->wavestyle = 7;
+      phase1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { phase1->wavestyle = 8;
+      phase1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { phase1->wavestyle = 9;
+      phase1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { phase1->wavestyle = 10;
+      phase1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { phase1->wavestyle = 11;
+      phase1->table = wavetable [11];
+    }
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
   }
+  free (original);
 }
 
 /* Set up an fm sequence */
@@ -4554,6 +4952,11 @@ setup_fm (char *token, void **work)
   fm1->shift = 0.0;  // begin at 0 shift
   fm1->direction = 1;  // begin with shift towards maximum freq
   fm1->last_off1 = NULL;  // no previous voice offsets yet
+  fm1->split_begin = fm1->split_end = 0.5; // default left fraction for fm, .5 means evenly split L and R
+  fm1->split_low = fm1->split_high = 0.5; // range allowed for random split, .5 means evenly split L and R
+  fm1->split_beat = 0.0;   // defaults split beat to 0
+  fm1->amp_beat1 = fm1->amp_beat2 = 0.0;  // default to no amp beat
+  fm1->amp_pct1 = fm1->amp_pct2 = 0.0;  // default to no amp pct
   fm1->last_shift = NULL;  // no previous shift yet
   fm1->last_direction = NULL;  // no previous direction yet
   fm1->last_amp_off1 = fm1->last_amp_off2 = NULL;  // no previous voice offsets yet
@@ -4645,180 +5048,111 @@ setup_fm (char *token, void **work)
   fm1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_begin = strtod (subtoken, &endptr);
-  if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Beginning split for fm had an error.\n%s\n%s", subtoken, original);
-  else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Beginning split for fm cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  fm1->split_begin = split_begin;
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && (isdigit (*subtoken) || *subtoken == '.'))  // digit or period, must be split and amp beat
+    { errno = 0;
+      double split_begin = strtod (subtoken, &endptr);
+      if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Beginning split for fm had an error.\n%s\n%s", subtoken, original);
+      else if ((split_begin < 0.0 && split_begin != -1.0) || split_begin > 1.0)  // no errors, but < 0 or > 1
+        error ("Beginning split for fm cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+      fm1->split_begin = split_begin;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_end = strtod (subtoken, &endptr);
-  if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Ending split for fm had an error.\n%s\n%s", subtoken, original);
-  else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Ending split for fm cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
-  fm1->split_end = split_end;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_end = strtod (subtoken, &endptr);
+      if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Ending split for fm had an error.\n%s\n%s", subtoken, original);
+      else if ((split_end < 0.0 && split_end != -1.0) || split_end > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Ending split for fm cannot be less than 0 except for -1, or greater than 1.\n%s\n%s", subtoken, original);
+      fm1->split_end = split_end;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_low = strtod (subtoken, &endptr);
-  if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Low split limit for fm had an error.\n%s\n%s", subtoken, original);
-  else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
-    error ("Low split limit for fm cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
-  fm1->split_low = split_low;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_low = strtod (subtoken, &endptr);
+      if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Low split limit for fm had an error.\n%s\n%s", subtoken, original);
+      else if (split_low < 0.0 || split_low > 1.0)  // no errors, but less than zero, greater than 1
+        error ("Low split limit for fm cannot be less than 0 or greater than 1.\n%s\n%s", subtoken, original);
+      fm1->split_low = split_low;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_high = strtod (subtoken, &endptr);
-  if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("High split limit for fm had an error.\n%s\n%s", subtoken, original);
-  else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
-    error ("High split limit for fm cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
-  fm1->split_high = split_high;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_high = strtod (subtoken, &endptr);
+      if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("High split limit for fm had an error.\n%s\n%s", subtoken, original);
+      else if (split_high < split_low || split_high > 1.0)  // no errors, but less than split_low or greater than 1
+        error ("High split limit for fm cannot be less than low split limit or greater than 1.\n%s\n%s", subtoken, original);
+      fm1->split_high = split_high;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  errno = 0;
-  double split_beat = strtod (subtoken, &endptr);
-  if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
-      || (*endptr != '\0')
-      || errno != 0)
-    error ("Split beat for fm had an error.\n%s\n%s", subtoken, original);
-  else if (split_beat < 0.0)  // no errors, but less than 0
-    error ("Split beat for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-  fm1->split_beat = split_beat;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double split_beat = strtod (subtoken, &endptr);
+      if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Split beat for fm had an error.\n%s\n%s", subtoken, original);
+      else if (split_beat < 0.0)  // no errors, but less than 0
+        error ("Split beat for fm cannot be less than 0.\n%s\n%s", subtoken, original);
+      fm1->split_beat = split_beat;
 
-  subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // it's there a slide, done, no amp variation
-    fm1->slide = 1;
-  else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // it's there and step slide, no amp variation
-  {
-    fm1->type = 20;  // freq step
-    fm1->slide = 2;  // freq step slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_beat1 = strtod (subtoken, &endptr);
+      if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude beat1 for fm had an error.\n%s\n%s", subtoken, original);
+      else if (amp_beat1 < 0.0)  // no errors, but less than zero
+        error ("Amplitude beat1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
+      fm1->amp_beat1 = amp_beat1;
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for fm had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    fm1->steps = (int) steps;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_beat2 = strtod (subtoken, &endptr);
+      if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude beat2 for fm had an error.\n%s\n%s", subtoken, original);
+      else if (amp_beat2 < 0.0)  // no errors, but less than zero
+        error ("Amplitude beat2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
+      fm1->amp_beat2 = amp_beat2;
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for fm had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    fm1->slide_time = slide_time;
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_pct1 = strtod (subtoken, &endptr);
+      if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude adj1 for fm had an error.\n%s\n%s", subtoken, original);
+      else if (amp_pct1 < 0.0)  // no errors, but less than zero
+        error ("Amplitude adj1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
+      fm1->amp_pct1 = AMP_AD (amp_pct1);
 
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double fuzz = strtod (subtoken, &endptr);
-    if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Fuzz for fm had an error.\n%s\n%s", subtoken, original);
-    else if (fuzz < 0.0)  // no errors, but less than zero
-      error ("Fuzz for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->fuzz = AMP_AD(fuzz);
-  }
-  else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // it's there and vary, no amp variation
-  {
-    fm1->type = 21;  // freq vary
-    fm1->slide = 3;  // freq vary slide
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double steps = strtod (subtoken, &endptr);
-    if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Step count for fm had an error.\n%s\n%s", subtoken, original);
-    else if (steps <= 0.0)  // no errors, but less than equal to zero
-      error ("Step count for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    fm1->steps = (int) steps;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double slide_time = strtod (subtoken, &endptr);
-    if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Slide time for fm had an error.\n%s\n%s", subtoken, original);
-    else if (slide_time <= 0.0)  // no errors, but less than equal to zero
-      error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
-    fm1->slide_time = slide_time;
-  }
-  else if (subtoken != NULL)  // it's there, not slide, step, or vary, must be amp variation
-  {
-    errno = 0;
-    double amp_beat1 = strtod (subtoken, &endptr);
-    if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude beat1 for fm had an error.\n%s\n%s", subtoken, original);
-    else if (amp_beat1 < 0.0)  // no errors, but less than zero
-      error ("Amplitude beat1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_beat1 = amp_beat1;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_beat2 = strtod (subtoken, &endptr);
-    if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude beat2 for fm had an error.\n%s\n%s", subtoken, original);
-    else if (amp_beat2 < 0.0)  // no errors, but less than zero
-      error ("Amplitude beat2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_beat2 = amp_beat2;
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_pct1 = strtod (subtoken, &endptr);
-    if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude adj1 for fm had an error.\n%s\n%s", subtoken, original);
-    else if (amp_pct1 < 0.0)  // no errors, but less than zero
-      error ("Amplitude adj1 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_pct1 = AMP_AD (amp_pct1);
-
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    errno = 0;
-    double amp_pct2 = strtod (subtoken, &endptr);
-    if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
-        || (*endptr != '\0')
-        || errno != 0)
-      error ("Amplitude adj2 for fm had an error.\n%s\n%s", subtoken, original);
-    else if (amp_pct2 < 0.0)  // no errors, but less than zero
-      error ("Amplitude adj2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
-    fm1->amp_pct2 = AMP_AD (amp_pct2);
-
-    /* check if there is a slide after amp beat */
-    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-    if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
+      subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      errno = 0;
+      double amp_pct2 = strtod (subtoken, &endptr);
+      if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
+          || (*endptr != '\0')
+          || errno != 0)
+        error ("Amplitude adj2 for fm had an error.\n%s\n%s", subtoken, original);
+      else if (amp_pct2 < 0.0)  // no errors, but less than zero
+        error ("Amplitude adj2 for fm cannot be less than 0.\n%s\n%s", subtoken, original);
+      fm1->amp_pct2 = AMP_AD (amp_pct2);
+    }
+    else if (strcmp (subtoken, ">") == 0)  // slide
       fm1->slide = 1;
-    else if (subtoken != NULL && strcmp (subtoken, "&") == 0)  // step slide
-    {
-      fm1->type = 20;  // freq step
+    else if (strcmp (subtoken, "&") == 0)  // step slide
+    { fm1->type = 20;  // freq step
       fm1->slide = 2;  // freq step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -4854,9 +5188,8 @@ setup_fm (char *token, void **work)
         error ("Fuzz for fm cannot be less than 0.\n%s\n%s", subtoken, original);
       fm1->fuzz = AMP_AD(fuzz);
     }
-    else if (subtoken != NULL && strcmp (subtoken, "~") == 0)  // vary
-    {
-      fm1->type = 21;  // freq vary
+    else if (strcmp (subtoken, "~") == 0)  // vary slide
+    { fm1->type = 21;  // freq vary
       fm1->slide = 3;  // freq vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
@@ -4881,9 +5214,58 @@ setup_fm (char *token, void **work)
         error ("Slide time for fm cannot be less than or equal to 0.\n%s\n%s", subtoken, original);
       fm1->slide_time = slide_time;
     }
-    else if (subtoken != NULL) // invalid slide indicator
-      error ("Slide indicator for binaural had an error.\n%s\n%s", subtoken, original);
+    else if (strcmp (subtoken, "sin") == 0)  // use sin table for this voice
+    { fm1->wavestyle = 0;
+      fm1->table = wavetable [0];
+    }
+    else if (strcmp (subtoken, "square") == 0)  // use square table for this voice
+    { fm1->wavestyle = 1;
+      fm1->table = wavetable [1];
+    }
+    else if (strcmp (subtoken, "triangle") == 0)  // use triangle table for this voice
+    { fm1->wavestyle = 2;
+      fm1->table = wavetable [2];
+    }
+    else if (strcmp (subtoken, "hsaw") == 0)  // use half saw table for this voice
+    { fm1->wavestyle = 3;
+      fm1->table = wavetable [3];
+    }
+    else if (strcmp (subtoken, "rhsaw") == 0)  // use reverse half saw table for this voice
+    { fm1->wavestyle = 4;
+      fm1->table = wavetable [4];
+    }
+    else if (strcmp (subtoken, "saw") == 0)  // use saw table for this voice
+    { fm1->wavestyle = 5;
+      fm1->table = wavetable [5];
+    }
+    else if (strcmp (subtoken, "rsaw") == 0)  // use reverse saw table for this voice
+    { fm1->wavestyle = 6;
+      fm1->table = wavetable [6];
+    }
+    else if (strcmp (subtoken, "ssquare") == 0)  // use smooth square table for this voice
+    { fm1->wavestyle = 7;
+      fm1->table = wavetable [7];
+    }
+    else if (strcmp (subtoken, "shsaw") == 0)  // use smooth half saw table for this voice
+    { fm1->wavestyle = 8;
+      fm1->table = wavetable [8];
+    }
+    else if (strcmp (subtoken, "srhsaw") == 0)  // use smooth reverse half saw table for this voice
+    { fm1->wavestyle = 9;
+      fm1->table = wavetable [9];
+    }
+    else if (strcmp (subtoken, "ssaw") == 0)  // use smooth saw table for this voice
+    { fm1->wavestyle = 10;
+      fm1->table = wavetable [10];
+    }
+    else if (strcmp (subtoken, "srsaw") == 0)  // use smooth reverse saw table for this voice
+    { fm1->wavestyle = 11;
+      fm1->table = wavetable [11];
+    }
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
   }
+  free (original);
 }
 
 /* Set up a silence sequence */
@@ -4918,15 +5300,14 @@ setup_spin (char *token, void **work)
   *work = spin1;
   spin1->next = NULL;
   spin1->type = 23;
+  spin1->spin_dir = 1.;  // default to right or clockwise spin
   spin1->slide = 0;  // default to not slide
   /* initialize pointer to last voices offset into buffer, how many played so far as NULL  */ 
   spin1->last_off1 = spin1->last_play = NULL;
   /* initialize pointer to last voices amplitude as NULL  */ 
   spin1->last_amp = NULL;
-  /* initialize pointer to last voices phase, and phase adjust as NULL  */ 
-  spin1->last_phase = spin1->last_phase_adj = NULL;
-  /* initialize pointer to last voices split, and split adjust as NULL  */ 
-  spin1->last_split = spin1->last_split_adj = NULL;
+  /* initialize pointer to last voices angle, and angle adjust as NULL  */ 
+  spin1->last_angle = spin1->last_angle_adj = NULL;
   spin1->first_pass = 1;  // inactive
   original = StrDup (token);
   str2 = token;
@@ -4966,19 +5347,27 @@ setup_spin (char *token, void **work)
   spin1->spin_time = spin_time;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
-  if (subtoken != NULL && strcmp (subtoken, ">") == 0)  // slide
-    spin1->slide = 1;
-  
+  int ii = 0;
+  while (subtoken != NULL)  // optional at this point, iterate until no more subtokens
+  { if (ii == 0 && strcmp (subtoken, "R") == 0)
+      spin1->spin_dir = 1.;  // Clockwise spin
+    else if (ii == 0 && strcmp (subtoken, "L") == 0)
+      spin1->spin_dir = -1.;  // counter clockwise spin
+    else if (strcmp (subtoken, ">") == 0)  // slide
+      spin1->slide = 1;
+    subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+    ii += 1;
+  }
+
   sb2 = create_filtered_sample (sb1);  // create the filtered sample
   spin1->sound_filtered = sb2->sound;
   spin1->scale_filtered = sb2->scale;
 
   /* set play to initialize in generate frames */
   spin1->play = 0LL;  // how much has played so far
-  spin1->phase = 0.0;      // starting phase for spin
-  spin1->phase_adj = 360. / ((double) out_rate * spin1->spin_time);  
-  spin1->split = .5;      // starting split for spin
-  spin1->split_adj = 0.2 / ((double) out_rate * spin1->spin_time);  // max split is not 1
+  spin1->angle = 0.0;      // starting angle for spin
+  spin1->angle_adj = 360. / ((double) out_rate * spin1->spin_time);
+  free (original);
   free (filename);
 }
 
@@ -4993,7 +5382,7 @@ convert_to_mono (snd_buffer *sb1)
   /* Get a new buffer for the mono sound */
   tmpbuf = (short *) Alloc ((sizeof (short)) * sb1->frames);
   /* If actual stereo sound, there is a decision; merge the channels, or discard one of them?  
-   * I think I'll merge for now.  See how that goes.  If the format is stereo
+   * Merge is problematic because of artifacts, discard the right channel instead.
    * but there is only one channel of sound, use the channel of sound, don't merge.
    * And find the maximum amplitude in the sound file, always short int once read */
   intmax_t count_of_samples, offset_into_buffer;
@@ -5065,42 +5454,278 @@ create_filtered_sample (snd_buffer *sb1)
   Sound_Files->prev = sb2;
   Sound_Files = sb2;
 
+  memcpy (sb2->sound, sb1->sound, ((sizeof (short)) * sb1->frames * sb1->channels));  // copy the buffer directly
   /* This is the point to apply any true filtering to the two buffers that will be
-   * used to create the spin effect.
-   * */
-  /* First create the filtered sound buffer with a simple average of samples in sb1 to do some
-   * high frequency smoothing.
-   */
-  
+   * used to create the spin effect. */
+
+#if NOTDEFINED   // this is a 1d time domain convolution
+  /* This is using a low pass filter in the time domain to filter the back buffer, sb2 */
+  double freq_cut = 4000./ ((double) (out_rate));
+  int sample_points = (int) round (4. / (1000./ (double) (out_rate)));  // 1000 Hz filter bandwidth
+  if (sample_points % 2 == 1)
+    sample_points += 1;
+  double *low_pass = make_windowed_sinc (freq_cut, sample_points);
+  /* convolve in the time domain, wrapping where necessary. */
+  double *tmpbuf = (double *) Alloc ((sizeof (double)) * sb2->frames * sb2->channels);
   intmax_t count_of_samples, offset_into_buffer, negative_correction;
-  
-  int samples_to_avg = (out_rate / 10000);  // try to smooth in order to damp above ~10000 hz, introduces light crackle
-  if (samples_to_avg % 2 == 0)
-    samples_to_avg += 1;  // always an odd number of samples so avg below works fine for zero point
+  count_of_samples = sb2->frames * sb2->channels;
+  offset_into_buffer = 0;
+  double max = 0.0;
+  int ii;
+  while (offset_into_buffer < count_of_samples)
+  {  // always mono sound in sb2, required for spin effects
+    double sum = 0.0;
+    for (ii= 0; ii < sample_points+1; ii++)
+    { negative_correction = count_of_samples - ii;
+      sum += ((double) *(sb1->sound + ((offset_into_buffer + negative_correction) % count_of_samples)))
+               * low_pass [ii];
+    }
+    *(tmpbuf + offset_into_buffer) = sum;
+    if (fabs(sum) > max)  // save max value
+      max = fabs(sum);
+    offset_into_buffer++;
+  }
+  /* now put the altered buffer back into the short buffer */
+  offset_into_buffer = 0;
+  while (offset_into_buffer < count_of_samples)  // normalize and convert to short
+  { *(sb2->sound + offset_into_buffer) = (short) round ((tmpbuf [offset_into_buffer] / max) * 32767.);
+    offset_into_buffer++;
+  }
+  /* Create a high pass filter in the time domain to make a notch filter to filter the front buffer, sb1 */
+  freq_cut = 6000./ ((double) (out_rate));  
+  double *notch_filter = make_windowed_sinc (freq_cut, sample_points);  // use same sample points, combining
+  for (ii = 0;  ii < sample_points+1; ii++)
+    notch_filter [ii] = -notch_filter [ii];  // spectral inversion converts to high pass
+  notch_filter [sample_points/2] = notch_filter [sample_points/2] + 1;
+  for (ii = 0;  ii < sample_points+1; ii++)
+    notch_filter [ii] += low_pass [ii];  // combine the two filters
+  /* convolve in the time domain, wrapping where necessary. */
   count_of_samples = sb1->frames * sb1->channels;
   offset_into_buffer = 0;
-  int holder, peak=0;
-  int ii, sum, avg;
-  while (offset_into_buffer < count_of_samples) 
+  max = 0.0;
+  while (offset_into_buffer < count_of_samples)
   {  // always mono sound in sb1, required for spin effects
-    sum = 0;
-    for (ii=-samples_to_avg/2; ii <= samples_to_avg/2; ii++)
-    {
-      negative_correction = count_of_samples + ii;  // if ii is negative, > offset, modulo operation fails
-      sum += *(sb1->sound + ((offset_into_buffer + negative_correction) % count_of_samples));  // wrap when necessary
+    double sum = 0.0;
+    for (ii= 0; ii < sample_points+1; ii++)
+    { negative_correction = count_of_samples - ii;
+      sum += ((double) *(sb1->sound + ((offset_into_buffer + negative_correction) % count_of_samples)))
+               * notch_filter [ii];
     }
-    avg = sum / samples_to_avg;
-    *(sb2->sound + offset_into_buffer) = (short) avg;
-    holder = abs ((short) avg) ;  // check for largest value, save if it is
-    peak  = holder > peak ? holder : peak ;
+    *(tmpbuf + offset_into_buffer) = sum;
+    if (fabs(sum) > max)  // save max value
+      max = fabs(sum);
+    offset_into_buffer++;
+  }
+  /* now put the altered buffer back into the short buffer */
+  offset_into_buffer = 0;
+  while (offset_into_buffer < count_of_samples)  // normalize and convert to short
+  { *(sb1->sound + offset_into_buffer) = (short) round ((tmpbuf [offset_into_buffer] / max) * 32767.);
+    offset_into_buffer++;
+  }
+  free (tmpbuf);
+  free (low_pass);
+  free (notch_filter);
+#endif  // NOTDEFINED
+
+#if NOTDEFINED   // this is a 1d freq domain convolution
+  /* this is a 1D real fft with direct manipulation of the frequency domain before inverting */
+  intmax_t count_of_samples, offset_into_buffer;
+  int peak=0;
+  int ii;
+  double *in_time, *out_time;
+  fftw_complex *out_freq, *in_freq;
+  fftw_plan to_freq, to_time;
+  int fft_sample_size = 1024;
+
+  /* allocate the working buffers */
+  in_time = (double *) fftw_malloc(sizeof(double) * fft_sample_size);
+  out_freq = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * fft_sample_size);
+  in_freq = (fftw_complex *) fftw_malloc(sizeof(fftw_complex) * fft_sample_size);
+  out_time = (double *) fftw_malloc(sizeof(double) * fft_sample_size);
+  /* Create a plan for going to the frequency domain, and back to the time domain.
+   * These can be used for both buffers. */
+  to_freq = fftw_plan_dft_r2c_1d(fft_sample_size, in_time, out_freq, FFTW_PATIENT);
+  to_time = fftw_plan_dft_c2r_1d(fft_sample_size, in_freq, out_time, FFTW_PATIENT);
+  /* First do the front buffer, taking out a notch at 5 kHz */
+  count_of_samples = sb1->frames * sb1->channels;
+  int odd_samples = count_of_samples % fft_sample_size;
+  offset_into_buffer = 0;
+  while (offset_into_buffer < (count_of_samples - odd_samples)) 
+  {  // always mono sound in sb1, required for spin effects
+    for (ii=0; ii < fft_sample_size; ii++)
+    {  // normalize to 1, double for real part, no imaginary part 
+      in_time [ii] = (((double) (*(sb1->sound + offset_into_buffer))) / 32767.);
+      offset_into_buffer++;
+    }
+    fftw_execute(to_freq); /* convert to frequency domain */
+    /* want to take out a notch at 5 kHz, 1 kHz wide */
+    int point_5k = (int) round (5000. / ((double) out_rate / (double) (fft_sample_size/2)));  // index in out for 5 kHz
+    int step_size = (int) round ((double) out_rate / (double) (fft_sample_size/2));  // Hz for each step of k in freq domain
+    int width =  (int) round (500. / (double) step_size);  // half the width of the notch in k steps
+    for (ii= (point_5k - width); ii < (point_5k+width); ii++)
+      out_freq [ii] *= .02;  // decrease by 80%
+    memcpy (in_freq, out_freq, (sizeof(fftw_complex) * fft_sample_size));  // move out to in for processing to time
+    fftw_execute(to_time); /* convert to time domain */
+    for (ii=0; ii < fft_sample_size; ii++)
+    { out_time [ii] /= (double) fft_sample_size;  // normalize
+      *(sb1->sound + offset_into_buffer - (fft_sample_size - ii)) = (short) round (out_time [ii] * 32767.);
+    }
+  }
+  /* At this point all but the odd_samples have been through the process.  Do those to complete the notch
+   * filtering of sb1 */
+  for (ii=0; ii < odd_samples; ii++)
+  {  // normalize to 1, double for real part, no imaginary part 
+    in_time [ii] = (((double) (*(sb1->sound + offset_into_buffer))) / 32767.);
+    offset_into_buffer++;
+  }
+  count_of_samples = 0;
+  for (ii=odd_samples; ii < fft_sample_size; ii++)
+  {  // normalize to 1, double for real part, no imaginary part 
+    in_time [ii] = (((double) (*(sb1->sound + count_of_samples))) / 32767.);  // pad with beginning, wrap
+    count_of_samples++;
+  }
+  fftw_execute(to_freq); /* convert to frequency domain */
+  /* want to take out a notch at 5 kHz, 500 Hz wide */
+  int point_5k = (int) round (5000. / ((double) out_rate / (double) (fft_sample_size/2)));  // index in out for 5 kHz
+  int step_size = (int) round ((double) out_rate / (double) (fft_sample_size/2));  // Hz for each step of k in freq domain
+  int width =  (int) round (500. / (double) step_size);  // half the width of the notch in k steps
+  for (ii= (point_5k - width); ii < (point_5k+width); ii++)
+    out_freq [ii] *= .02;  // decrease by 80%
+  memcpy (in_freq, out_freq, (sizeof(fftw_complex) * fft_sample_size));  // move out to in for processing to time
+  fftw_execute(to_time); /* convert to time domain */
+  for (ii=0; ii < odd_samples; ii++)
+  { out_time [ii] /= (double) fft_sample_size;  // normalize
+    *(sb1->sound + offset_into_buffer - (fft_sample_size - ii)) = (short) round (out_time [ii] * 32767.);
+  }
+  /* set the scale factor for the altered sb1 buffer */
+  count_of_samples = sb1->frames * sb1->channels;
+  offset_into_buffer = 0;
+  peak=0;
+  while (offset_into_buffer < count_of_samples) 
+  { peak  = *(sb1->sound + offset_into_buffer) > peak ? *(sb1->sound + offset_into_buffer) : peak;
+    offset_into_buffer++;
+  }
+  /* scale factor is 1 divided by maximum amplitude in file  */
+  sb1->scale = 1.0 / ((double) peak + 10.0); // 10 ensures no clipping
+  /* Now do the back buffer, here doing a low pass filter with a wide edge, almost a linear decay from 4 kHz */
+  count_of_samples = sb2->frames * sb2->channels;
+  odd_samples = count_of_samples % fft_sample_size;
+  offset_into_buffer = 0;
+  while (offset_into_buffer < (count_of_samples - odd_samples)) 
+  {  // always mono sound in sb2, required for spin effects
+    for (ii=0; ii < fft_sample_size; ii++)
+    {  // normalize to 1, double for real part, no imaginary part 
+      in_time [ii] = (((double) (*(sb2->sound + offset_into_buffer))) / 32767.);
+      offset_into_buffer++;
+    }
+    fftw_execute(to_freq); /* convert to frequency domain */
+    /* Want to take out higher frequencies starting from 4 kHz, gradually increasing the amount.
+     * Don't want any left above 10 kHz */
+    int point_4k = (int) round (4000. / ((double) out_rate / (double) (fft_sample_size/2)));  // index in out for 4 kHz
+    step_size = (int) round ((double) out_rate / (double) (fft_sample_size/2));  // Hz for each step of k in freq domain
+    width =  (int) round (6000. / (double) step_size);  // the width from 4 kHz to 10 kHz in k steps
+    double decrement = .5 / width;  // increment to decrease in each pass
+    for (ii= point_4k; ii < (point_4k+width); ii++)
+    { out_freq [ii] *= (.5 - (ii-point_4k) * decrement);  // decrease
+      // out_freq [fft_sample_size - ii] = out_freq [ii];  // do negative mirror points, not necessary for real input
+    }
+    for (ii= (point_4k+width); ii < fft_sample_size/2; ii++)
+    { out_freq [ii] = 0.0 + I*0.0;  // zero everything from here on out
+      // out_freq [fft_sample_size - ii] = out_freq [ii];  // do negative mirror points, not necessary for real input
+    }
+    memcpy (in_freq, out_freq, (sizeof(fftw_complex) * fft_sample_size));  // move out to in for processing to time
+    fftw_execute(to_time); /* convert to time domain */
+    for (ii=0; ii < fft_sample_size; ii++)
+    { out_time [ii] /= (double) fft_sample_size;  // normalize
+      *(sb2->sound + offset_into_buffer - (fft_sample_size - ii)) = (short) round (out_time [ii] * 32767.);
+    }
+  }
+  /* At this point all but the odd_samples have been through the process.  Do those to complete the low pass
+   * filtering of sb2 */
+  for (ii=0; ii < odd_samples; ii++)
+  {  // normalize to 1, double for real part, no imaginary part 
+    in_time [ii] = (((double) (*(sb2->sound + offset_into_buffer))) / 32767.);
+    offset_into_buffer++;
+  }
+  count_of_samples = 0;
+  for (ii=odd_samples; ii < fft_sample_size; ii++)
+  {  // normalize to 1, double for real part, no imaginary part 
+    in_time [ii] = (((double) (*(sb2->sound + count_of_samples))) / 32767.);  // pad with beginning, wrap
+    count_of_samples++;
+  }
+  fftw_execute(to_freq); /* convert to frequency domain */
+  /* Want to take out higher frequencies starting from 4 kHz, gradually increasing the amount.
+   * Don't want any left above 10 kHz */
+  int point_4k = (int) round (4000. / ((double) out_rate / (double) fft_sample_size));  // index in out for 4 kHz
+  step_size = (int) round ((double) out_rate / (double) fft_sample_size);  // Hz for each step of k in freq domain
+  width =  (int) round (6000. / (double) step_size);  // the width from 4 kHz to 10 kHz in k steps
+  double decrement = .5 / width;  // increment to decrease in each pass
+  for (ii= point_4k; ii < (point_4k+width); ii++)
+  { out_freq [ii] *= (.5 - (ii-point_4k) * decrement);  // decrease
+    // out_freq [fft_sample_size - ii] = out_freq [ii];  // do negative mirror points, not necessary for real input
+  }
+  for (ii= (point_4k+width); ii < fft_sample_size/2; ii++)
+  { out_freq [ii] = 0.0 + I*0.0;  // zero everything from here on out
+    // out_freq [fft_sample_size - ii] = out_freq [ii];  // do negative mirror points, not necessary for real input
+  }
+  memcpy (in_freq, out_freq, (sizeof(fftw_complex) * fft_sample_size));  // move out to in for processing to time
+  fftw_execute(to_time); /* convert to time domain */
+  for (ii=0; ii < odd_samples; ii++)
+  { out_time [ii] /= (double) fft_sample_size;  // normalize
+    *(sb2->sound + offset_into_buffer - (fft_sample_size - ii)) = (short) round (out_time [ii] * 32767.);
+  }
+  /* set the scale factor for the altered sb2 buffer */
+  count_of_samples = sb2->frames * sb2->channels;
+  offset_into_buffer = 0;
+  peak=0;
+  while (offset_into_buffer < count_of_samples) 
+  { peak  = *(sb2->sound + offset_into_buffer) > peak ? *(sb2->sound + offset_into_buffer) : peak;
     offset_into_buffer++;
   }
   /* scale factor is 1 divided by maximum amplitude in file  */
   sb2->scale = 1.0 / ((double) peak + 10.0); // 10 ensures no clipping
+  fftw_destroy_plan(to_freq);
+  fftw_destroy_plan(to_time);
+  fftw_cleanup ();
+  fftw_free(in_time);
+  fftw_free(out_freq);
+  fftw_free(in_freq);
+  fftw_free(out_time);
+#endif  // NOTDEFINED
 
   return sb2;
 }
  
+/* create a windowed sinc filter in the time domain, has one more point than requested */
+
+double *
+make_windowed_sinc (double freq_cut, int sample_points)
+{
+  int ii;
+  //double PI = 3.1415926535897932384626;
+  double *filter;
+  double modifier = .5;
+
+  /* Get a new buffer for the filter values */
+  filter = (double *) Alloc ((sizeof (double)) * (sample_points+1));
+  for (ii = 0;  ii < sample_points+1; ii++)  // calculate the values
+  { if (ii != sample_points/2)
+      filter[ii] = modifier * (((sin (2. * PI * freq_cut * (ii - (sample_points/2)))) / (ii - (sample_points/2)))
+                   * (.42 
+                      - .5 * cos ((2. * PI * ii) / sample_points) 
+                      + .08 * cos ((4. * PI * ii) / sample_points)));
+    else
+      filter[ii] = 2. * PI * freq_cut;
+  }
+  /* Now normalize it */
+  double sum = 0.0;
+  for (ii = 0;  ii < sample_points+1; ii++)
+    sum += filter [ii];
+  for (ii = 0;  ii < sample_points+1; ii++)
+    filter [ii] /= sum;
+  return filter;
+}
+
 
 /*  Initialize all values possible for each beat voice */
 
@@ -5113,7 +5738,7 @@ finish_beat_voice_setup ()
   void *work1 = NULL, *work2 = NULL;
 
 
-  chv1 = stream_container;  // root node of chorus voices
+  chv1 = STREAM_CONTAINER;  // root node of chorus voices
   while (chv1->next != NULL)  // step through until the last chorus voice processed
     chv1 = chv1->next;  // that's the one to finish here
   snd1 = chv1->play_seq;  // root node of play stream
@@ -8726,7 +9351,7 @@ finish_non_beat_voice_setup ()
   void *work1 = NULL, *work2 = NULL;
 
 
-  chv1 = stream_container;  // root node of chorus voices
+  chv1 = STREAM_CONTAINER;  // root node of chorus voices
   while (chv1->next != NULL)  // step through until the last chorus voice processed
     chv1 = chv1->next;  // that's the one to finish here
   snd1 = chv1->play_seq;  // root node of play stream
@@ -9013,6 +9638,25 @@ finish_non_beat_voice_setup ()
               } 
             } 
             /* conditions weren't met for creating links between nodes, NULLs already set in original setup function */
+            if (once1->slide == 0)
+            { 
+              once1->amp_min_adj = once1->amp_max_adj = 0.0;
+            } 
+            else  // slide to next once in stream
+            { 
+              if (work2 != NULL)
+              { 
+                if (once2 != NULL)  // set above if once, NULL means next voice not once
+                {
+                  once1->amp_min_adj = (once2->amp_min - once1->amp_min)/ (double) snd1->tot_frames;
+                  once1->amp_max_adj = (once2->amp_max - once1->amp_max)/ (double) snd1->tot_frames;
+                } 
+                else
+                  error ("Slide called for, voice to slide to is not once.  Position matters!\n");
+              } 
+              else
+                error ("Slide called for, no next once in time sequence!\n");
+            }
             break;
           }
         case 8:  // chronaural
@@ -9052,10 +9696,8 @@ finish_non_beat_voice_setup ()
                   spin2->last_off2 = &(spin1->off2);
                   spin2->last_play = &(spin1->play);
                   spin2->last_amp = &(spin1->amp);
-                  spin2->last_phase = &(spin1->phase);
-                  spin2->last_phase_adj = &(spin1->phase_adj);
-                  spin2->last_split = &(spin1->split);
-                  spin2->last_split_adj = &(spin1->split_adj);
+                  spin2->last_angle = &(spin1->angle);
+                  spin2->last_angle_adj = &(spin1->angle_adj);
                 }
               } 
             } 
@@ -9273,7 +9915,7 @@ play_loop ()
   // pthread_attr_destroy (&attr_play);  // destroy attributes
   pthread_attr_init (&attr_play);  // initialize attributes
   pthread_attr_setdetachstate (&attr_play, PTHREAD_CREATE_DETACHED);  // run detached
-  chv1 = stream_container;  // root node of chorus voices
+  chv1 = STREAM_CONTAINER;  // root node of chorus voices
   while (chv1 != NULL)
   {
     if (chv1->tot_frames > max_frames)
@@ -9292,28 +9934,24 @@ play_loop ()
         and low frame rate  e.g. 1 second and fast_mult == 60 and frame rate == 22500/sec */
     this_buffer_frames = next_buffer_frames;  // using the number of frames determined in the last pass
     next_buffer_frames = full_buffer_frames;  // use full buffers unless node juncture approaching
-    chv1 = stream_container;  // root node of chorus voices
+    chv1 = STREAM_CONTAINER;  // root node of chorus voices
     while (chv1 != NULL)  // run through all chorus voices
-    {
-      if (chv1->cur_frames < chv1->tot_frames)  // still frames to play in this chorus voice
+    { if (chv1->cur_frames < chv1->tot_frames)  // still frames to play in this chorus voice
       {  // logic ensures that snd1 can't be NULL if above is true
         snd1 = chv1->play_seq;  // voice sequence linked list in this chorus voice
         if (!opt_q && chv1->cur_frames == 0)  // not quiet, at start
           status (snd1, stderr);  // initial before any play
         /* make sure that any fade is taken care of at start of a sound stream node */
         if (snd1->fade == 1 && snd1->cur_frames == 0)  // fade in
-        {
-          chv1->fade_val = 0.0;  // start at zero amplitude
+        { chv1->fade_val = 0.0;  // start at zero amplitude
           chv1->fade_incr = 1.0/snd1->tot_frames;  // adjust each frame
         }
         else if (snd1->fade == 2 && snd1->cur_frames == 0)  // fade out
-        {
-          chv1->fade_val = 1.0;  // start at one amplitude
+        { chv1->fade_val = 1.0;  // start at one amplitude
           chv1->fade_incr = -1.0/snd1->tot_frames;  // adjust each frame
         }
         else if (snd1->cur_frames == 0)  // no fade
-        {
-          chv1->fade_val = 1.0;  // no fade
+        { chv1->fade_val = 1.0;  // no fade
           chv1->fade_incr = 0.0;  // no adjust each frame
         }
         /* check if next buffer will be short because approaching a sequence node */
@@ -9330,8 +9968,7 @@ play_loop ()
          * generate frames. */
         generated_frames = generate_frames (snd1, chv1->buffer, 0, this_buffer_frames);
         if (snd1->fade)  // there is a fade in this time period for this sound stream
-        {
-          int ii;
+        { int ii;
           for (ii=0; ii < generated_frames * channels; ii+= channels)
           {  // fade one frame at a time
             buffer[ii] += (chv1->fade_val * chv1->buffer[ii]);
@@ -9340,8 +9977,7 @@ play_loop ()
           }
         }
         else  // no fade in this time period for this sound stream
-        {
-          int ii;
+        { int ii;
           for (ii=0; ii < generated_frames * channels; ii+= channels)
           {  // add one frame at a time
             buffer[ii] += chv1->buffer[ii];
@@ -9354,8 +9990,7 @@ play_loop ()
         if (!opt_q && display_frames >= display_count && snd1 != NULL)   // not quiet,  time to display
           status (snd1, stderr);  // blocking function call to write display of voices
         if (snd1->cur_frames >= snd1->tot_frames)
-        {
-          snd2 = snd1->next;  // move to next time period
+        { snd2 = snd1->next;  // move to next time period
           snd1 = snd2;
           chv1->play_seq = snd1;  // set chorus to this sequence node - not doing free because of time
           if (snd1 == NULL)
@@ -9365,10 +10000,8 @@ play_loop ()
       chv1 = chv1->next;
     }
     if (!opt_d)  // not display only
-    {
-      if (opt_t)  // use thread to play
-      {
-        sound_slice->frames = this_buffer_frames; // number of frames in buffer
+    { if (opt_t)  // use thread to play
+      { sound_slice->frames = this_buffer_frames; // number of frames in buffer
         memcpy (sound_slice->buffer, buffer, sizeof(buffer));  // copy frames to play
           /* block until previous play operation complete, unlocked in alsa_write */
         pthread_mutex_lock (&mtx_play);  
@@ -9376,8 +10009,7 @@ play_loop ()
         pthread_create (&pth_play, &attr_play, (void *) &alsa_write, (void *) sound_slice);
       }
       else  // blocking function call
-      {
-          /* send doubles to alsa-lib to translate to sound card format and play with blocking function call */
+      { /* send doubles to alsa-lib to translate to sound card format and play with blocking function call */
         int written = alsa_write_double (alsa_dev, buffer, this_buffer_frames, channels) ;
         if (!opt_q && written != this_buffer_frames)
           fprintf (stderr, "not all frames played to soundcard, %d instead of %d\n", written, this_buffer_frames);
@@ -9451,7 +10083,7 @@ save_loop ()
   //pthread_attr_destroy (&attr_write);  // destroy attributes
   pthread_attr_init (&attr_write);  // initialize attributes
   pthread_attr_setdetachstate (&attr_write, PTHREAD_CREATE_DETACHED);  // run detached
-  chv1 = stream_container;  // root node of chorus voices
+  chv1 = STREAM_CONTAINER;  // root node of chorus voices
   while (chv1 != NULL)
   {
     if (chv1->tot_frames > max_frames)
@@ -9469,7 +10101,7 @@ save_loop ()
   {
     this_buffer_frames = next_buffer_frames;  // start always at least 1 second, more than a buffer
     next_buffer_frames = full_buffer_frames;  // use full buffers unless node juncture approaching
-    chv1 = stream_container;  // root node of chorus voices
+    chv1 = STREAM_CONTAINER;  // root node of chorus voices
     while (chv1 != NULL)  // run through all chorus voices
     {
       if (chv1->cur_frames < chv1->tot_frames)  // still frames to play in this chorus voice
@@ -10020,15 +10652,13 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
         }
         break;
       case 4:                // Random file play
-        {
-          stoch *stoch1;
+        { stoch *stoch1;
           double split_end = 0.0;  // hold the ending split while creating voice
 
           stoch1 = (stoch *) this;  // reassign void pointer as stoch struct
           /* if start of the voice, set starting values to be last values of previous voice, if available */
           if (stoch1->first_pass)
-          {
-            stoch1->first_pass = 0;  // now active
+          { stoch1->first_pass = 0;  // now active
             /* check each pointer to the previous voice to see if it is valid */
             if (stoch1->last_next_play != NULL)
               stoch1->next_play = *stoch1->last_next_play;  // samples until time for next_play is amount from last voice
@@ -10046,42 +10676,32 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               stoch1->split_adj = *stoch1->last_split_adj;  // use same split_adj as last voice
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
-          {
-            if (stoch1->sofar >= stoch1->next_play)
-            {                     // time to play
-              stoch1->sofar = 0;
+          { if (stoch1->sofar >= stoch1->next_play)
+            { stoch1->sofar = 0;                     // time to play
               stoch1->off1 = 0;
               stoch1->play = stoch1->frames; // fixed play time
               if (stoch1->repeat_max == stoch1->repeat_min)
-              {
                 stoch1->next_play = stoch1->repeat_min + stoch1->play; // fixed period
-              }
               else
-              {
-                intmax_t delta = (intmax_t) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
-                // frames to next play after current play ends
+              { intmax_t delta = (intmax_t) ( (drand48 ()) * (stoch1->repeat_max - stoch1->repeat_min));
+                /* frames to next play after current play ends  */
                 stoch1->next_play = stoch1->repeat_min + delta + stoch1->play;
               }
               if (stoch1->amp_max == stoch1->amp_min)
-              {                   // fixed amp
-                stoch1->amp = stoch1->amp_min;
-              }
+                stoch1->amp = stoch1->amp_min;  // fixed amp
               else
-              {
-                double delta = ( (drand48 ()) * (stoch1->amp_max - stoch1->amp_min));
+              { double delta = ( (drand48 ()) * (stoch1->amp_max - stoch1->amp_min));
                 stoch1->amp = stoch1->amp_min + delta;       // beginning amplitude of tone
               }
               if (stoch1->split_begin == -1.0)  // stoch split start
-              {
-                double delta = ( (drand48 ()) * (stoch1->split_high - stoch1->split_low));
+              { double delta = ( (drand48 ()) * (stoch1->split_high - stoch1->split_low));
                 stoch1->split_now = stoch1->split_low + delta;      // starting split
               }
               else
                 stoch1->split_now = stoch1->split_begin;      // fixed starting split
                 
               if (stoch1->split_end == -1.0)  // stoch split end
-              {
-                double delta = ( (drand48 ()) * (stoch1->split_high - stoch1->split_low));
+              { double delta = ( (drand48 ()) * (stoch1->split_high - stoch1->split_low));
                 split_end = stoch1->split_low + delta;      // ending split
               }
               else
@@ -10090,35 +10710,29 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               stoch1->split_adj = (split_end - stoch1->split_now) / (double) stoch1->play;
             }
             if (stoch1->play > 0L)  // stoch is active
-            {
-              double amp = stoch1->amp * 2.;  // like binaural, double so each channel at amp with split
+            { double amp = stoch1->amp * 2.;  // like binaural, double so each channel at amp with split
               if (stoch1->channels == 2)  // stereo
-              {
-                if (stoch1->mono == 0)  // stereo
-                {
-                  out_buffer[ii] += (stoch1->split_now * amp
+              { if (stoch1->mono == 0)  // stereo
+                { out_buffer[ii] += (stoch1->split_now * amp
                           * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
                   out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                           * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
                 }
                 else if (stoch1->mono == 1)  // mono in stereo form, left has sound, stoch left as right channel
-                {
-                  out_buffer[ii] += (stoch1->split_now * amp
+                { out_buffer[ii] += (stoch1->split_now * amp
                           * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
                   out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                           * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
                 }
                 else if (stoch1->mono == 2)  // mono in stereo form, right has sound, stoch right as left channel
-                {
-                  out_buffer[ii] += (stoch1->split_now * amp
+                { out_buffer[ii] += (stoch1->split_now * amp
                           * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
                   out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                           * (((double) *(stoch1->sound + stoch1->off1 + 1)) * stoch1->scale));
                 }
               }
               else if (stoch1->channels == 1)  // mono, single channel split to be two
-              {
-                out_buffer[ii] += (stoch1->split_now * amp
+              { out_buffer[ii] += (stoch1->split_now * amp
                         * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
                 out_buffer[ii+1] += ((1.0 - stoch1->split_now) * amp
                         * (((double) *(stoch1->sound + stoch1->off1)) * stoch1->scale));
@@ -10128,23 +10742,32 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               stoch1->split_now += (stoch1->split_adj * fast_mult);
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               stoch1->play -= fast_mult;  // adjust frames played
+              if (stoch1->slide == 1)
+              { /* adjust amp during each frame while playing */
+                if (stoch1->amp_max != stoch1->amp_min)  // avoid division by zero
+                { double fraction = (stoch1->amp - stoch1->amp_min) / (stoch1->amp_max - stoch1->amp_min);
+                  stoch1->amp += (((stoch1->amp_min_adj * (1-fraction)) 
+                                   + (stoch1->amp_max_adj * fraction))
+                                   * fast_mult);
+                }
+              }
             }
             stoch1->sofar += fast_mult;
-            stoch1->amp_min += (stoch1->amp_min_adj * fast_mult);  // adjust amplitude for slides, whether play or not
-            stoch1->amp_max += (stoch1->amp_max_adj * fast_mult);
+            if (stoch1->slide == 1)
+            { stoch1->amp_min += (stoch1->amp_min_adj * fast_mult);  // adjust amplitude for slides, whether play or not
+              stoch1->amp_max += (stoch1->amp_max_adj * fast_mult);
+            }
           }
         }
         break;
       case 5:                // Sample file play
-        {
-          sample *sample1;
+        { sample *sample1;
           double split_end = 0.0;  // hold the ending split while creating voice
 
           sample1 = (sample *) this;  // reassign void pointer as sample struct
           /* if start of the voice, set starting values to be last values of previous voice, if available */
           if (sample1->first_pass)
-          {
-            sample1->first_pass = 0;  // now active
+          { sample1->first_pass = 0;  // now active
             /* check each pointer to the previous voice to see if it is valid */
             if (sample1->last_off1 != NULL)
               sample1->off1 = *sample1->last_off1;  // to start from buffer position of last voice
@@ -10158,33 +10781,26 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               sample1->split_adj = *sample1->last_split_adj;  // use same split_adj as last voice
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
-          {
-            if (sample1->play <= 0)  // done playing, time to play another sample
-            {     
-                  /* frame start for next play  */
+          { if (sample1->play <= 0)  // done playing, time to play another sample
+            {     /* frame start for next play  */
               sample1->off1 = (intmax_t) round ((drand48 ()) * sample1->frames);  // fine for mono
               if (sample1->channels == 2)  // offset is in shorts so have to double for stereo file
                 sample1->off1 *= 2;  // this also fixes it so that offset is always left channel.
               sample1->play = sample1->size; // fixed play time/frames
               if (sample1->amp_max == sample1->amp_min)
-              {                   // fixed amp
-                sample1->amp = sample1->amp_min;
-              }
+                sample1->amp = sample1->amp_min;                   // fixed amp
               else
-              {
-                double delta = ( (drand48 ()) * (sample1->amp_max - sample1->amp_min));
+              { double delta = ( (drand48 ()) * (sample1->amp_max - sample1->amp_min));
                 sample1->amp = sample1->amp_min + delta;       // beginning amplitude of tone
               }
               if (sample1->split_begin == -1.0)  // random split start
-              {
-                double delta = ( (drand48 ()) * (sample1->split_high - sample1->split_low));
+              { double delta = ( (drand48 ()) * (sample1->split_high - sample1->split_low));
                 sample1->split_now = sample1->split_low + delta;      // starting split for sample
               }
               else
                 sample1->split_now = sample1->split_begin;      // fixed starting split
               if (sample1->split_end == -1.0)  // random split end
-              {
-                double delta = ( (drand48 ()) * (sample1->split_high - sample1->split_low));
+              { double delta = ( (drand48 ()) * (sample1->split_high - sample1->split_low));
                 split_end = sample1->split_low + delta;      // ending split
               }
               else
@@ -10193,35 +10809,29 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               sample1->split_adj = (split_end - sample1->split_now) / sample1->play;  // adjust per frame
             }
             if (sample1->play > 0L)  // sample is active
-            {
-              double amp = sample1->amp * 2.;  // like binaural, double so each channel at amp with split
+            { double amp = sample1->amp * 2.;  // like binaural, double so each channel at amp with split
               if (sample1->channels == 2)  // stereo
-              {
-                if (sample1->mono == 0)  // stereo
-                {
-                  out_buffer[ii] += (sample1->split_now * amp
+              { if (sample1->mono == 0)  // stereo
+                { out_buffer[ii] += (sample1->split_now * amp
                           * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
                   out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                           * (double) ((*(sample1->sound + sample1->off1 + 1)) * sample1->scale));
                 }
                 else if (sample1->mono == 1)  // mono in stereo form, left has sound, sample left as right channel
-                {
-                  out_buffer[ii] += (sample1->split_now * amp
+                { out_buffer[ii] += (sample1->split_now * amp
                           * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
                   out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                           * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
                 }
                 else if (sample1->mono == 2)  // mono in stereo form, right has sound, sample right as left channel
-                {
-                  out_buffer[ii] += (sample1->split_now * amp
+                { out_buffer[ii] += (sample1->split_now * amp
                           * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
                   out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                           * (((double) *(sample1->sound + sample1->off1 + 1)) * sample1->scale));
                 }
               }
               else if (sample1->channels == 1)  // mono, single channel split to be two
-              {
-                out_buffer[ii] += (sample1->split_now * amp
+              { out_buffer[ii] += (sample1->split_now * amp
                         * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
                 out_buffer[ii+1] += ((1.0 - sample1->split_now) * amp
                         * (((double) *(sample1->sound + sample1->off1)) * sample1->scale));
@@ -10230,8 +10840,17 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               sample1->off1 += (sample1->channels * fast_mult);
               sample1->off1 %= sample1->frames;  
               sample1->split_now += (sample1->split_adj * fast_mult);
-              sample1->amp_min += (sample1->amp_min_adj * fast_mult);  // adjust amplitude for slides
-              sample1->amp_max += (sample1->amp_max_adj * fast_mult);
+              if (sample1->slide == 1)
+              { sample1->amp_min += (sample1->amp_min_adj * fast_mult);  // adjust amplitude for slides
+                sample1->amp_max += (sample1->amp_max_adj * fast_mult);
+                /* adjust amp during each frame while playing as well as adjusting the min and max allowed amp */
+                if (sample1->amp_max != sample1->amp_min)  // avoid division by zero
+                { double fraction = (sample1->amp - sample1->amp_min) / (sample1->amp_max - sample1->amp_min);
+                  sample1->amp += (((sample1->amp_min_adj * (1-fraction)) 
+                                   + (sample1->amp_max_adj * fraction))
+                                   * fast_mult);
+                }
+              }
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               sample1->play -= fast_mult;
             }
@@ -10239,15 +10858,13 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
         }
         break;
       case 6:                // Repeat/loop file play
-        {
-          repeat *repeat1;
+        { repeat *repeat1;
           double split_end = 0.0;  // hold the ending split while creating voice
 
           repeat1 = (repeat *) this;  // reassign void pointer as repeat struct
           /* if start of the voice, set starting values to be last values of previous voice, if available */
           if (repeat1->first_pass)
-          {
-            repeat1->first_pass = 0;  // now active
+          { repeat1->first_pass = 0;  // now active
             /* check each pointer to the previous voice to see if it is valid */
             if (repeat1->last_off1 != NULL)
               repeat1->off1 = *repeat1->last_off1;  // to start from buffer position of last voice
@@ -10261,30 +10878,23 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               repeat1->split_adj = *repeat1->last_split_adj;  // use same split_adj as last voice
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
-          {
-            if (repeat1->play <= 0)
-            {                     // time to play another repeat
-              repeat1->off1 = 0;
+          { if (repeat1->play <= 0)
+            { repeat1->off1 = 0;                     // time to play another repeat
               repeat1->play = repeat1->frames; // fixed play time
               if (repeat1->amp_max == repeat1->amp_min)
-              {                   // fixed amp
-                repeat1->amp = repeat1->amp_min;
-              }
+                repeat1->amp = repeat1->amp_min;                   // fixed amp
               else
-              {
-                double delta = ( (drand48 ()) * (repeat1->amp_max - repeat1->amp_min));
+              { double delta = ( (drand48 ()) * (repeat1->amp_max - repeat1->amp_min));
                 repeat1->amp = repeat1->amp_min + delta;       // beginning amplitude of tone
               }
               if (repeat1->split_begin == -1.0)  // random split start
-              {
-                double delta = ( (drand48 ()) * (repeat1->split_high - repeat1->split_low));
+              { double delta = ( (drand48 ()) * (repeat1->split_high - repeat1->split_low));
                 repeat1->split_now = repeat1->split_low + delta;      // starting split for repeat
               }
               else
                 repeat1->split_now = repeat1->split_begin;      // fixed starting split
               if (repeat1->split_end == -1.0)  // random split end
-              {
-                double delta = ( (drand48 ()) * (repeat1->split_high - repeat1->split_low));
+              { double delta = ( (drand48 ()) * (repeat1->split_high - repeat1->split_low));
                 split_end = repeat1->split_low + delta;      // ending split for repeat
               }
               else
@@ -10292,35 +10902,29 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               repeat1->split_adj = (split_end - repeat1->split_now) / repeat1->play;  // adjust per frame
             }
             if (repeat1->play > 0L)  // repeat is active
-            {
-              double amp = repeat1->amp * 2.;  // like binaural, double so each channel at amp with split
+            { double amp = repeat1->amp * 2.;  // like binaural, double so each channel at amp with split
               if (repeat1->channels == 2)  // stereo
-              {
-                if (repeat1->mono == 0)  // stereo
-                {
-                  out_buffer[ii] += (repeat1->split_now * amp
+              { if (repeat1->mono == 0)  // stereo
+                { out_buffer[ii] += (repeat1->split_now * amp
                           * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
                   out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                           * (double) ((*(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
                 }
                 else if (repeat1->mono == 1)  // mono in stereo form, left has sound, repeat left as right channel
-                {
-                  out_buffer[ii] += (repeat1->split_now * amp
+                { out_buffer[ii] += (repeat1->split_now * amp
                           * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
                   out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                           * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
                 }
                 else if (repeat1->mono == 2)  // mono in stereo form, right has sound, repeat right as left channel
-                {
-                  out_buffer[ii] += (repeat1->split_now * amp
+                { out_buffer[ii] += (repeat1->split_now * amp
                           * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
                   out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                           * (((double) *(repeat1->sound + repeat1->off1 + 1)) * repeat1->scale));
                 }
               }
               else if (repeat1->channels == 1)  // mono, single channel split to be two
-              {
-                out_buffer[ii] += (repeat1->split_now * amp
+              { out_buffer[ii] += (repeat1->split_now * amp
                         * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
                 out_buffer[ii+1] += ((1.0 - repeat1->split_now) * amp
                         * (((double) *(repeat1->sound + repeat1->off1)) * repeat1->scale));
@@ -10328,8 +10932,17 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               repeat1->off1 += (repeat1->channels * fast_mult); // adjust number of shorts played.
               repeat1->split_now += (repeat1->split_adj * fast_mult);
-              repeat1->amp_min += (repeat1->amp_min_adj * fast_mult);  // adjust amplitude for slides
-              repeat1->amp_max += (repeat1->amp_max_adj * fast_mult);
+              if (repeat1->slide == 1)
+              { repeat1->amp_min += (repeat1->amp_min_adj * fast_mult);  // adjust amplitude for slides
+                repeat1->amp_max += (repeat1->amp_max_adj * fast_mult);
+                /* adjust amp during each frame while playing as well as adjusting the min and max allowed amp */
+                if (repeat1->amp_max != repeat1->amp_min)  // avoid division by zero
+                { double fraction = (repeat1->amp - repeat1->amp_min) / (repeat1->amp_max - repeat1->amp_min);
+                  repeat1->amp += (((repeat1->amp_min_adj * (1-fraction)) 
+                                   + (repeat1->amp_max_adj * fraction))
+                                   * fast_mult);
+                }
+              }
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               repeat1->play -= fast_mult;  // adjust frames played
             }
@@ -10337,18 +10950,15 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
         }
         break;
       case 7:                // Once file play
-        {
-          once *once1;
+        { once *once1;
           double split_end = 0.0;  // hold the ending split while creating voice
 
           once1 = (once *) this;  // reassign void pointer as once struct
           /* if start of the voice, set starting values to be last values of previous voice, if available
            * and if feasible  */
           if (once1->first_pass == 1)
-          {
-            if ((once1->last_play != NULL) && (*once1->last_play < once1->frames))
-            {
-              /* last once didn't finish playing.  Because the sound is the same the frames are the same */
+          { if ((once1->last_play != NULL) && (*once1->last_play < once1->frames))
+            { /* last once didn't finish playing.  Because the sound is the same the frames are the same */
               if ((once1->frames - *once1->last_play) < once1->play_when)
                 /* the continuation of the last once will finish before this once starts */
                 once1->play = *once1->last_play;  // amount played already is amount from last voice
@@ -10377,32 +10987,25 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
           if (once1->first_pass == 2 && once1->play > once1->frames)
             once1->first_pass = 0;
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
-          {
-            if (once1->not_played && once1->sofar >= once1->play_when)
-            {                     // time to play
-              once1->not_played = 0;
+          { if (once1->not_played && once1->sofar >= once1->play_when)
+            { once1->not_played = 0;                     // time to play
               once1->off1 = 0;  // start at beginning of buffer
               once1->play = 0LL; // start play time at zero
               if (once1->amp_max == once1->amp_min)
-              {                   // fixed amp
-                once1->amp = once1->amp_min;
-              }
+                once1->amp = once1->amp_min;                   // fixed amp
               else
-              {
-                double delta = ( (drand48 ()) * (once1->amp_max - once1->amp_min));
+              { double delta = ( (drand48 ()) * (once1->amp_max - once1->amp_min));
                 once1->amp = once1->amp_min + delta;       // beginning amplitude of tone
               }
               if (once1->split_begin == -1.0)  // once split start
-              {
-                double delta = ( (drand48 ()) * (once1->split_high - once1->split_low));
+              { double delta = ( (drand48 ()) * (once1->split_high - once1->split_low));
                 once1->split_now = once1->split_low + delta;      // starting split
               }
               else
                 once1->split_now = once1->split_begin;      // fixed starting split
                 
               if (once1->split_end == -1.0)  // once split end
-              {
-                double delta = ( (drand48 ()) * (once1->split_high - once1->split_low));
+              { double delta = ( (drand48 ()) * (once1->split_high - once1->split_low));
                 split_end = once1->split_low + delta;      // ending split
               }
               else
@@ -10413,36 +11016,30 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
             /* if time to play or a continuation is playing */
             if ((once1->sofar >= once1->play_when || once1->first_pass == 2) 
                 && once1->play < once1->frames)  // once is active
-            {
-              double amp = once1->amp * 2.;  // like binaural, double so each channel at amp with split
+            { double amp = once1->amp * 2.;  // like binaural, double so each channel at amp with split
                 // assumes only 1 or two channels, default to two if not one
               if (once1->channels == 2)  // stereo
-              {
-                if (once1->mono == 0)  // stereo
-                {
-                  out_buffer[ii] += (once1->split_now * amp
+              { if (once1->mono == 0)  // stereo
+                { out_buffer[ii] += (once1->split_now * amp
                           * (((double) *(once1->sound + once1->off1)) * once1->scale));
                   out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                           * (double) ((*(once1->sound + once1->off1 + 1)) * once1->scale));
                 }
                 else if (once1->mono == 1)  // mono in stereo form, left has sound, repeat left as right channel
-                {
-                  out_buffer[ii] += (once1->split_now * amp
+                { out_buffer[ii] += (once1->split_now * amp
                           * (((double) *(once1->sound + once1->off1)) * once1->scale));
                   out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                           * (((double) *(once1->sound + once1->off1)) * once1->scale));
                 }
                 else if (once1->mono == 2)  // mono in stereo form, right has sound, repeat right as left channel
-                {
-                  out_buffer[ii] += (once1->split_now * amp
+                { out_buffer[ii] += (once1->split_now * amp
                           * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
                   out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                           * (((double) *(once1->sound + once1->off1 + 1)) * once1->scale));
                 }
               }
               else if (once1->channels == 1)  // mono, single channel split to be two
-              {
-                out_buffer[ii] += (once1->split_now * amp
+              { out_buffer[ii] += (once1->split_now * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
                 out_buffer[ii+1] += ((1.0 - once1->split_now) * amp
                         * (((double) *(once1->sound + once1->off1)) * once1->scale));
@@ -10450,10 +11047,23 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               once1->off1 += (once1->channels * fast_mult);  // short offset different depending on channels
               once1->split_now += (once1->split_adj * fast_mult);
+              if (once1->slide == 1)
+              { /* adjust amp during each frame while playing */
+                if (once1->amp_max != once1->amp_min)  // avoid division by zero
+                { double fraction = (once1->amp - once1->amp_min) / (once1->amp_max - once1->amp_min);
+                  once1->amp += (((once1->amp_min_adj * (1-fraction)) 
+                                   + (once1->amp_max_adj * fraction))
+                                   * fast_mult);
+                }
+              }
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               once1->play += fast_mult;  // add frames just played to the total played, offset into sound buffer
             }
             once1->sofar += fast_mult;
+            if (once1->slide == 1)
+            { once1->amp_min += (once1->amp_min_adj * fast_mult);  // adjust amplitude for slides
+              once1->amp_max += (once1->amp_max_adj * fast_mult);
+            }
           }
         }
         break;
@@ -12283,14 +12893,12 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
       case 22:  // silence voice
         break;  // do nothing for silence
       case 23:                // Spin file play
-        {
-          spin *spin1;
+        { spin *spin1;
 
           spin1 = (spin *) this;  // reassign void pointer as spin struct
           /* if start of the voice, set starting values to be last values of previous voice, if available */
           if (spin1->first_pass)
-          {
-            spin1->first_pass = 0;  // now active
+          { spin1->first_pass = 0;  // now active
             /* check each pointer to the previous voice to see if it is valid */
             if (spin1->last_off1 != NULL)
               spin1->off1 = *spin1->last_off1;  // to start from buffer position of last voice
@@ -12300,113 +12908,191 @@ generate_frames (struct sndstream *snd1, double *out_buffer, int offset, int fra
               spin1->play = *spin1->last_play;  // amount played already is amount from last voice
             if (spin1->last_amp != NULL)
               spin1->amp = *spin1->last_amp;  // use the same amplitude as last voice
-            if (spin1->last_phase != NULL)
-              spin1->phase = *spin1->last_phase;  // start from same phase as last voice
-            if (spin1->last_phase_adj != NULL)
-              spin1->phase_adj = *spin1->last_phase_adj;  // use same phase_adj as last voice
-            if (spin1->last_split != NULL)
-              spin1->split = *spin1->last_split;  // start from same split as last voice
-            if (spin1->last_split_adj != NULL)
-              spin1->split_adj = *spin1->last_split_adj;  // use same split_adj as last voice
+            if (spin1->last_angle != NULL)
+              spin1->angle = *spin1->last_angle;  // start from same angle as last voice
+            if (spin1->last_angle_adj != NULL)
+              spin1->angle_adj = *spin1->last_angle_adj;  // use same angle_adj as last voice
           }
           for (ii= channels * offset; ii < channels * frame_count; ii+= channels)
-          {
-            if (spin1->play <= 0)
-            {                     // time to play another spin
-              spin1->off1 = 0;
+          { if (spin1->play <= 0)
+            { spin1->off1 = 0;                     // time to play another spin
               spin1->off2 = 0;
               spin1->play = spin1->frames; // fixed play time, both buffers same size
               /* all other variables just continue on from where they are */
             }
             if (spin1->play > 0L)  // spin is active
-            {
-              double amp = spin1->amp * 2.;  // like binaural, double so each channel at amp with split
-              int phase_offset = (int) round((fabs(spin1->phase)/360.) * table_size);  // offset shift for phase
-              double phase_sin = (sin_table [phase_offset]);  // sin value for phase
-              int phase_adjust = (int) round(((double) out_rate / 1500.) * phase_sin);  // spin adjustment for phase
-              int left_offset = spin1->off1;
-              int right_offset = spin1->off1;
-              if (phase_adjust < 0)  // right is phase leading, phase adjust is negative
-              {
-                if (left_offset > abs(phase_adjust))
-                  left_offset += phase_adjust;
-                else  // wrap back to end
-                  left_offset = spin1->frames + (phase_adjust + left_offset);
+            { double left_amp = spin1->amp * 2.;  // like binaural, double so each channel at amp with split
+              double right_amp = left_amp;
+              /* spin adjustment for direction in frames.  Has to consider spin direction as well as geometry
+               * The actual formula is distance difference = head radius (sin (theta) + theta) 
+               * for sound travel distance difference in meters, head radius in meters with theta in radians
+               * a typical head radius in meters is .0875 m.  Because this is symmetric to a line through the ears, 
+               * theta goes from 0 to 180 deg or 0 to pi radians.
+               * This can be converted to a time difference using speed of sound 343 m/sec
+               * and given a frame rate/sec, this can be converted to frames.  The maximum time difference is
+               * approximately 1 ms, and occurs when the sound direction is directly towards one of the ears.
+               * */
+              double symmetric_angle = spin1->angle;  // make a direction from 0 to 180 degrees, sin always positive
+              while (symmetric_angle > 180.)
+                symmetric_angle -= 180.;
+              int angle_offset = (int) round((symmetric_angle /360.) * table_size);  // offset into sin table for direction
+              double angle_sin = (sin_table [angle_offset]);  // sin value for direction angle
+              double distance = .0;
+              if (symmetric_angle <= 90.)
+                distance = .10 * (angle_sin + (symmetric_angle/RADIAN));  // difference in distance between ears
+              else if (symmetric_angle > 90.)
+                distance = .10 * (angle_sin + ((180. - symmetric_angle)/RADIAN));  // difference in distance between ears
+              double time_diff = distance / 343.;  // difference in time between ears
+              int frame_diff = (int) round ((double) out_rate  * time_diff);  // time difference converted to number of frames
+              /*  Now calculate the actual sound mix arriving at each ear given the above frame difference and the 
+               *  current angle that the sound is arriving from
+               *  */
+              intmax_t left_offset = spin1->off1;
+              intmax_t right_offset = spin1->off1;
+              if (spin1->angle < 180.)  // on right side of head, right is time leading, time adjust is negative for left
+              { left_offset -= frame_diff;
+                if (left_offset < 0)
+                  left_offset += spin1->frames;
               }
-              else if (phase_adjust > 0)  // left is phase leading, phase adjust is positive
-              {
-                if (right_offset > abs(phase_adjust))
-                  right_offset -= phase_adjust;
-                else  // wrap back to end
-                  right_offset = spin1->frames - (phase_adjust - right_offset);
+              else  // on left side of head, left is time leading, time adjust is negative for right
+              { right_offset -= frame_diff;
+                if (right_offset < 0)
+                  right_offset += spin1->frames;
               }
-              /* now that phase has been taken care of, adjust the amp for front and back */
-              if (spin1->phase > 110. && spin1->phase < 250.) // back
-                amp -= ((.25*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
-              else  // front
-                amp += ((.10*amp) * (fabs (fabs(phase_sin) - 1.)));  // all this just to get a cos
-              double fraction = 0.0;
-              /* always mono for spin, converted if not, single channel split to be two  */
-              if (spin1->phase <= 110.) // front right quadrant
-              {
-                fraction = 1.0 - (spin1->phase / 110.);
-                out_buffer[ii] += (spin1->split * amp * fraction
+              /* now that time difference has been taken care of, 
+               * adjust the left and right amps for sound source direction.
+               * There is a subtle problem here regarding amplitude because
+               * the delayed frames are arriving when the actual angle has changed,
+               * so the amplitude calculated by these formulas will be off.  The
+               * formulae need to have the angle adjusted for the position where the
+               * delayed frames originated from.  I suspect it is subtle cues like this
+               * that really add realism.  */
+              if (spin1->angle > 0. && spin1->angle <= 90.) // front right
+              { right_amp += ((.20 + (.12 * (spin1->angle/90.))) * right_amp);
+                left_amp += ((.20 - (.32 * (spin1->angle/90.))) * left_amp);
+              }
+              else if (spin1->angle > 90. && spin1->angle <= 135.) // half back right
+              { right_amp += ((.32 - (.16 * ((spin1->angle - 90.)/ 45.))) * right_amp);
+                left_amp += ((-.12 + (.06 * ((spin1->angle - 90.)/ 45.))) * left_amp);
+              }
+              else if (spin1->angle > 135. && spin1->angle <= 180.) // half back right
+              { right_amp += ((.16 - (.16 * ((spin1->angle - 135.)/ 45.))) * right_amp);
+                left_amp += ((-.06 + (.06 * ((spin1->angle - 135.)/ 45.))) * left_amp);
+              }
+              else if (spin1->angle > 180. && spin1->angle <= 225.) // half back left
+              { right_amp += ((0. - (.06 * ((spin1->angle - 180.)/ 45.))) * right_amp);
+                left_amp += ((0. + (.16 * ((spin1->angle - 180.)/ 45.))) * left_amp);
+              }
+              else if (spin1->angle > 225. && spin1->angle <= 270.) // half back left
+              { right_amp += ((-.06 - (.06 * ((spin1->angle - 225.)/ 45.))) * right_amp);
+                left_amp += ((.16 + (.16 * ((spin1->angle - 225.)/ 45.))) * left_amp);
+              }
+              else if (spin1->angle > 270. && spin1->angle <= 360.) // front left
+              { right_amp += ((-.12 + (.32 * ((spin1->angle - 270.)/ 90.))) * right_amp);
+                left_amp += ((.32 - (.12 * ((spin1->angle - 270.)/ 90.))) * left_amp);
+              }
+              /* frame offset and amplitudes are done, now determine how to split between
+               * the back buffer and the front buffer based on the sound angle.
+               * */
+              double left_front_fraction = 0.0;
+              double right_front_fraction = 0.0;
+              if (spin1->angle > 0. && spin1->angle <= 45.) // front right first half
+              { right_front_fraction = 1.;  // all front buffer
+                left_front_fraction = 1. - (.2 * (spin1->angle/45.));  // fade to .2 back buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
                         * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
-                out_buffer[ii+1] += ((1.0 - spin1->split) * amp
-                        * (double) ((*(spin1->sound + right_offset)) * spin1->scale));  // front r
-                out_buffer[ii] += (spin1->split * amp * (1. - fraction)
-                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale));  // back l
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (left_amp * (1. - left_front_fraction)
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale_filtered));  // back l
               }
-              else if (spin1->phase > 110. && spin1->phase <= 180.) // back right quadrant
-              {
-                fraction = 1.0 - ((spin1->phase - 110.) / 70.);
-                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * fraction
-                        * (double) ((*(spin1->sound + right_offset)) * spin1->scale));  // front r
-                out_buffer[ii] += (spin1->split * amp
-                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale));  // back l
-                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * (1. - fraction)
-                        * (double) ((*(spin1->sound_filtered + right_offset)) * spin1->scale));  // back r
-              }
-              else if (spin1->phase > 180. && spin1->phase <= 250.) // back left quadrant
-              {
-                fraction = 1.0 - ((spin1->phase - 180.) / 70.);
-                out_buffer[ii] += (spin1->split * amp * (1. - fraction)
+              else if (spin1->angle > 45. && spin1->angle <= 90.) // front right second half
+              { right_front_fraction = 1.;  // all front buffer
+                left_front_fraction = .8 - (.8 * ((spin1->angle - 45.) / 45.));  // fade to 1. back buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
                         * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
-                out_buffer[ii] += (spin1->split * amp * fraction
-                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale));  // back l
-                out_buffer[ii+1] += ((1.0 - spin1->split) * amp
-                        * (double) ((*(spin1->sound_filtered + right_offset)) * spin1->scale));  // back r
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (left_amp * (1. - left_front_fraction)
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale_filtered));  // back l
               }
-              else  // front left quadrant
-              {
-                fraction = 1.0 - ((spin1->phase - 250.) / 110.);
-                out_buffer[ii] += (spin1->split * amp
+              else if (spin1->angle > 90. && spin1->angle <= 135.) // back right first half
+              { right_front_fraction = 1.;  // all front buffer
+                left_front_fraction = 0. + (.4 * ((spin1->angle - 90.) / 45.));  // increase to .4 front buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
                         * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
-                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * (1. - fraction)
-                        * (double) ((*(spin1->sound + right_offset)) * spin1->scale));  // front r
-                out_buffer[ii+1] += ((1.0 - spin1->split) * amp * fraction
-                        * (double) ((*(spin1->sound_filtered + right_offset)) * spin1->scale));  // back r
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (left_amp * (1. - left_front_fraction)
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale_filtered));  // back l
+              }
+              else if (spin1->angle > 135. && spin1->angle <= 180.) // back right second half
+              { right_front_fraction = 1. - (.2 * ((spin1->angle - 135.) / 45.));  // fade to .2 back buffer
+                left_front_fraction = 4. + (.4 * ((spin1->angle - 135.) / 45.));  // increase to .8 front buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (left_amp * (1. - left_front_fraction)
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale_filtered));  // back l
+                out_buffer[ii+1] += (right_amp * (1. - right_front_fraction)
+                        * (((double) *(spin1->sound_filtered + right_offset)) * spin1->scale_filtered));  // back r
+              }
+              else if (spin1->angle > 180. && spin1->angle <= 225.) // back left second half
+              { right_front_fraction = .8 - (.4 * ((spin1->angle - 180.) / 45.));  // fade to .6 back buffer
+                left_front_fraction = 8. + (.2 * ((spin1->angle - 180.) / 45.));  // increase to 1. front buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii] += (left_amp * (1. - left_front_fraction)
+                        * (((double) *(spin1->sound_filtered + left_offset)) * spin1->scale_filtered));  // back l
+                out_buffer[ii+1] += (right_amp * (1. - right_front_fraction)
+                        * (((double) *(spin1->sound_filtered + right_offset)) * spin1->scale_filtered));  // back r
+              }
+              else if (spin1->angle > 225. && spin1->angle <= 270.) // back left first half
+              { right_front_fraction = .4 - (.4 * ((spin1->angle - 225.) / 45.));  // fade to 1. back buffer
+                left_front_fraction = 1.;  // all front buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii+1] += (right_amp * (1. - right_front_fraction)
+                        * (((double) *(spin1->sound_filtered + right_offset)) * spin1->scale_filtered));  // back r
+              }
+              else if (spin1->angle > 270. && spin1->angle <= 315.) // front left second half
+              { right_front_fraction = .0 + (.8 * ((spin1->angle - 270.) / 45.));  // increase to .8 front buffer
+                left_front_fraction = 1.;  // all front buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii+1] += (right_amp * (1. - right_front_fraction)
+                        * (((double) *(spin1->sound_filtered + right_offset)) * spin1->scale_filtered));  // back r
+              }
+              else if (spin1->angle > 315. && spin1->angle <= 360.) // front left second half
+              { right_front_fraction = .8 + (.2 * ((spin1->angle - 315.) / 45.));  // increase to 1. front buffer
+                left_front_fraction = 1.;  // all front buffer
+                out_buffer[ii] += (left_amp * left_front_fraction
+                        * (((double) *(spin1->sound + left_offset)) * spin1->scale));  // front l
+                out_buffer[ii+1] += (right_amp * right_front_fraction
+                        * (((double) *(spin1->sound + right_offset)) * spin1->scale));  // front r
+                out_buffer[ii+1] += (right_amp * (1. - right_front_fraction)
+                        * (((double) *(spin1->sound_filtered + right_offset)) * spin1->scale_filtered));  // back r
               }
                   // if channels not 1 or 2, off1 out of synch with out_buffer[ii] and out_buffer[ii+1]
               spin1->off1 += (spin1->channels * fast_mult); // adjust number of shorts played.
               spin1->off2 += (spin1->channels * fast_mult); // adjust number of shorts played.
-              spin1->phase += (spin1->phase_adj * fast_mult);
-              if (spin1->phase > 360.)
-                spin1->phase -= 360.;
-              if (fabs(phase_sin) <= 1.0e-20)  // phase adjust at 0, synch the split to take care of any error
-                spin1->split = .5;
-              if (spin1->phase > 90. && spin1->phase < 270.)
-                spin1->split -= (spin1->split_adj * fast_mult);
-              else
-                spin1->split += (spin1->split_adj * fast_mult);
+              spin1->angle += ((spin1->angle_adj * spin1->spin_dir) * fast_mult);  // take into account direction of spin here
+              if (spin1->angle >= 360.)
+                spin1->angle -= 360.;
+              else if (spin1->angle < 0.)
+                spin1->angle += 360.;
               if (spin1->slide == 1)
-              {
-                spin1->amp += (spin1->amp_slide_adj * fast_mult);  // adjust amplitude for slides
+              { spin1->amp += (spin1->amp_slide_adj * fast_mult);  // adjust amplitude for slides
                 spin1->spin_time += (spin1->spin_time_slide_adj * fast_mult);
-                /* adjust phase_adj with each buffer played so slides have effect  */
-                spin1->phase_adj = 360. / ((double) out_rate * spin1->spin_time);  
-                /* adjust split_adj with each buffer played so slides have effect  */
-                spin1->split_adj = 0.2 / ((double) out_rate * spin1->spin_time);  // max split is not 1
+                /* adjust angle_adj with each buffer played so slides have effect  */
+                spin1->angle_adj = 360. / ((double) out_rate * spin1->spin_time);  
               }
                   // if channels not 1 or 2, play out of synch with out_buffer[ii] and out_buffer[ii+1]
               spin1->play -= fast_mult;  // adjust frames played
@@ -12857,9 +13543,9 @@ fprint_voice_all (FILE *fp, void *this)
         char_count += fprintf (fp, " %.3f %.3f", 
                         AMP_DA (spin1->amp), spin1->spin_time);
         char_count += fprintf (fp, " %.3f %.3f", 
-                        spin1->phase, spin1->phase_adj);
-        char_count += fprintf (fp, " %.3f %.3f", 
-                        spin1->split, spin1->split_adj);
+                        spin1->angle, spin1->angle_adj);
+        char_count += fprintf (fp, " %1.0f", 
+                        spin1->spin_dir);
         char_count += fprintf (fp, " %.3f %.3f", 
                         spin1->amp_slide_adj, spin1->spin_time_slide_adj);
         char_count += fprintf (fp, " %jd %jd\n",
