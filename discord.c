@@ -1,5 +1,5 @@
 // discord - binaural, chronaural, and phase beat generator
-// (c) 2007-2009 Stan Lysiak <stanlk@users.sourceforge.net>.  
+// (c) 2007-2010 Stan Lysiak <stanlk@users.sourceforge.net>.  
 // All Rights Reserved.
 // For latest version see http://discord.sourceforge.net/.  
 // Released under the GNU GPL version 2.  Use at your own risk.
@@ -20,23 +20,6 @@
 // 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA,
 // or visit http://www.fsf.org/licensing/licenses/gpl.html (might change).
 //
-// The following GPL licensed programs were utilized for discord.
-//
-// SBaGen - Sequenced Binaural Beat Generator
-//
-// (c) 1999-2009 Jim Peters <jim@uazu.net>.  All Rights Reserved.
-// For latest version see http://sbagen.sf.net/ or
-// http://uazu.net/sbagen/.  Released under the GNU GPL version 2.
-// Use at your own risk.
-/*
-** libsndfile
-** Copyright (C) 1999-2009 Erik de Castro Lopo <erikd@mega-nerd.com>
-*/
-/*
-** libsamplerate
-** Copyright (C) 2002-2009 Erik de Castro Lopo <erikd@mega-nerd.com>
-**
-*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,6 +60,8 @@ typedef unsigned char uchar;
 
 int opt_a;                      // audio card and device set in options
 char *opt_a_plughw = NULL;      // audio card and device to use
+int opt_autovol = 0;            // for long only option automatic volume, flag to indicate if present or not
+int opt_autovol_value = -1.0;   // for long only option automatic volume, actual setting between 0.0 and 100.
 int opt_b;                      // bit accuracy of output
 char *opt_b_arg;                // bit accuracy of output argument
 int bit_accuracy = SF_FORMAT_PCM_16;  // bit accuracy of file output defaults to 16
@@ -101,6 +86,8 @@ char *opt_l_filelist = NULL;     // save the name of list files so they are only
 int opt_m = 0;                  // modify carrier and beat in script file by a random percentage +/-
 double opt_m_arg = 0.0;         // percentage of modification band for carrier and beat
 double opt_m_modify = 0.0;      // percentage in decimal form of modification band for carrier and beat
+int opt_maxvol = 0;             // for long only option maximum volume, flag to indicate if present or not
+int opt_maxvol_value = -1.0;    // for long only option maximum volume, actual setting between 0.0 and 100.
 int opt_o;                      // output format to write
 char opt_o_arg;                 // output format to write argument character
 int outfile_format = SF_FORMAT_WAV; // default to w:wav if not specified otherwise, r:raw, f:flac, o:ogg
@@ -141,7 +128,7 @@ struct saved_option
 {
   struct saved_option *prev;
   struct saved_option *next;
-  char option;
+  int option;
   char *option_string;
 } ;
 
@@ -776,6 +763,7 @@ int append_options (saved_option **SO, char *config_options);
 int setup_opt_c (char *spec);
 int read_script_file_sequence (char *filename);
 int setup_play_seq ();
+void volume_adjust (sndstream *sndstream1);
 void setup_binaural (char *token, void **work);
 void setup_bell (char *token, void **work);
 int setup_noise (char *token, void **work);
@@ -945,6 +933,7 @@ parse_argv_options (int argc, char **argv)
   static struct option long_options[] =
     {
       {"audio_device", 1, 0, 'a'},
+      {"auto_volume", 1, 0, 257},
       {"bit_accuracy", 1, 0, 'b'},
       {"compensate", 1, 0, 'c'},
       {"display_only", 0, 0, 'd'},
@@ -953,6 +942,7 @@ parse_argv_options (int argc, char **argv)
       {"help", 0, 0, 'h'},
       {"keep", 0, 0, 'k'},
       {"listfile", 1, 0, 'l'},
+      {"max_volume", 1, 0, 258},
       {"modify", 1, 0, 'm'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
@@ -999,6 +989,8 @@ parse_argv_options (int argc, char **argv)
       case 'v':
       case 'w':
       case 'y':
+      case 257:
+      case 258:
         soh = (saved_option *) Alloc ((sizeof (saved_option)) * 1);
         soh->next = NULL;
         if (ARGV_OPTIONS == NULL)         // option list doesn't exist
@@ -1012,7 +1004,7 @@ parse_argv_options (int argc, char **argv)
           sow->next = soh;
         }
         sow = soh;
-        sow->option = (char) c;         // option
+        sow->option = c;         // option
         if (optarg != NULL)     // has argument
           sow->option_string = StrDup (optarg);
         else
@@ -1202,6 +1194,7 @@ append_options (saved_option **SO, char *config_options)
   static struct option long_options[] =
     {
       {"audio_device", 1, 0, 'a'},
+      {"auto_volume", 1, 0, 257},
       {"bit_accuracy", 1, 0, 'b'},
       {"compensate", 1, 0, 'c'},
       {"display_only", 0, 0, 'd'},
@@ -1210,6 +1203,7 @@ append_options (saved_option **SO, char *config_options)
       {"help", 0, 0, 'h'},
       {"keep", 0, 0, 'h'},
       {"listfile", 1, 0, 'l'},
+      {"max_volume", 1, 0, 258},
       {"modify", 1, 0, 'm'},
       {"out_format", 1, 0, 'o'},
       {"quiet", 0, 0, 'q'},
@@ -1266,7 +1260,7 @@ append_options (saved_option **SO, char *config_options)
         {
           if (long_options[long_idx].flag == NULL)  // prepare for long options only, flag == NULL => short option
           {
-            sow->option = long_options[long_idx].val;    // assign short option
+            sow->option = long_options[long_idx].val;    // assign short option or int value
             if (long_options[long_idx].has_arg == 1)      // has argument
             {
               subtoken = strtok_r (str2, "=", &saveptr2);
@@ -1867,6 +1861,30 @@ set_options (saved_option *SO)
         }
         else                  // there was an error
           error ("--vbr_quality/-y expects double between 0.0 and 1.0 %s", sow->option_string);
+        break;
+      case 257:  // automatic volume adjust so every time segment has a specific volume by proportion
+        opt_autovol = 1;
+        errno = 0;
+        opt_autovol_value = strtod (sow->option_string, &endptr);
+        if (errno == 0)       // no error
+        {
+          if (opt_autovol_value < 0.0 || opt_autovol_value > 100.0)
+            error ("Automatic volume setting must be between 0 and 100");
+        }
+        else                  // there was an error
+          error ("--auto_volume expects numeric percentage %s", sow->option_string);
+        break;
+      case 258:  // maximum volume adjust so no time segment exceeds a specific volume, adjusted down by proportion if over
+        opt_maxvol = 1;
+        errno = 0;
+        opt_maxvol_value = strtod (sow->option_string, &endptr);
+        if (errno == 0)       // no error
+        {
+          if (opt_maxvol_value < 0.0 || opt_maxvol_value > 100.0)
+            error ("Maximum volume setting must be between 0 and 100");
+        }
+        else                  // there was an error
+          error ("--max_volume expects numeric percentage %s", sow->option_string);
         break;
       case '~': // bogus option to indicate that a script file has already been read
         more_than_one_file = 1;  // set a flag that there has already been a file
@@ -2579,7 +2597,7 @@ setup_play_seq ()
     read_time (subtoken, &time_in_secs);
     sndstream1->duration = time_in_secs;
     chorus_voice1->duration += sndstream1->duration;  // accumulate the total duration for this chorus voice
-    sndstream1->tot_frames = (intmax_t) (time_in_secs * out_rate);            // samples for this stream
+    sndstream1->tot_frames = (intmax_t) (time_in_secs * out_rate);            // samples for this stream segment
     chorus_voice1->tot_frames += sndstream1->tot_frames;  // accumulate the total frames for this chorus voice
     sndstream1->cur_frames = (intmax_t) (0);          // samples so far for this stream
     str2 = NULL;
@@ -2663,8 +2681,8 @@ setup_play_seq ()
         setup_spin (voice, &work);
       else
         error ("Unrecognized time sequence type: %s\n", subtoken);
-      /* Append this voice to the rest of the voices for the period/ time sequence */
-      if (sndstream1->voices == NULL)   // first sequence
+      /* Append this voice to the rest of the voices for the soundstream period / time sequence segment */
+      if (sndstream1->voices == NULL)   // first sequence or segment
       {
         sndstream1->voices = work;  // first voice
         stub2 = (stub *) work;  // interpret as stub (smallest)
@@ -2682,7 +2700,21 @@ setup_play_seq ()
       prev = work;  // point to new voice as previous voice
       token = strtok_r (str1, "$", &saveptr1);      // get next token
     }
-    tsw = tsw->next;  // get next period, time sequence
+    /* Put a call to a routine that parses the last set of voices and accumulates
+     * the total volume sum.  Then adjust all the volumes based on whether
+     * auto volume or max volume is set in a second routine, also called here.
+     * Set a global variable that is incremented by each setup routine
+     * so the total is automatically available here.  Then only need to 
+     * adjust the volumes in the structs for each voice.  If no autovol or
+     * autovol < maxvol, adjust to autovol.  If autovol > maxvol, adjust
+     * to maxvol only.  If neither, do nothing. 
+     * Alternatively, make it a single routine that checks if necessary,
+     * if either option autovol or maxvol is set, runs through once
+     * and adds, then runs through again and adjusts.  If min and max
+     * volume, adjusts both, but max is always used for sum. 
+     */
+    volume_adjust (sndstream1);  // call to adjust the volumes of the current segment
+    tsw = tsw->next;  // get next period, time sequence segment
     if (tsw != NULL)
     {
       sndstream2 = (sndstream *) Alloc ((sizeof (sndstream)) * 1);
@@ -2708,6 +2740,270 @@ setup_play_seq ()
   free (voice);
   return 0;
 }
+
+/* Adjust all volumes for the segment of the soundstream passed
+ * to this routine if either autovol or maxvol are set.
+ */
+void volume_adjust (sndstream *sndstream1)  // call to adjust the volumes of the current segment
+{ double volume_total = 0.0;  // total of all volumes for this segment
+  double volume_factor = 1.0;  // multiplier to make volume match request from autovol or maxvol
+
+  if (opt_autovol == 1 || opt_maxvol == 1)  // one of the volume control options is set, process segment
+  { stub *stub1 = NULL;
+    void *work1 = NULL;
+
+    if (sndstream1 != NULL)
+      work1 = sndstream1->voices;  // list of voices for this stream
+    else
+      return;  // there are no voices to process if sndstream1 is NULL, belt and suspenders
+    while (work1 != NULL)  // run through all the voices in this segment
+    { stub1 = (stub *) work1;
+      switch (stub1->type)
+      { case 1:  // binaural
+        case 9:
+        case 11:
+          { binaural *binaural1 = NULL;
+
+            binaural1 = (binaural *) work1;
+            volume_total += AMP_DA((amp_comp (binaural1->carrier)) * binaural1->amp);
+            break;
+          }
+        case 2:  // bell
+          { bell *bell1 = NULL;
+
+            bell1 = (bell *) work1;
+            volume_total += AMP_DA(bell1->amp_max); // use maximum volume
+            break;
+          }
+        case 3:  // noise
+          { noise *noise1 = NULL;
+
+            noise1 = (noise *) work1;
+            volume_total += AMP_DA(noise1->amp_max);  // use maximum volume
+            break;
+          }
+        case 4:  // stoch
+          { stoch *stoch1 = NULL;
+
+            stoch1 = (stoch *) work1;
+            volume_total += AMP_DA(stoch1->amp_max); // use maximum volume
+            break;
+          }
+        case 5:  // sample
+          { sample *sample1 = NULL;
+
+            sample1 = (sample *) work1;
+            volume_total += AMP_DA(sample1->amp_max);  // use maximum volume
+            break;
+          }
+        case 6:  // repeat
+          { repeat *repeat1 = NULL;
+
+            repeat1 = (repeat *) work1;
+            volume_total += AMP_DA(repeat1->amp_max);  // use maximum volume
+            break;
+          }
+        case 7:  // once
+          { once *once1 = NULL;
+
+            once1 = (once *) work1;
+            volume_total += AMP_DA(once1->amp_max);  // use maximum volume
+            break;
+          }
+        case 8:  // chronaural
+        case 10:
+        case 12:
+          { chronaural *chronaural1 = NULL;
+
+            chronaural1 = (chronaural *) work1;
+            volume_total += AMP_DA((amp_comp (chronaural1->carrier)) * chronaural1->amp);
+            break;
+          }
+        case 13:  // pulse
+        case 14:
+        case 15:
+          { pulse *pulse1 = NULL;
+
+            pulse1 = (pulse *) work1;
+            volume_total += AMP_DA((amp_comp (pulse1->carrier)) * pulse1->amp);
+            break;
+          }
+        case 16:  // phase
+        case 17:
+        case 18:
+          { phase *phase1 = NULL;
+
+            phase1 = (phase *) work1;
+            volume_total += AMP_DA((amp_comp (phase1->carrier)) * phase1->amp);
+            break;
+          }
+        case 19:  // fm
+        case 20:
+        case 21:
+          { fm *fm1 = NULL;
+
+            fm1 = (fm *) work1;
+            volume_total += AMP_DA((amp_comp (fm1->carrier)) * fm1->amp);
+            break;
+          }
+        case 22:  // silence
+          { break;
+          }
+        case 23:  // spin
+          { spin *spin1 = NULL;
+
+            spin1 = (spin *) work1;
+            volume_total += AMP_DA(spin1->amp);
+            break;
+          }
+        default:
+          { break;
+          }
+      }
+      work1 = stub1->next;
+    }
+    if (opt_autovol == 0)  // no autovol requested
+    { if (opt_maxvol == 1 && opt_maxvol_value >= volume_total)  // nothing to do, total volume less than max volume
+        return;
+      else  // maxvol in effect and volume greater than setpoint
+        volume_factor = opt_maxvol_value / volume_total;  // multiplier to bring into compliance
+    }
+    else  // autovol requested
+    { if (opt_maxvol == 0)  // no maxvol set
+        volume_factor = opt_autovol_value / volume_total;  // multiplier to bring into compliance
+      else  // maxvol in effect
+      { if (opt_maxvol_value < opt_autovol_value)  // maxvol < autovol, use maxvol
+        { if (opt_maxvol_value >= volume_total)  // total volume less than max volume, this is redundant, left for expository reasons
+            volume_factor = opt_maxvol_value / volume_total;  // multiplier to bring into compliance with autovol as far as maxvol allows
+          else  // maxvol in effect and volume greater than setpoint
+            volume_factor = opt_maxvol_value / volume_total;  // multiplier to bring into compliance
+        }
+        else if (opt_maxvol_value > opt_autovol_value)   // maxvol >= autovol, autovol is used
+          volume_factor = opt_autovol_value / volume_total;  // multiplier to bring into compliance
+      }
+    }
+    if ((volume_factor - 1.0) > .001)  // no point to adjusting if remaining nearly the same
+    { 
+      work1 = sndstream1->voices;  // list of voices for this stream
+      while (work1 != NULL)  // run through all the voices in this segment
+      { stub1 = (stub *) work1;
+        switch (stub1->type)
+        { case 1:  // binaural
+          case 9:
+          case 11:
+            { binaural *binaural1 = NULL;
+
+              binaural1 = (binaural *) work1;
+              binaural1->amp = binaural1->amp * volume_factor;
+              break;
+            }
+          case 2:  // bell
+            { bell *bell1 = NULL;
+
+              bell1 = (bell *) work1;
+              bell1->amp_max = bell1->amp_max * volume_factor;
+              bell1->amp_min = bell1->amp_min * volume_factor;
+              break;
+            }
+          case 3:  // noise
+            { noise *noise1 = NULL;
+
+              noise1 = (noise *) work1;
+              noise1->amp_max = noise1->amp_max * volume_factor;
+              noise1->amp_min = noise1->amp_min * volume_factor;
+              break;
+            }
+          case 4:  // stoch
+            { stoch *stoch1 = NULL;
+
+              stoch1 = (stoch *) work1;
+              stoch1->amp_max = stoch1->amp_max * volume_factor;
+              stoch1->amp_min = stoch1->amp_min * volume_factor;
+              break;
+            }
+          case 5:  // sample
+            { sample *sample1 = NULL;
+
+              sample1 = (sample *) work1;
+              sample1->amp_max = sample1->amp_max * volume_factor;
+              sample1->amp_min = sample1->amp_min * volume_factor;
+              break;
+            }
+          case 6:  // repeat
+            { repeat *repeat1 = NULL;
+
+              repeat1 = (repeat *) work1;
+              repeat1->amp_max = repeat1->amp_max * volume_factor;
+              repeat1->amp_min = repeat1->amp_min * volume_factor;
+              break;
+            }
+          case 7:  // once
+            { once *once1 = NULL;
+
+              once1 = (once *) work1;
+              once1->amp_max = once1->amp_max * volume_factor;
+              once1->amp_min = once1->amp_min * volume_factor;
+              break;
+            }
+          case 8:  // chronaural
+          case 10:
+          case 12:
+            { chronaural *chronaural1 = NULL;
+
+              chronaural1 = (chronaural *) work1;
+              chronaural1->amp = chronaural1->amp * volume_factor;
+              break;
+            }
+          case 13:  // pulse
+          case 14:
+          case 15:
+            { pulse *pulse1 = NULL;
+
+              pulse1 = (pulse *) work1;
+              pulse1->amp = pulse1->amp * volume_factor;
+              break;
+            }
+          case 16:  // phase
+          case 17:
+          case 18:
+            { phase *phase1 = NULL;
+
+              phase1 = (phase *) work1;
+              phase1->amp = phase1->amp * volume_factor;
+              break;
+            }
+          case 19:  // fm
+          case 20:
+          case 21:
+            { fm *fm1 = NULL;
+
+              fm1 = (fm *) work1;
+              fm1->amp = fm1->amp * volume_factor;
+              break;
+            }
+          case 22:  // silence
+            { break;
+            }
+          case 23:  // spin
+            { spin *spin1 = NULL;
+
+              spin1 = (spin *) work1;
+              spin1->amp = spin1->amp * volume_factor;
+              break;
+            }
+          default:
+            { break;
+            }
+        }
+        work1 = stub1->next;
+      }
+    }
+  }
+  else  // not really necessary, here for clarity
+    return;  // no volume adjustment requested, return without doing anything
+}
+
+
 
 /* Set up a binaural sequence */
 
@@ -5740,7 +6036,7 @@ finish_beat_voice_setup ()
 
   chv1 = STREAM_CONTAINER;  // root node of chorus voices
   while (chv1->next != NULL)  // step through until the last chorus voice processed
-    chv1 = chv1->next;  // that's the one to finish here
+    chv1 = chv1->next;  // that's the one to finish here, the others have been done earlier
   snd1 = chv1->play_seq;  // root node of play stream
   if (snd1 != NULL)
     work1 = snd1->voices;  // list of voices for this stream
