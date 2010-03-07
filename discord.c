@@ -102,6 +102,7 @@ int opt_v;                      // write verbose output as discord is playing
 int opt_w;                      // write file instead of sound
 char *out_filename;             // write file instead of sound
 int opt_y;                      // user has requested a vbr quality setting
+char *binaural_default = "0''0''0''0";
 double opt_y_arg = -1.0;        // for OGG, output VBR quality to write - 0.0 to 1.0, default it to -1.0, no set
 double vbr_quality = 0.5;       // for OGG, output VBR quality to write - 0.0 to 1.0, default it to 0.5
 const char *separators = "=' |,;";  // separators for time sequences, mix and match, multiples ok
@@ -2611,7 +2612,7 @@ setup_play_seq ()
     else  // default is no fade
       sndstream1->fade = 0;
     str1 = NULL;
-    token = strtok_r (str1, "$", &saveptr1);        // get next token
+    token = strtok_r (str1, "$", &saveptr1);        // get next token, $ separator
     while (token != NULL)
     {
       str2 = token;
@@ -2619,10 +2620,10 @@ setup_play_seq ()
       str2 = NULL;
       memset (voice, 0x00, 512);
       len = strlen (subtoken);
-      strncpy (voice, subtoken, len);  // recreate the voice for setup as token = subtoken
-      StrCat (voice, "''", 512);  // replace separator
+      strncpy (voice, subtoken, len);  // reinsert the voice for setup as voice == subtoken
+      StrCat (voice, "''", 512);  // append separator
       len = strlen (saveptr2);
-      StrCat (voice, saveptr2, 512);
+      StrCat (voice, saveptr2, 512);  // concatenate with maximum of 512 characters, allocate new string if larger
       if (strcasecmp (subtoken, "binaural") == 0)
         setup_binaural (voice, &work);
       else if (strcasecmp (subtoken, "bell") == 0)
@@ -3042,6 +3043,8 @@ setup_binaural (char *token, void **work)
   str2 = NULL;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
   if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3062,6 +3065,8 @@ setup_binaural (char *token, void **work)
   binaural1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double beat = strtod (subtoken, &endptr);
   if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3080,6 +3085,8 @@ setup_binaural (char *token, void **work)
   binaural1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp = strtod (subtoken, &endptr);
   if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3105,6 +3112,8 @@ setup_binaural (char *token, void **work)
       binaural1->amp_beat1 = amp_beat1;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_beat2 = strtod (subtoken, &endptr);
       if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3116,6 +3125,8 @@ setup_binaural (char *token, void **work)
       binaural1->amp_beat2 = amp_beat2;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_pct1 = strtod (subtoken, &endptr);
       if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3127,6 +3138,8 @@ setup_binaural (char *token, void **work)
       binaural1->amp_pct1 = AMP_AD(amp_pct1);
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_pct2 = strtod (subtoken, &endptr);
       if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3144,6 +3157,8 @@ setup_binaural (char *token, void **work)
       binaural1->slide = 2;  // binaural step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3155,6 +3170,8 @@ setup_binaural (char *token, void **work)
       binaural1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3166,6 +3183,8 @@ setup_binaural (char *token, void **work)
       binaural1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
       if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3181,6 +3200,8 @@ setup_binaural (char *token, void **work)
       binaural1->slide = 3;  // binaural vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3192,6 +3213,8 @@ setup_binaural (char *token, void **work)
       binaural1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3291,6 +3314,8 @@ setup_bell (char *token, void **work)
   str2 = NULL;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
   if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3302,6 +3327,8 @@ setup_bell (char *token, void **work)
   bell1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
   if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3313,6 +3340,8 @@ setup_bell (char *token, void **work)
   bell1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
   if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3324,6 +3353,8 @@ setup_bell (char *token, void **work)
   bell1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
   if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3335,6 +3366,8 @@ setup_bell (char *token, void **work)
   bell1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
   if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3346,6 +3379,8 @@ setup_bell (char *token, void **work)
   bell1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
   if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3357,6 +3392,8 @@ setup_bell (char *token, void **work)
   bell1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
   if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3368,6 +3405,8 @@ setup_bell (char *token, void **work)
   bell1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double length_min = strtod (subtoken, &endptr);
   if ((length_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3379,6 +3418,8 @@ setup_bell (char *token, void **work)
   bell1->length_min = (intmax_t) (length_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double length_max = strtod (subtoken, &endptr);
   if ((length_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3390,6 +3431,8 @@ setup_bell (char *token, void **work)
   bell1->length_max = (intmax_t) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double repeat_min = strtod (subtoken, &endptr);
   if ((repeat_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3401,6 +3444,8 @@ setup_bell (char *token, void **work)
   bell1->repeat_min = (intmax_t) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double repeat_max = strtod (subtoken, &endptr);
   if ((repeat_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3412,6 +3457,8 @@ setup_bell (char *token, void **work)
   bell1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double behave = strtod (subtoken, &endptr);
   if ((behave == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3534,6 +3581,8 @@ setup_noise (char *token, void **work)
   str2 = NULL;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier_min = strtod (subtoken, &endptr);
   if ((carrier_min == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3545,6 +3594,8 @@ setup_noise (char *token, void **work)
   noise1->carrier_min = carrier_min;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier_max = strtod (subtoken, &endptr);
   if ((carrier_max == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3556,6 +3607,8 @@ setup_noise (char *token, void **work)
   noise1->carrier_max = carrier_max;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
   if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3567,6 +3620,8 @@ setup_noise (char *token, void **work)
   noise1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
   if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3578,6 +3633,8 @@ setup_noise (char *token, void **work)
   noise1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
   if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3589,6 +3646,8 @@ setup_noise (char *token, void **work)
   noise1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
   if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3600,6 +3659,8 @@ setup_noise (char *token, void **work)
   noise1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
   if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3611,6 +3672,8 @@ setup_noise (char *token, void **work)
   noise1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
   if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3622,6 +3685,8 @@ setup_noise (char *token, void **work)
   noise1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double length_min = strtod (subtoken, &endptr);
   if ((length_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3633,6 +3698,8 @@ setup_noise (char *token, void **work)
   noise1->length_min = (intmax_t) (length_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double length_max = strtod (subtoken, &endptr);
   if ((length_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3644,6 +3711,8 @@ setup_noise (char *token, void **work)
   noise1->length_max = (intmax_t) (length_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double repeat_min = strtod (subtoken, &endptr);
   if ((repeat_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3655,6 +3724,8 @@ setup_noise (char *token, void **work)
   noise1->repeat_min = (intmax_t) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double repeat_max = strtod (subtoken, &endptr);
   if ((repeat_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3666,6 +3737,8 @@ setup_noise (char *token, void **work)
   noise1->repeat_max = (intmax_t) (repeat_max * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double behave_low = strtod (subtoken, &endptr);
   if ((behave_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3677,6 +3750,8 @@ setup_noise (char *token, void **work)
   noise1->behave_low = (int) behave_low;   // convert to int
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double behave_high = strtod (subtoken, &endptr);
   if ((behave_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3800,6 +3875,8 @@ setup_stoch (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   /* subtoken is file name for stoch sound */
   strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
@@ -3810,6 +3887,8 @@ setup_stoch (char *token, void **work)
   stoch1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
   if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3821,6 +3900,8 @@ setup_stoch (char *token, void **work)
   stoch1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
   if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3833,6 +3914,8 @@ setup_stoch (char *token, void **work)
   stoch1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
   if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -3844,6 +3927,8 @@ setup_stoch (char *token, void **work)
   stoch1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
   if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3855,6 +3940,8 @@ setup_stoch (char *token, void **work)
   stoch1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
   if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3866,6 +3953,8 @@ setup_stoch (char *token, void **work)
   stoch1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
   if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3877,6 +3966,8 @@ setup_stoch (char *token, void **work)
   stoch1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double repeat_min = strtod (subtoken, &endptr);
   if ((repeat_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3888,6 +3979,8 @@ setup_stoch (char *token, void **work)
   stoch1->repeat_min = (intmax_t) (repeat_min * out_rate);      // convert to frames from seconds
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double repeat_max = strtod (subtoken, &endptr);
   if ((repeat_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3951,6 +4044,8 @@ setup_sample (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   /* subtoken is file name for sample sound */
   strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
@@ -3961,6 +4056,8 @@ setup_sample (char *token, void **work)
   sample1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
   if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3972,6 +4069,8 @@ setup_sample (char *token, void **work)
   sample1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
   if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3984,6 +4083,8 @@ setup_sample (char *token, void **work)
   sample1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
   if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -3995,6 +4096,8 @@ setup_sample (char *token, void **work)
   sample1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
   if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4006,6 +4109,8 @@ setup_sample (char *token, void **work)
   sample1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
   if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4017,6 +4122,8 @@ setup_sample (char *token, void **work)
   sample1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
   if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4028,6 +4135,8 @@ setup_sample (char *token, void **work)
   sample1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double sample_size = strtod (subtoken, &endptr);
   if ((sample_size == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4084,6 +4193,8 @@ setup_repeat (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   /* subtoken is file name for repeat sound */
   strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
@@ -4094,6 +4205,8 @@ setup_repeat (char *token, void **work)
   repeat1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
   if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4105,6 +4218,8 @@ setup_repeat (char *token, void **work)
   repeat1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
   if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4117,6 +4232,8 @@ setup_repeat (char *token, void **work)
   repeat1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
   if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4128,6 +4245,8 @@ setup_repeat (char *token, void **work)
   repeat1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
   if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4139,6 +4258,8 @@ setup_repeat (char *token, void **work)
   repeat1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
   if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4150,6 +4271,8 @@ setup_repeat (char *token, void **work)
   repeat1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
   if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4206,6 +4329,8 @@ setup_once (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   /* subtoken is file name for once sound */
   strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
@@ -4216,6 +4341,8 @@ setup_once (char *token, void **work)
   once1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_min = strtod (subtoken, &endptr);
   if ((amp_min == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4227,6 +4354,8 @@ setup_once (char *token, void **work)
   once1->amp_min = AMP_AD(amp_min);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp_max = strtod (subtoken, &endptr);
   if ((amp_max == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4238,6 +4367,8 @@ setup_once (char *token, void **work)
   once1->amp_max = AMP_AD(amp_max);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_begin = strtod (subtoken, &endptr);
   if ((split_begin == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4249,6 +4380,8 @@ setup_once (char *token, void **work)
   once1->split_begin = split_begin;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_end = strtod (subtoken, &endptr);
   if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4260,6 +4393,8 @@ setup_once (char *token, void **work)
   once1->split_end = split_end;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_low = strtod (subtoken, &endptr);
   if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4271,6 +4406,8 @@ setup_once (char *token, void **work)
   once1->split_low = split_low;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double split_high = strtod (subtoken, &endptr);
   if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4282,6 +4419,8 @@ setup_once (char *token, void **work)
   once1->split_high = split_high;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double play_when = strtod (subtoken, &endptr);
   if ((play_when == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4346,6 +4485,8 @@ setup_chronaural (char *token, void **work)
   str2 = NULL;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
   if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -4366,6 +4507,8 @@ setup_chronaural (char *token, void **work)
   chronaural1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double beat = strtod (subtoken, &endptr);
   if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4384,6 +4527,8 @@ setup_chronaural (char *token, void **work)
   chronaural1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp = strtod (subtoken, &endptr);
   if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4395,6 +4540,8 @@ setup_chronaural (char *token, void **work)
   chronaural1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double phase = strtod (subtoken, &endptr);
   if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4406,6 +4553,8 @@ setup_chronaural (char *token, void **work)
   chronaural1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double sin_threshold = strtod (subtoken, &endptr);
   if ((sin_threshold == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4417,6 +4566,8 @@ setup_chronaural (char *token, void **work)
   chronaural1->sin_threshold = sin_threshold;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double beat_behave = strtod (subtoken, &endptr);
   if ((beat_behave == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4443,6 +4594,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->split_begin = split_begin;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_end = strtod (subtoken, &endptr);
       if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4455,6 +4608,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->split_end = split_end;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_low = strtod (subtoken, &endptr);
       if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4466,6 +4621,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->split_low = split_low;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_high = strtod (subtoken, &endptr);
       if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4478,6 +4635,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->split_high = split_high;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_beat = strtod (subtoken, &endptr);
       if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4495,6 +4654,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->slide = 2;  // chronaural step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4506,6 +4667,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4517,6 +4680,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
       if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4532,6 +4697,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->slide = 3;  // chronaural vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4543,6 +4710,8 @@ setup_chronaural (char *token, void **work)
       chronaural1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4646,6 +4815,8 @@ setup_pulse (char *token, void **work)
   str2 = NULL;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
   if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -4666,6 +4837,8 @@ setup_pulse (char *token, void **work)
   pulse1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double beat = strtod (subtoken, &endptr);
   if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4684,6 +4857,8 @@ setup_pulse (char *token, void **work)
   pulse1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp = strtod (subtoken, &endptr);
   if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4695,6 +4870,8 @@ setup_pulse (char *token, void **work)
   pulse1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double phase = strtod (subtoken, &endptr);
   if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4706,6 +4883,8 @@ setup_pulse (char *token, void **work)
   pulse1->phase = phase;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double time = strtod (subtoken, &endptr);
   if ((time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4731,6 +4910,8 @@ setup_pulse (char *token, void **work)
       pulse1->split_begin = split_begin;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_end = strtod (subtoken, &endptr);
       if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4742,6 +4923,8 @@ setup_pulse (char *token, void **work)
       pulse1->split_end = split_end;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_low = strtod (subtoken, &endptr);
       if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4753,6 +4936,8 @@ setup_pulse (char *token, void **work)
       pulse1->split_low = split_low;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_high = strtod (subtoken, &endptr);
       if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4764,6 +4949,8 @@ setup_pulse (char *token, void **work)
       pulse1->split_high = split_high;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_beat = strtod (subtoken, &endptr);
       if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4781,6 +4968,8 @@ setup_pulse (char *token, void **work)
       pulse1->slide = 2;  // pulse step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4792,6 +4981,8 @@ setup_pulse (char *token, void **work)
       pulse1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4803,6 +4994,8 @@ setup_pulse (char *token, void **work)
       pulse1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
       if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4819,6 +5012,8 @@ setup_pulse (char *token, void **work)
       pulse1->slide = 3;  // pulse vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4830,6 +5025,8 @@ setup_pulse (char *token, void **work)
       pulse1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4940,6 +5137,8 @@ setup_phase (char *token, void **work)
   str2 = NULL;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
   if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -4960,6 +5159,8 @@ setup_phase (char *token, void **work)
   phase1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double beat = strtod (subtoken, &endptr);
   if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4980,6 +5181,8 @@ setup_phase (char *token, void **work)
   phase1->beat = beat;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp = strtod (subtoken, &endptr);
   if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -4991,6 +5194,8 @@ setup_phase (char *token, void **work)
   phase1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double phase = strtod (subtoken, &endptr);
   if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5016,6 +5221,8 @@ setup_phase (char *token, void **work)
       phase1->split_begin = split_begin;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_end = strtod (subtoken, &endptr);
       if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5027,6 +5234,8 @@ setup_phase (char *token, void **work)
       phase1->split_end = split_end;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_low = strtod (subtoken, &endptr);
       if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5038,6 +5247,8 @@ setup_phase (char *token, void **work)
       phase1->split_low = split_low;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_high = strtod (subtoken, &endptr);
       if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5049,6 +5260,8 @@ setup_phase (char *token, void **work)
       phase1->split_high = split_high;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_beat = strtod (subtoken, &endptr);
       if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5060,6 +5273,8 @@ setup_phase (char *token, void **work)
       phase1->split_beat = split_beat;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_beat1 = strtod (subtoken, &endptr);
       if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5071,6 +5286,8 @@ setup_phase (char *token, void **work)
       phase1->amp_beat1 = amp_beat1;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_beat2 = strtod (subtoken, &endptr);
       if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5082,6 +5299,8 @@ setup_phase (char *token, void **work)
       phase1->amp_beat2 = amp_beat2;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_pct1 = strtod (subtoken, &endptr);
       if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5093,6 +5312,8 @@ setup_phase (char *token, void **work)
       phase1->amp_pct1 = AMP_AD(amp_pct1);
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_pct2 = strtod (subtoken, &endptr);
       if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5112,6 +5333,8 @@ setup_phase (char *token, void **work)
       phase1->slide = 2;  // phase step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5123,6 +5346,8 @@ setup_phase (char *token, void **work)
       phase1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5134,6 +5359,8 @@ setup_phase (char *token, void **work)
       phase1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
       if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5150,6 +5377,8 @@ setup_phase (char *token, void **work)
       phase1->slide = 3;  // phase vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5161,6 +5390,8 @@ setup_phase (char *token, void **work)
       phase1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5271,6 +5502,8 @@ setup_fm (char *token, void **work)
   str2 = NULL;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double carrier = strtod (subtoken, &endptr);
   if ((carrier == 0.0 && strcmp (subtoken, endptr) == 0) 
@@ -5291,6 +5524,8 @@ setup_fm (char *token, void **work)
   fm1->carrier = carrier;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double beat = strtod (subtoken, &endptr);
   if ((beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5311,6 +5546,8 @@ setup_fm (char *token, void **work)
   fm1->beat = beat;
   
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp = strtod (subtoken, &endptr);
   if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5322,6 +5559,8 @@ setup_fm (char *token, void **work)
   fm1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double band = strtod (subtoken, &endptr);
   if ((band == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5333,6 +5572,8 @@ setup_fm (char *token, void **work)
   fm1->band = band;
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double phase = strtod (subtoken, &endptr);
   if ((phase == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5358,6 +5599,8 @@ setup_fm (char *token, void **work)
       fm1->split_begin = split_begin;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_end = strtod (subtoken, &endptr);
       if ((split_end == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5369,6 +5612,8 @@ setup_fm (char *token, void **work)
       fm1->split_end = split_end;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_low = strtod (subtoken, &endptr);
       if ((split_low == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5380,6 +5625,8 @@ setup_fm (char *token, void **work)
       fm1->split_low = split_low;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_high = strtod (subtoken, &endptr);
       if ((split_high == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5391,6 +5638,8 @@ setup_fm (char *token, void **work)
       fm1->split_high = split_high;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double split_beat = strtod (subtoken, &endptr);
       if ((split_beat == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5402,6 +5651,8 @@ setup_fm (char *token, void **work)
       fm1->split_beat = split_beat;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_beat1 = strtod (subtoken, &endptr);
       if ((amp_beat1 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5413,6 +5664,8 @@ setup_fm (char *token, void **work)
       fm1->amp_beat1 = amp_beat1;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_beat2 = strtod (subtoken, &endptr);
       if ((amp_beat2 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5424,6 +5677,8 @@ setup_fm (char *token, void **work)
       fm1->amp_beat2 = amp_beat2;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_pct1 = strtod (subtoken, &endptr);
       if ((amp_pct1 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5435,6 +5690,8 @@ setup_fm (char *token, void **work)
       fm1->amp_pct1 = AMP_AD (amp_pct1);
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double amp_pct2 = strtod (subtoken, &endptr);
       if ((amp_pct2 == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5452,6 +5709,8 @@ setup_fm (char *token, void **work)
       fm1->slide = 2;  // freq step slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5463,6 +5722,8 @@ setup_fm (char *token, void **work)
       fm1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5474,6 +5735,8 @@ setup_fm (char *token, void **work)
       fm1->slide_time = slide_time;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double fuzz = strtod (subtoken, &endptr);
       if ((fuzz == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5489,6 +5752,8 @@ setup_fm (char *token, void **work)
       fm1->slide = 3;  // freq vary slide
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double steps = strtod (subtoken, &endptr);
       if ((steps == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5500,6 +5765,8 @@ setup_fm (char *token, void **work)
       fm1->steps = (int) steps;
 
       subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+      if (subtoken == NULL)
+        error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
       errno = 0;
       double slide_time = strtod (subtoken, &endptr);
       if ((slide_time == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5610,6 +5877,8 @@ setup_spin (char *token, void **work)
   subtoken = strtok_r (str2, separators, &saveptr2);        // remove voice type
   str2 = NULL;
   subtoken = strtok_r (str2, separators, &saveptr2);        // get subtoken of token
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   /* subtoken is file name for spin sound */
   strncpy (filename, subtoken, 256);
   sb1 = process_sound_file (filename);
@@ -5621,6 +5890,8 @@ setup_spin (char *token, void **work)
   spin1->scale = sb1->scale;
                                     
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double amp = strtod (subtoken, &endptr);
   if ((amp == 0.0 && strcmp (subtoken, endptr) == 0)
@@ -5632,6 +5903,8 @@ setup_spin (char *token, void **work)
   spin1->amp = AMP_AD(amp);
 
   subtoken = strtok_r (str2, separators, &saveptr2);        // get next subtoken
+  if (subtoken == NULL)
+    error ("Voice specification\n%s\nparsed incorrectly, and is probably too short or missing an entry", original);
   errno = 0;
   double spin_time = strtod (subtoken, &endptr);
   if ((spin_time == 0.0 && strcmp (subtoken, endptr) == 0)
